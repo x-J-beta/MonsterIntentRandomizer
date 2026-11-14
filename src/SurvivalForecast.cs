@@ -6,19 +6,21 @@ public sealed record EnemySnapshot(
     bool FixedOpening = false, bool ScriptedDeath = false);
 
 public sealed record DamageEstimate(double SingleTarget, double AreaPerTarget, double HitsPerTarget);
-public sealed record TargetingScenario(double Weight, double FocusShare, double AreaMultiplier);
+public sealed record TargetingScenario(double Weight, double FocusShare, double AreaMultiplier, double DamageMultiplier = 1);
 public sealed record OpeningState(string Id, int Amount);
 public sealed record ForecastWindow(
     double AliveAtAction, double AliveAtTurnEnd, double IncomingAttackHits,
     double IncomingAttackDamage, double ExtraBlockUsed, double Healing,
-    double RemovedEnemyHp, bool Truncated);
+    double RemovedEnemyHp, bool Truncated, double VulnerableBonusDamage = 0);
 
 public static class SurvivalForecast
 {
     public static ForecastWindow[] Predict(
         IReadOnlyList<EnemySnapshot> enemies, string targetId, DamageEstimate damage,
         IReadOnlyList<TargetingScenario> scenarios, int horizon, double firstPlayerWindowFraction = 1,
-        OpeningState? opening = null, double vulnerableDamageIncrease = 0.5)
+        OpeningState? opening = null, double vulnerableDamageIncrease = 0.5,
+        IReadOnlyList<OpeningState>? additionalOpening = null, double vulnerableRetargetShare = 0,
+        IReadOnlyDictionary<string, OpeningState[]>? allyOpening = null)
     {
         int target = Enumerable.Range(0, enemies.Count).FirstOrDefault(i => enemies[i].Id == targetId, -1);
         if (target < 0)
@@ -26,8 +28,13 @@ public static class SurvivalForecast
             throw new ArgumentException("Forecast target is missing.", nameof(targetId));
         }
         EnemySnapshot subject = enemies[target];
-        if ((opening?.Id == "STUN" && subject.FixedOpening) ||
-            (opening?.Id is "DOOM" or "DEMISE" && subject.ScriptedDeath))
+        OpeningState[] states = opening is null ? (additionalOpening ?? []).ToArray() :
+            [opening, .. additionalOpening ?? []];
+        var byEnemy = enemies.Select((enemy, index) => index == target ? states :
+            allyOpening?.GetValueOrDefault(enemy.Id) ?? []).ToArray();
+        int Amount(int index, string id) => byEnemy[index].Where(state => state.Id == id).Sum(state => state.Amount);
+        if ((Amount(target, "STUN") > 0 && subject.FixedOpening) ||
+            ((Amount(target, "DOOM") > 0 || Amount(target, "DEMISE") > 0) && subject.ScriptedDeath))
         {
             throw new ArgumentException("Opening state conflicts with the monster script.", nameof(opening));
         }
@@ -36,9 +43,13 @@ public static class SurvivalForecast
         foreach (var scenario in scenarios)
         {
             double[] hp = enemies.Select(enemy => enemy.Hp).ToArray();
-            int regen = opening?.Id == "REGEN" ? opening.Amount : 0;
-            int plating = opening?.Id == "PLATING" ? opening.Amount : 0;
-            double nextPlatingBlock = plating;
+            int[] regen = Enumerable.Range(0, enemies.Count).Select(i => Amount(i, "REGEN")).ToArray();
+            int[] plating = Enumerable.Range(0, enemies.Count).Select(i => Amount(i, "PLATING")).ToArray();
+            int[] vulnerable = Enumerable.Range(0, enemies.Count).Select(i => Amount(i, "VULNERABLE")).ToArray();
+            int[] demise = Enumerable.Range(0, enemies.Count).Select(i => Amount(i, "DEMISE")).ToArray();
+            int[] doom = Enumerable.Range(0, enemies.Count).Select(i => Amount(i, "DOOM")).ToArray();
+            int stun = Amount(target, "STUN");
+            int[] nextPlatingBlock = plating.ToArray();
             for (int turn = 1; turn <= horizon; turn++)
             {
                 double playerFraction = turn == 1 ? firstPlayerWindowFraction : 1;
@@ -51,6 +62,7 @@ public static class SurvivalForecast
                 double extraBlockUsed = 0;
                 double healed = 0;
                 double removedHp = 0;
+                double vulnerableBonus = 0;
                 double focusDamage = 0;
                 foreach (int index in targets)
                 {
@@ -59,45 +71,63 @@ public static class SurvivalForecast
                     {
                         share += scenario.FocusShare;
                     }
-                    double single = damage.SingleTarget * share * playerFraction + focusDamage;
-                    double area = damage.AreaPerTarget * scenario.AreaMultiplier * playerFraction;
+                    double single = damage.SingleTarget * share * playerFraction * scenario.DamageMultiplier + focusDamage;
+                    double area = damage.AreaPerTarget * scenario.AreaMultiplier * playerFraction * scenario.DamageMultiplier;
                     double received = single + area;
                     double block = turn == 1 ? enemies[index].Block : 0;
                     if (index == target)
                     {
-                        if (opening?.Id == "VULNERABLE" && turn <= opening.Amount)
+                        if (turn <= vulnerable[index])
                         {
-                            received *= 1 + vulnerableDamageIncrease;
+                            // A player may redirect some single-target damage toward the vulnerable enemy.
+                            double redirected = index == targets[0] ? 0 :
+                                damage.SingleTarget * playerFraction * scenario.DamageMultiplier *
+                                (1 - share) * vulnerableRetargetShare;
+                            double potentialBase = received + redirected;
+                            double potential = potentialBase * (1 + vulnerableDamageIncrease);
+                            vulnerableBonus = Math.Max(0,
+                                Math.Min(hp[index], Math.Max(0, potential - block - nextPlatingBlock[index])) -
+                                Math.Min(hp[index], Math.Max(0, potentialBase - block - nextPlatingBlock[index])));
                         }
-                        incoming = Math.Min(received, hp[index] + block + nextPlatingBlock);
+                    }
+                    if (turn <= vulnerable[index])
+                        received *= 1 + vulnerableDamageIncrease;
+                    if (index == target)
+                    {
+                        incoming = Math.Min(received, hp[index] + block + nextPlatingBlock[index]);
                         // Approximate hit count scales with the damage assigned to this creature.
                         double hitRate = damage.HitsPerTarget / Math.Max(1, damage.SingleTarget + damage.AreaPerTarget);
                         targetHits = incoming * hitRate;
-                        extraBlockUsed = Math.Min(nextPlatingBlock, Math.Max(0, received - block));
-                        block += nextPlatingBlock;
+                        extraBlockUsed = Math.Min(nextPlatingBlock[index], Math.Max(0, received - block));
                     }
+                    block += nextPlatingBlock[index];
                     double availableHp = hp[index] + block;
                     focusDamage = Math.Min(single, Math.Max(0, received - availableHp));
                     hp[index] = Math.Max(0, hp[index] - Math.Max(0, received - block));
                 }
 
                 bool ableToAct = hp[target] > 0 && turn >= enemies[target].FirstEnemyAction;
-                bool aliveAtAction = ableToAct && !(opening?.Id == "STUN" && turn == enemies[target].FirstEnemyAction);
-                if (ableToAct && regen > 0)
+                bool aliveAtAction = ableToAct && turn >= enemies[target].FirstEnemyAction + stun;
+                for (int index = 0; index < enemies.Count; index++)
                 {
-                    healed = Math.Min(regen--, enemies[target].MaxHp - hp[target]);
-                    hp[target] += healed;
-                }
-                nextPlatingBlock = ableToAct && plating > 0 ? plating-- : 0;
-                if (ableToAct && opening?.Id == "DEMISE")
-                {
-                    removedHp = Math.Min(hp[target], opening.Amount);
-                    hp[target] -= removedHp;
-                }
-                if (ableToAct && opening?.Id == "DOOM" && hp[target] <= opening.Amount)
-                {
-                    removedHp = hp[target];
-                    hp[target] = 0;
+                    bool active = hp[index] > 0 && turn >= enemies[index].FirstEnemyAction;
+                    if (!active)
+                        continue;
+                    double heal = regen[index] > 0 ? Math.Min(regen[index]--, enemies[index].MaxHp - hp[index]) : 0;
+                    hp[index] += heal;
+                    nextPlatingBlock[index] = plating[index] > 0 ? plating[index]-- : 0;
+                    double loss = Math.Min(hp[index], demise[index]);
+                    hp[index] -= loss;
+                    if (doom[index] > 0 && hp[index] <= doom[index])
+                    {
+                        loss += hp[index];
+                        hp[index] = 0;
+                    }
+                    if (index == target)
+                    {
+                        healed = heal;
+                        removedHp = loss;
+                    }
                 }
 
                 double w = scenario.Weight;
@@ -110,7 +140,8 @@ public static class SurvivalForecast
                     prior.ExtraBlockUsed + extraBlockUsed * w,
                     prior.Healing + healed * w,
                     prior.RemovedEnemyHp + removedHp * w,
-                    prior.Truncated || (turn == horizon && hp[target] > 0 && w > 0));
+                    prior.Truncated || (turn == horizon && hp[target] > 0 && w > 0),
+                    prior.VulnerableBonusDamage + vulnerableBonus * w);
             }
         }
         return result;

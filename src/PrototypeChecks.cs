@@ -52,6 +52,27 @@ internal static class PrototypeChecks
         {
             throw new InvalidOperationException("Opening selection violated polarity or budget.");
         }
+        var openingOptions = new Dictionary<string, IReadOnlyList<OpeningOption>>
+        {
+            ["first"] = [new(new OpeningState("STRENGTH", 1), 2)],
+            ["second"] = [new(new OpeningState("WEAK", 1), -2), new(variant, -0.5)]
+        };
+        var openingBudgets = new Dictionary<string, double> { ["first"] = 3, ["second"] = 3 };
+        var draws = new OpeningDraws(0, 1, 1, 12, 2, 2.5);
+        var result = OpeningValuation.Draw(openingOptions, openingBudgets, draws, new Random(11));
+        if (result.Count < 2 || result.Sum(pick => Math.Abs(pick.Value)) > 2.5)
+            throw new InvalidOperationException("Multiple opening draws exceeded the sum-of-absolute-values budget.");
+
+        double VulnerableValue(double potential)
+        {
+            var attacker = new DamageEstimate(potential, 0, 1);
+            var before = SurvivalForecast.Predict([target with { Hp = 100 }], target.Id, attacker, scenario, 4);
+            var state = new OpeningState("VULNERABLE", 1);
+            var after = SurvivalForecast.Predict([target with { Hp = 100 }], target.Id, attacker, scenario, 4, opening: state);
+            return OpeningValuation.Evaluate(state, before, after, expectedMoves, 0.8)!.Value;
+        }
+        if (VulnerableValue(15) >= VulnerableValue(5))
+            throw new InvalidOperationException("Vulnerable did not scale with potential player damage.");
 
         var planner = new ActionPlanner(new PoolSettings(0.75, 0.9));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
@@ -141,7 +162,7 @@ internal static class PrototypeChecks
         Equal(0.8 * profile.AttackFrequency, Pure(EffectKind.Strength).Value,
             "strength scales with future attacks, not this turn");
         Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
-        Equal(2, Pure(EffectKind.Wound).Value, "wound draw valuation");
+        Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
         Equal(3, Pure(EffectKind.Vulnerable).Value, "vulnerable values covered damage");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
@@ -191,6 +212,27 @@ internal static class PrototypeChecks
         var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory(), 1);
         if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.Kind is EffectKind.Weak or EffectKind.Vulnerable)))
             throw new InvalidOperationException("The catalog offered a debuff blocked by known Artifact.");
+
+        var specialized = varied with
+        {
+            BaseExpectedSurvivalTurns = 5,
+            EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Ritual] = 1, [EffectKind.Ringing] = 1, [EffectKind.Wound] = 1 },
+            CardPlacements = [new(EffectKind.Wound, StatusPile.Top), new(EffectKind.Wound, StatusPile.Discard)]
+        };
+        var expanded = new ActionCatalog(catalogSettings with
+        {
+            Amounts = new Dictionary<EffectKind, int[]>(amounts) { [EffectKind.Ritual] = [1], [EffectKind.Ringing] = [1] }
+        });
+        var specializedActions = expanded.Generate(specialized, context, new ActionHistory(), 2).ToArray();
+        var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
+        var history = new ActionHistory().Record(ritual, 2);
+        Equal(0, history.RitualStrength, "newly cast ritual does not trigger immediately");
+        var ringing = specializedActions.Single(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
+        Equal(1, history.Record(ringing, 3).RitualStrength, "ritual triggers after later turns");
+        if (specializedActions.Single(action => action.Id == "Wound 1 @Top").Value <=
+            specializedActions.Single(action => action.Id == "Wound 1 @Discard").Value ||
+            specializedActions.Any(action => action.IsAttack && action.Effects!.Any(effect => effect.Kind == EffectKind.Ringing)))
+            throw new InvalidOperationException("Placement values or hard card limits were ignored.");
         Console.WriteLine("Prototype checks passed.");
         Console.WriteLine($"Single-hit sample: {attacks / 2000:F3} hits/turn (target {profile.AttackFrequency:F2}).");
         Console.WriteLine($"Three-hit sample: {totalHits / 2000:F3} hits/turn (target {multiProfile.AttackFrequency:F2}).");

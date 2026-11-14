@@ -5,17 +5,11 @@
   "defaultEligibility": "excluded_until_reviewed",
   "layerLimitsApplyOnlyToRandomlyAddedStates": true,
   "scope": "single_player_standard_starting_monsters_with_an_explicit_opening_pool",
+  "runtimeSettingsFile": "settings.json",
   "sampling": {
-    "maxSelectedMonstersPerEncounter": 1,
-    "maxAddedStatesPerSelectedMonster": 1,
-    "defaultEncounterWeights": {
-      "none": 50,
-      "positive": 30,
-      "negative": 20
-    },
     "notes": [
-      "先用怪物画像、原版机制、施加条件和开场额度过滤全场候选，再按 50/30/20 选择无变化、正面或负面档。",
-      "选中正面或负面档后，在该档至少有一项合法候选的开场怪物中等概率选一只，再从该怪的合法候选中等概率选一项。全场该档为空时把它的权重并入无变化。",
+      "对全场候选多次按权重抽取无变化、正面或负面档，可给单怪多个不同状态。抽中空档不补抽。",
+      "每次按已抽状态更新同一怪的边际估值。按单怪和全场绝对值之和限制，正负状态无法抵消额度。",
       "用独立的遭遇种子确定选中的怪物与状态，增援不重新抽开场状态。"
     ]
   },
@@ -57,8 +51,6 @@
       "singleUse": "按首次合格触发在死亡前出现的概率乘单次价值，耗尽即停止。用存活时间估计触发机会及折现。",
       "playerWindow": "第一个玩家行动窗口发生在敌方第一次行动之前，要单独保留。后续玩家窗口用承接的上一敌方行动存活率作快速近似。预期敌方行动少于一次的怪也仍可在首轮被攻击、反伤或受到减益。"
     },
-    "maxAbsolutePressureDelta": 2,
-    "maxAbsoluteShareOfStandardActionValue": 0.25,
     "poolCompensation": "开场时一次性从行动力池减去有符号的全部状态估值。正面扣除，负面返还，余额可为负。",
     "notes": [
       "同一场景下比较有无该状态的即时及未来边际压力，配对使用相同的预定招式、目标情景、估计方法和反制条件。状态改变存活率及可行动回合时计入压力。",
@@ -193,6 +185,13 @@
     }
   },
   "conditional": {
+    "IMBALANCED": {
+      "polarity": "negative",
+      "amount": 1,
+      "valueModel": "conditional",
+      "formula": "完全格挡概率 × 预计前一轮攻击概率 × 折现后下一次行动价值",
+      "reason": "仅在带 fullBlockChance 的宿主画像中使用。石虫沿用原版固有失衡。"
+    },
     "STUN": {
       "polarity": "negative",
       "amount": 1,
@@ -241,7 +240,6 @@
     "FLUTTER": "层数耗尽时读取招式历史并访问偷窃草蜢的悬浮状态。",
     "BURROWED": "与 Tunneler 的破盾和出土动作、格挡时序绑定。",
     "CURL_UP": "触发动画并可能修改育虱者专属的卷曲字段。",
-    "IMBALANCED": "击晕之外还可能设置 BowlbugRock 的失衡状态。",
     "STOCK": "Axebot 死亡时从原槽位生成替身，还影响战斗结束判定。",
     "INFESTED": "宿主死亡后生成幼虫，与精英遭遇的槽位和阶段逻辑绑定。",
     "ILLUSION": "涉及随从、保留死亡单位、原招式历史和复活。",

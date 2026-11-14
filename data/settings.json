@@ -16,6 +16,14 @@
     "vulnerableDamageIncrease": 0.5,
     "cardSlotValue": 2.5,
     "maxAddedStrength": 2,
+    "maxAddedRitual": 1,
+    "tangledEnergyValue": 2.5,
+    "ringingCardValue": 2,
+    "maxHardCardLimits": 1,
+    "hardCardLimitFirstTurn": 2,
+    "burnPenalty": 2,
+    "handBurnDamageChance": 1,
+    "cardPlacementValues": { "hand": 0.35, "top": 1.4, "draw": 1, "bottom": 0.45, "discard": 0.6 },
     "maxInsertedCards": 2,
     "playerDebuffCooldownTurns": 1,
     "pureBlockCooldownTurns": 1,
@@ -23,17 +31,26 @@
     "amounts": {
       "Block": [3, 5, 8],
       "Strength": [1],
+      "Ritual": [1],
       "Weak": [1],
       "Vulnerable": [1],
+      "Tangled": [1],
+      "Ringing": [1],
       "Dazed": [1],
-      "Wound": [1]
+      "Wound": [1],
+      "Burn": [1]
     }
   },
   "opening": {
-    "weights": { "none": 50, "positive": 30, "negative": 20 },
-    "maxAbsoluteValue": 2,
-    "maxActionValueShare": 0.25,
+    "weights": { "none": 30, "positive": 40, "negative": 30 },
+    "attempts": 3,
+    "maxPerMonster": 2,
+    "maxEncounterAbsoluteValue": 6,
+    "maxAbsoluteValue": 5,
+    "maxActionValueShare": 0.55,
     "effectiveHpCoefficient": 0.4,
+    "vulnerableHpCoefficient": 0.7,
+    "vulnerableRetargetShare": 0.3,
     "amounts": {
       "STRENGTH": 1,
       "RITUAL": 1,
@@ -46,6 +63,7 @@
       "DOOM": 3,
       "ARTIFACT": 1,
       "THORNS": 1,
+      "IMBALANCED": 1,
       "STUN": 1
     }
   },
@@ -55,15 +73,21 @@
     "recentPlayerRoundLimit": 3,
     "stagePriorWeightInPlayerRounds": 2,
     "scenarios": [
-      { "weight": 0.4, "singleTargetFocusShare": 0.85, "areaDamageMultiplier": 0.75 },
+      { "weight": 0.4, "singleTargetFocusShare": 0.85, "areaDamageMultiplier": 0.75, "damageMultiplier": 1.25 },
       { "weight": 0.4, "singleTargetFocusShare": 0.65, "areaDamageMultiplier": 1 },
-      { "weight": 0.2, "singleTargetFocusShare": 0.45, "areaDamageMultiplier": 1.5 }
-    ]
+      { "weight": 0.2, "singleTargetFocusShare": 0.45, "areaDamageMultiplier": 1.5, "damageMultiplier": 0.8 }
+    ],
+    "playerDamageByStage": {
+      "act1": { "singleTarget": 10, "areaPerTarget": 2, "hitsPerTarget": 2 },
+      "act2": { "singleTarget": 17, "areaPerTarget": 4, "hitsPerTarget": 2.6 },
+      "act3": { "singleTarget": 25, "areaPerTarget": 7, "hitsPerTarget": 3.2 }
+    }
   },
   "simulation": {
     "defaultSeed": 42,
     "defaultMonsterId": "TOADPOLE",
     "defaultActionValueTier": "standard",
+    "defaultStage": "act1",
     "traceTurns": 10,
     "targetPriority": 0,
     "targetBlock": 0,
@@ -71,16 +95,23 @@
     "targetFirstEnemyAction": 1,
     "firstPlayerWindowFraction": 1,
     "allies": [
-      { "id": "rear", "hp": 23, "maxHp": 23, "block": 0, "priority": 1 }
+      {
+        "id": "rear", "hp": 23, "maxHp": 23, "block": 0, "priority": 1,
+        "expectedMove": { "value": 7, "attackFrequency": 0.65, "damagePerHit": 4, "hits": 2 },
+        "openingStates": ["PLATING", "WEAK", "DEMISE"]
+      }
     ],
-    "stageDamagePrior": { "singleTarget": 10, "areaPerTarget": 2, "hitsPerTarget": 2 },
     "recentPlayerDamage": [],
     "turnContext": {
       "expectedDamageAgainstMonster": 8,
       "expectedPlayerAttackDamage": 12,
       "expectedEnemyAttackDamageAgainstPlayer": 10,
       "dazedDraws": 0.6,
-      "woundDraws": 0.8
+      "woundDraws": 0.8,
+      "burnDraws": 0.6,
+      "expectedCardsPlayed": 3,
+      "expectedAttackCardsPlayed": 1.4,
+      "expectedEnergyPressure": 0.65
     },
     "artifactValue": 0,
     "artifactChancePerTargetedWindow": 0

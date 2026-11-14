@@ -36,7 +36,8 @@ public sealed record PoolSettings(
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
-    IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null)
+    IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
+    IReadOnlyList<StatusPlacement>? CardPlacements = null)
 {
     internal static IReadOnlyDictionary<int, double> DefaultHitWeights { get; } =
         new Dictionary<int, double> { [1] = 1 };
