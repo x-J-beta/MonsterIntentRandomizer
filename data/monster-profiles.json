@@ -1,8 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "gameVersion": "v0.113.0",
   "status": "design_examples",
   "scope": "single_player_standard_act_1_normal_monsters",
+  "baseExpectedSurvivalTurnsUnit": "expected_enemy_actions_after_player_turns",
+  "baseExpectedSurvivalTurnsNote": "以原版开场的单只怪物为基准。首个玩家回合击杀对应 0 次敌方行动。样例是设计初值，可按遭遇和进阶覆盖，日后用逐怪行动次数校准。",
   "profiles": {
     "TOADPOLE": {
       "name": "蟾蜍蝌蚪",
@@ -18,6 +20,7 @@
       },
       "draftProfile": {
         "style": "偏好多段攻击，准备回合可上荆棘",
+        "baseExpectedSurvivalTurns": 1.5,
         "actionValue": {
           "standard": 8,
           "deadlyEnemies": 10
@@ -57,6 +60,7 @@
       },
       "draftProfile": {
         "style": "偏好单击附带减益，保留纯攻击",
+        "baseExpectedSurvivalTurns": 3,
         "actionValue": {
           "standard": 11,
           "deadlyEnemies": 12
@@ -75,7 +79,7 @@
         "allowedHitCounts": [1],
         "maxRandomDebuffStacksPerMove": 2,
         "maxConsecutiveDebuffMoves": 2,
-        "initialRandomStateOptions": ["NONE", "STRENGTH", "WEAK", "VULNERABLE"]
+        "initialRandomStateOptions": ["NONE", "STRENGTH", "STRENGTH_DOWN", "WEAK", "VULNERABLE"]
       }
     }
   }

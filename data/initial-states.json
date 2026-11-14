@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "gameVersion": "v0.113.0",
   "status": "prototype_candidates_and_estimates",
   "defaultEligibility": "excluded_until_reviewed",
@@ -8,22 +8,29 @@
   "sampling": {
     "maxSelectedMonstersPerEncounter": 1,
     "maxAddedStatesPerSelectedMonster": 1,
-    "defaultWeightsForSelectedMonster": {
-      "none": 80,
-      "positive": 10,
-      "negative": 10
+    "defaultEncounterWeights": {
+      "none": 50,
+      "positive": 30,
+      "negative": 20
     },
     "notes": [
-      "在开场怪物中最多等概率选一只有合法候选的怪，再按正负分档抽签。80/10/10 是被选怪物的条件概率。",
-      "候选全集先用怪物画像、原版机制、施加条件和开场额度过滤。所在档为空时把该档权重并入空档，不向另一档补抽。",
+      "先用怪物画像、原版机制、施加条件和开场额度过滤全场候选，再按 50/30/20 选择无变化、正面或负面档。",
+      "选中正面或负面档后，在该档至少有一项合法候选的开场怪物中等概率选一只，再从该怪的合法候选中等概率选一项。全场该档为空时把它的权重并入无变化。",
       "用独立的遭遇种子确定选中的怪物与状态，增援不重新抽开场状态。"
     ]
   },
   "valuation": {
     "basis": "signed_pressure_with_candidate_minus_pressure_without_candidate",
     "positiveSignMeans": "more_threatening_to_player",
-    "enemyTurnHorizon": 3,
+    "expectedLifetimeProfileField": "baseExpectedSurvivalTurns",
+    "expectedLifetimeUnit": "expected_enemy_actions_after_player_turns",
     "futureDiscountPerEnemyTurn": 0.8,
+    "lifetimeWeighting": {
+      "persistent": "按预期存活的轮次估计可触发量。快速模型对第 t 个敌方行动窗口使用 clamp(预期生存时间 - (t - 1), 0, 1) 作为暴露权重，再乘该窗口的期望效果及 0.8^(t - 1)。有存活曲线后可替代此近似。",
+      "duration": "按原版持续时间以及该状态实际会触发的窗口计价。只保留预计存在的窗口，不额外乘整场寿命。",
+      "singleUse": "按首次合格触发在死亡前出现的概率乘单次价值，耗尽即停止。用存活时间估计触发机会及折现。",
+      "playerWindow": "第一个玩家行动窗口发生在敌方第一次行动之前，要单独保留。后续玩家窗口用承接的上一敌方行动存活率作快速近似。预期敌方行动少于一次的怪也仍可在首轮被攻击、反伤或受到减益。"
+    },
     "maxAbsolutePressureDelta": 2,
     "maxAbsoluteShareOfStandardActionValue": 0.25,
     "compensateFirstActionValue": false,
@@ -31,7 +38,8 @@
       "同一场景下比较有无该状态的即时及未来边际压力，配对使用相同的预定招式、目标情景、估计方法和反制条件。状态改变存活率及可行动回合时计入压力。",
       "要求绝对差值同时低于两项上限或等于边界。零收益、方向不符或无法可靠估值的候选出池。正负方向指相对怪物的战斗强度。",
       "分别按攻击段数、预计有效格挡和状态持续窗口算真实变化。禁止同一状态重复扣减行动预算；实际伤害仍按现有状态核对遭遇首轮峰值。",
-      "正负选中概率对称不保证平均强度相同。校准时分别记录各档抽中率、平均实际差值、首轮预告伤害和遭遇失血。"
+      "按档概率与过滤后的实际出场率、净均值分别记录。正面档比负面档高 10 个百分点。若两档单次平均幅度接近，原型整体压力会略升。",
+      "生存时间以原版开场和目标优先级为基准。若状态会改变存活，用同一情景比较变化前后；单次只使用一种估值途径，避免反复乘生存率或重复收取未来行动收益。"
     ]
   },
   "application": {
@@ -56,6 +64,8 @@
       "powerId": "STRENGTH",
       "amount": 1,
       "maxStacks": 1,
+      "valueModel": "persistent",
+      "perWindowBasis": "合规攻击频次 × 平均命中段数 × 每段实际伤害增量",
       "reason": "原版按每段合规攻击增加伤害。首轮起有效，按预计可兑现的受影响段数估价，并检查多段峰值。"
     },
     "STRENGTH_DOWN": {
@@ -63,6 +73,8 @@
       "powerId": "STRENGTH",
       "amount": -1,
       "maxStacks": 1,
+      "valueModel": "persistent",
+      "perWindowBasis": "合规攻击频次 × 平均命中段数 × 每段实际伤害减量，按负值计",
       "reason": "原版 StrengthPower 允许负层。按各段减 1 后实际损失估价，考虑取整、伤害下限与剩余受影响段数。"
     },
     "WEAK": {
@@ -70,6 +82,8 @@
       "powerId": "WEAK",
       "amount": 1,
       "maxStacks": 1,
+      "valueModel": "duration",
+      "perWindowBasis": "有覆盖的敌方攻击窗口内，合规攻击逐段结算前后的伤害差",
       "reason": "持有者合规攻击的通用伤害乘数为 0.75，取实际逐段差值。按计划时点施加可覆盖首个敌方行动，首轮预期无攻击时出池。"
     },
     "VULNERABLE": {
@@ -77,6 +91,8 @@
       "powerId": "VULNERABLE",
       "amount": 1,
       "maxStacks": 1,
+      "valueModel": "duration",
+      "perWindowBasis": "有覆盖的玩家攻击窗口内，折算新增有效伤害或由此少打的敌方行动",
       "reason": "持有者受到的合规攻击使用 1.5 倍通用伤害。覆盖首个玩家行动。若已有存活模型，优先按可能少出的敌方招式估值；若只用粗估，按预计有效额外伤害折算为负压力。二者属于同一收益，不同时相加。"
     },
     "ARTIFACT": {
@@ -84,6 +100,8 @@
       "powerId": "ARTIFACT",
       "amount": 1,
       "maxStacks": 1,
+      "valueModel": "singleUse",
+      "perWindowBasis": "按存活期内首次合格减益的发生概率和价值计价",
       "reason": "抵消持有者收到的减益。需要明确的开场额度和候选设置。"
     },
     "THORNS": {
@@ -91,6 +109,8 @@
       "powerId": "THORNS",
       "amount": 1,
       "maxStacks": 1,
+      "valueModel": "persistent",
+      "perWindowBasis": "合规受击段数 × 每次反伤的有效价值，从首个玩家窗口开始",
       "reason": "响应通用的攻击事件。仅供允许反伤风格的怪物，并检查玩家多段攻击下的风险。"
     }
   },
@@ -99,6 +119,9 @@
       "polarity": "positive",
       "powerId": "PLATING",
       "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "duration",
+      "perWindowBasis": "按原版授予和扣层时点预测有效格挡，计入玩家首轮",
       "reason": "独立使用时自动获得格挡。需要验证首次授予时点，且要保留熟睡甲虫等宿主对原版甲覆的唤醒联动。",
       "conditions": ["opening_timing_verified", "not_part_of_an_existing_scripted_bundle", "counts_toward_opening_budget"]
     },
@@ -106,8 +129,31 @@
       "polarity": "negative",
       "powerId": "FRAIL",
       "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "duration",
+      "perWindowBasis": "实际覆盖期间的合规主动格挡损失 × 可利用率 × 格挡换算系数",
       "reason": "可降低怪物主动招式提供的合规格挡。必须存在首轮可受影响的主动格挡，并验证结算标志。甲覆等非主动招式格挡无法作为估值依据。",
       "conditions": ["verified_powered_monster_move_block", "has_effect_in_first_enemy_action_window"]
+    },
+    "DEXTERITY": {
+      "polarity": "positive",
+      "powerId": "DEXTERITY",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "persistent",
+      "perWindowBasis": "合规主动格挡频次 × 新增格挡的预计可利用量 × 格挡换算系数",
+      "reason": "定量影响符合标志的自身主动格挡，适合格挡频率稳定的怪物。",
+      "conditions": ["verified_powered_monster_move_block", "profile_has_predictable_block_frequency", "power_not_used_as_script_input"]
+    },
+    "DEXTERITY_DOWN": {
+      "polarity": "negative",
+      "powerId": "DEXTERITY",
+      "amount": -1,
+      "maxStacks": 1,
+      "valueModel": "persistent",
+      "perWindowBasis": "合规主动格挡频次 × 减少的有效格挡 × 格挡换算系数，按负值计",
+      "reason": "按实际损失的主动格挡估值，格挡最低为零。排除把敏捷另作招式变量的怪物。",
+      "conditions": ["verified_powered_monster_move_block", "profile_has_predictable_block_frequency", "power_not_used_as_script_input"]
     }
   },
   "excluded": {
@@ -132,7 +178,8 @@
     "RITUAL": "永久逐回合加力量，会放大后续多段伤害。",
     "TERRITORIAL": "逐回合加力量，需要独立校准成长曲线和战斗长度。",
     "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。",
-    "DEXTERITY": "原版允许正负层并可修改合规怪物主动格挡。持久效果只对有稳定格挡频率的怪有可估价值，首版用持续窗口更小的脆弱作备选。"
+    "VIGOR": "单次增伤可能影响同一招的多段伤害。验证目标版怪物攻击命令的增伤和消耗同步后再纳入。",
+    "POISON": "可做负面候补。定价需按预计兑现的中毒跳数，并检查敌方行动前死亡以及和玩家毒系能力的联动。"
   },
   "mechanicsEvidence": {
     "localGameBuild": "26625880",
@@ -144,6 +191,11 @@
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/VulnerablePower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/FrailPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PlatingPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ArtifactPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ThornsPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/DexterityPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/VigorPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PoisonPower.cs",
     "https://spire-codex.com/monsters/cubex_construct",
     "https://spire-codex.com/monsters/thieving_hopper",
     "https://spire-codex.com/powers/flutter",
