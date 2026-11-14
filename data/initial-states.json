@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "gameVersion": "v0.113.0",
   "status": "prototype_candidates_and_estimates",
   "defaultEligibility": "excluded_until_reviewed",
@@ -152,6 +152,24 @@
       "perWindowBasis": "有覆盖的玩家攻击窗口内，折算新增有效伤害或由此少打的敌方行动",
       "reason": "持有者受到的合规攻击使用 1.5 倍通用伤害。覆盖首个玩家行动。若已有存活模型，优先按可能少出的敌方招式估值；若只用粗估，按预计有效额外伤害折算为负压力。二者属于同一收益，不同时相加。"
     },
+    "DEMISE": {
+      "polarity": "negative",
+      "powerId": "DEMISE",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "persistent",
+      "formula": "有无状态的折现行动差；行动不变时按 0.4 × 折现有效生命损失估算",
+      "reason": "持有者回合结束时按层失去生命，预测持续到死亡。"
+    },
+    "DOOM": {
+      "polarity": "negative",
+      "powerId": "DOOM",
+      "amount": 3,
+      "maxStacks": 3,
+      "valueModel": "persistent",
+      "formula": "持有者回合末达到处决线时结算，按因此少掉的折现行动价值估价",
+      "conditions": ["ordinary_monster", "no_scripted_death_or_phase", "forecast_reaches_execution_threshold"]
+    },
     "ARTIFACT": {
       "polarity": "positive",
       "powerId": "ARTIFACT",
@@ -174,6 +192,15 @@
     }
   },
   "conditional": {
+    "STUN": {
+      "polarity": "negative",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "singleUse",
+      "formula": "扣除首个可随机行动的期望价值",
+      "conditions": ["ordinary_monster", "no_fixed_opening", "first_opportunity_can_be_skipped"],
+      "reason": "实际对接原版眩晕命令。保留剧情、同步或强制开场；走同一个开场负面额度筛选。"
+    },
     "FRAIL": {
       "polarity": "negative",
       "powerId": "FRAIL",
@@ -220,8 +247,7 @@
     "TANK": "在施加和移除时联动场上队友。",
     "GUARDED": "依赖施加者及其死亡，不能直接按持有者的一次性开场效果估价。",
     "HEIST": "绑定被盗物的所有者并改变奖励。",
-    "SANDPIT": "改变玩家和宠物的位置，并在倒数后触发处决与遭遇演出。",
-    "STUN": "开场击晕可能直接跳过原版开场动作，和部分怪物阶段绑定。"
+    "SANDPIT": "改变玩家和宠物的位置，并在倒数后触发处决与遭遇演出。"
   },
   "laterPositiveCandidates": {
     "PERSONAL_HIVE": "人体蜂房。估计合规受击段数、塞入的晕眩和实际抽到的概率。",
@@ -238,7 +264,7 @@
   },
   "mechanicsEvidence": {
     "localGameBuild": "26625880",
-    "inspection": "本机 v0.113.0 sts2.dll 的只读 IL 已确认仪式回合末加力量及敌方施加跳过标记，再生回合末治疗并扣层，甲覆首个玩家窗口供给格挡且在原版钩子扣层，荆棘在合规受击前触发。先前还检查了力量与敏捷负层和虚弱、易伤、脆弱时序。开场挂接仍待游戏内验证。"
+    "inspection": "本机 v0.113.0 sts2.dll 的只读 IL 已确认仪式回合末累计力量、再生回合末治疗并扣层、甲覆开场给格挡、荆棘在合规受击前触发、消亡在持有者参加的回合末造成不递减的生命损失、灾厄在回合末检查生命阈值。开场挂接仍待游戏内验证。"
   },
   "references": [
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/StrengthPower.cs",
@@ -248,6 +274,7 @@
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PlatingPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/RegenPower.cs",
     "https://spire-codex.com/powers/ritual",
+    "https://spire-codex.com/powers/doom",
     "https://sts2.wanyoupu.com/catalog/power",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ArtifactPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ThornsPower.cs",

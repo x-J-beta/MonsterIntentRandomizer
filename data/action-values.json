@@ -15,6 +15,12 @@
     "excludes": ["fixed_scripted_actions", "player_forced_stun", "passive_damage"],
     "compoundAttackCount": 1
   },
+  "pools": {
+    "actionValueRetention": 0.75,
+    "attackDesireRetention": 0.9,
+    "actionCapacityInTurns": 1.6,
+    "attackDesireCapacity": 2
+  },
   "intentWeights": ["attack", "buff", "defend", "playerDebuff"],
   "effects": {
     "attack": {
