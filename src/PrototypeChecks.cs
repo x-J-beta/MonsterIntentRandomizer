@@ -131,11 +131,7 @@ internal static class PrototypeChecks
         var varied = profile with
         {
             HitWeights = new Dictionary<int, double> { [1] = 1, [3] = 1 },
-            EnabledEffects =
-            [
-                EffectKind.Block, EffectKind.Strength, EffectKind.Weak,
-                EffectKind.Vulnerable, EffectKind.Dazed, EffectKind.Wound
-            ],
+            EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
         var context = new ActionContext(6, 12, 6, DazedDraws: 0.6, WoundDraws: 0.8);
@@ -147,11 +143,21 @@ internal static class PrototypeChecks
         Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
         Equal(2, Pure(EffectKind.Wound).Value, "wound draw valuation");
         Equal(3, Pure(EffectKind.Vulnerable).Value, "vulnerable values covered damage");
-        Equal(0, Pure(EffectKind.Block).ActualScore, "block has no attack panel damage");
+        Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
-        Equal(mixed.Effects![0].Amount * mixed.AttackHits, mixed.ActualScore, "compound score uses panel damage");
-        if (mixed.Value <= mixed.ActualScore)
-            throw new InvalidOperationException("Compound action cost did not include its debuff.");
+        Equal(mixed.Damage + Pure(EffectKind.Weak).Value, mixed.ActualScore, "compound score includes its debuff");
+        var weakenedMixed = catalog.Generate(varied, context with { Weakened = true }, new ActionHistory(), 1)
+            .First(action => action.Id == "1x4 + Weak 1");
+        Equal(3, weakenedMixed.Damage, "panel reflects weak");
+        Equal(3 + Pure(EffectKind.Weak).Value, weakenedMixed.ActualScore, "resolved score reflects weak and the side effect");
+        Equal(4 + Pure(EffectKind.Weak).Value, weakenedMixed.Value, "pool cost retains base attack value");
+        var preferences = varied with
+        {
+            EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 2, [EffectKind.Vulnerable] = 1 }
+        };
+        var preferred = catalog.Generate(preferences, context, new ActionHistory(), 1)
+            .Where(action => !action.IsAttack).ToDictionary(action => action.Id);
+        Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "per-effect preference weights");
         var customAmounts = new Dictionary<EffectKind, int[]>(amounts)
         {
             [EffectKind.Block] = [4], [EffectKind.Strength] = [1, 2], [EffectKind.Weak] = [2]

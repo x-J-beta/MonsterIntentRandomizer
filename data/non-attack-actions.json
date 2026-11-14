@@ -4,7 +4,7 @@
   "status": "design_estimates",
   "scope": "单人标准模式。目录用于通用招式的组成效果与筛选，开场随机状态见 initial-states.json。",
   "valueUnit": "1 点预告单体攻击伤害",
-  "sharedDefaultsFile": "action-values.json",
+  "sharedDefaultsFile": "settings.json",
   "eligibilityMeaning": {
     "v1": "进入通用模板白名单，仍要求怪物画像显式启用且满足使用条件。",
     "conditional": "有可解释的估值，验证目标、时序或连续触发上限后才启用。",

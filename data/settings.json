@@ -1,0 +1,88 @@
+{
+  "pools": {
+    "actionValueRetention": 0.75,
+    "attackDesireRetention": 0.9,
+    "initialActionValueShare": 0.5,
+    "initialAttackDesire": 0,
+    "balanceTargetWeight": 0.5,
+    "minimumSelectionSpread": 0.5
+  },
+  "actions": {
+    "attack": 1,
+    "block": 0.4,
+    "heal": 0.4,
+    "weak": 0.45,
+    "weakDamageReduction": 0.25,
+    "vulnerableDamageIncrease": 0.5,
+    "cardSlotValue": 2.5,
+    "maxAddedStrength": 2,
+    "maxInsertedCards": 2,
+    "playerDebuffCooldownTurns": 1,
+    "pureBlockCooldownTurns": 1,
+    "minimumBaseDamagePerHit": 1,
+    "amounts": {
+      "Block": [3, 5, 8],
+      "Strength": [1],
+      "Weak": [1],
+      "Vulnerable": [1],
+      "Dazed": [1],
+      "Wound": [1]
+    }
+  },
+  "opening": {
+    "weights": { "none": 50, "positive": 30, "negative": 20 },
+    "maxAbsoluteValue": 2,
+    "maxActionValueShare": 0.25,
+    "effectiveHpCoefficient": 0.4,
+    "amounts": {
+      "STRENGTH": 1,
+      "RITUAL": 1,
+      "REGEN": 1,
+      "PLATING": 1,
+      "STRENGTH_DOWN": -1,
+      "WEAK": 1,
+      "VULNERABLE": 1,
+      "DEMISE": 1,
+      "DOOM": 3,
+      "ARTIFACT": 1,
+      "THORNS": 1,
+      "STUN": 1
+    }
+  },
+  "forecast": {
+    "discount": 0.8,
+    "maxEnemyWindows": 8,
+    "recentPlayerRoundLimit": 3,
+    "stagePriorWeightInPlayerRounds": 2,
+    "scenarios": [
+      { "weight": 0.4, "singleTargetFocusShare": 0.85, "areaDamageMultiplier": 0.75 },
+      { "weight": 0.4, "singleTargetFocusShare": 0.65, "areaDamageMultiplier": 1 },
+      { "weight": 0.2, "singleTargetFocusShare": 0.45, "areaDamageMultiplier": 1.5 }
+    ]
+  },
+  "simulation": {
+    "defaultSeed": 42,
+    "defaultMonsterId": "TOADPOLE",
+    "defaultActionValueTier": "standard",
+    "traceTurns": 10,
+    "targetPriority": 0,
+    "targetBlock": 0,
+    "targetFirstPlayerWindow": 1,
+    "targetFirstEnemyAction": 1,
+    "firstPlayerWindowFraction": 1,
+    "allies": [
+      { "id": "rear", "hp": 23, "maxHp": 23, "block": 0, "priority": 1 }
+    ],
+    "stageDamagePrior": { "singleTarget": 10, "areaPerTarget": 2, "hitsPerTarget": 2 },
+    "recentPlayerDamage": [],
+    "turnContext": {
+      "expectedDamageAgainstMonster": 8,
+      "expectedPlayerAttackDamage": 12,
+      "expectedEnemyAttackDamageAgainstPlayer": 10,
+      "dazedDraws": 0.6,
+      "woundDraws": 0.8
+    },
+    "artifactValue": 0,
+    "artifactChancePerTargetedWindow": 0
+  }
+}

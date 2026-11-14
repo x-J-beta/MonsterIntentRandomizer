@@ -4,9 +4,9 @@ public enum IntentStyle { Attack, Buff, Defend, PlayerDebuff }
 
 public sealed record ActionCandidate(
     string Id, IntentStyle Style, bool IsAttack, double Value, double Damage, double Weight = 1,
-    IReadOnlyList<ActionEffect>? Effects = null)
+    IReadOnlyList<ActionEffect>? Effects = null, double? ResolvedValue = null)
 {
-    public double ActualScore => Damage;
+    public double ActualScore => ResolvedValue ?? (IsAttack ? Damage : Value);
 
     public int AttackHits => Effects?.Where(effect => effect.Kind == EffectKind.Attack).Sum(effect => effect.Hits)
         ?? (IsAttack ? 1 : 0);
@@ -36,7 +36,7 @@ public sealed record PoolSettings(
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
-    IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyList<EffectKind>? EnabledEffects = null)
+    IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null)
 {
     internal static IReadOnlyDictionary<int, double> DefaultHitWeights { get; } =
         new Dictionary<int, double> { [1] = 1 };

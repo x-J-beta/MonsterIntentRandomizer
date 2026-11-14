@@ -64,7 +64,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     {
         var hits = (profile.HitWeights ?? new Dictionary<int, double> { [1] = 1 })
             .Where(pair => pair.Key > 0 && pair.Value > 0).OrderBy(pair => pair.Key).ToArray();
-        var actions = profile.EnabledEffects ?? [];
+        var actions = profile.EffectWeights ?? new Dictionary<EffectKind, double>();
         var survival = context.RemainingForecast ??
             SurvivalForecast.FromExpectedSurvival(profile.BaseExpectedSurvivalTurns, settings.ForecastHorizon);
         // The current action occupies this turn. Strength first changes a later attack.
@@ -74,8 +74,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             (history.LastPlayerDebuffTurn == int.MinValue ||
                 turn - history.LastPlayerDebuffTurn > settings.PlayerDebuffCooldownTurns);
 
-        var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value)>();
-        foreach (var kind in actions.Distinct())
+        var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
+        foreach (var (kind, weight) in actions.Where(entry => entry.Value > 0))
         {
             foreach (int amount in (settings.Amounts.GetValueOrDefault(kind) ?? []).Where(value => value > 0).Distinct())
             {
@@ -110,7 +110,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         }
 
         // Normalize alternatives within a style so adding another dose does not inflate its weight.
-        var extraCounts = extras.GroupBy(extra => extra.Style).ToDictionary(group => group.Key, group => group.Count());
+        var totalsByStyle = extras.GroupBy(extra => extra.Style)
+            .ToDictionary(group => group.Key, group => group.Sum(extra => extra.Weight));
         foreach (var extra in extras)
         {
             if (extra.Effect.Kind == EffectKind.Block && history.LastPureBlockTurn != int.MinValue &&
@@ -118,7 +119,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 continue;
             yield return new ActionCandidate(
                 $"{extra.Effect.Kind} {extra.Effect.Amount}", extra.Style, false, extra.Value, 0,
-                1.0 / extraCounts[extra.Style], Effects: [extra.Effect]);
+                extra.Weight / totalsByStyle[extra.Style], Effects: [extra.Effect]);
         }
 
         foreach (var hit in hits)
@@ -139,8 +140,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 {
                     yield return new ActionCandidate(
                         $"{attack.Id} + {extra.Effect.Kind} {extra.Effect.Amount}", extra.Style, true,
-                        attack.Value + extra.Value, attack.Damage, attack.Weight / extraCounts[extra.Style],
-                        [attack.Effects![0], extra.Effect]);
+                        attack.Value + extra.Value, attack.Damage,
+                        attack.Weight * extra.Weight / totalsByStyle[extra.Style],
+                        [attack.Effects![0], extra.Effect], attack.Damage + extra.Value);
                 }
             }
         }
@@ -148,7 +150,10 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         void Add(EffectKind kind, int amount, IntentStyle style, double value)
         {
             if (value > 0 && profile.IntentWeights.GetValueOrDefault(style) > 0)
-                extras.Add((new ActionEffect(kind, amount), style, value));
+            {
+                int doses = settings.Amounts[kind].Where(dose => dose > 0).Distinct().Count();
+                extras.Add((new ActionEffect(kind, amount), style, value, actions[kind] / doses));
+            }
         }
 
         double DebuffWindowWeight(int amount) =>
