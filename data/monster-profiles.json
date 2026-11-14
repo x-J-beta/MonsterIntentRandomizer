@@ -1,8 +1,9 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "gameVersion": "v0.113.0",
   "status": "design_examples",
   "scope": "single_player_standard_act_1_normal_monsters",
+  "attackFrequencyUnit": "attack_hits_per_randomizable_turn",
   "baseExpectedSurvivalTurnsUnit": "expected_enemy_actions_after_player_turns",
   "baseExpectedSurvivalTurnsNote": "以原版开场的单只怪物为基准。首个玩家回合击杀对应 0 次敌方行动。样例是设计初值，可按遭遇和进阶覆盖，日后用逐怪行动次数校准。",
   "profiles": {
@@ -27,7 +28,7 @@
           "deadlyEnemies": 10
         },
         "actionVolatility": 0.18,
-        "attackFrequency": 0.67,
+        "attackFrequency": 1.54,
         "nonAttackValueMultiplier": 0.35,
         "intentWeights": {
           "attack": 55,

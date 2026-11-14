@@ -1,0 +1,84 @@
+MonsterIntentRandomizer command-line prototype
+Fixed seed examples and regression checks. Trace assumes continued survival.
+
+> dotnet run --no-build -- --check
+Prototype checks passed.
+Single-hit sample: 0.667 hits/turn (target 0.67).
+Three-hit sample: 1.502 hits/turn (target 1.50).
+
+> dotnet run --no-build -- 42 TOADPOLE
+seed 42, TOADPOLE, standard; target 1.54 attack hits/turn
+expected actions: 2.80
+NONE            0.00
+THORNS          +2.67
+PLATING         +0.80
+WEAK            -1.54
+VULNERABLE      -0.71
+DEMISE          -0.92
+DOOM            0.00
+opening: PLATING (value +0.80)
+opening pool: 3.20 (starts at 4.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 3x3 + Strength 1 damage  9  actual score 9.6  pool 8.44 -> -1.17, desire 1.54 -> -1.46, hits 3
+ 2 Strength 1       damage  0  actual score 0.6  pool 4.63 -> 4.01, desire 0.23 -> 0.23, hits 0
+ 3 Block 8          damage  0  actual score 3.2  pool 10.15 -> 6.95, desire 1.74 -> 1.74, hits 0
+ 4 3x3              damage 15  actual score 15.0  pool 10.99 -> 1.99, desire 3.11 -> 0.11, hits 3
+ 5 3x4              damage 18  actual score 18.0  pool 7.90 -> -4.10, desire 1.64 -> -1.36, hits 3
+ 6 Block 3          damage  0  actual score 1.2  pool 3.93 -> 2.73, desire 0.31 -> 0.31, hits 0
+ 7 3x3              damage 15  actual score 15.0  pool 8.20 -> -0.80, desire 1.82 -> -1.18, hits 3
+ 8 Block 8          damage  0  actual score 3.2  pool 5.80 -> 2.60, desire 0.48 -> 0.48, hits 0
+ 9 3x3              damage 15  actual score 15.0  pool 8.64 -> -0.36, desire 1.97 -> -1.03, hits 3
+10 Block 5          damage  0  actual score 2.0  pool 5.88 -> 3.88, desire 0.62 -> 0.62, hits 0
+
+> dotnet run --no-build -- 42 FLYCONID deadlyEnemies
+seed 42, FLYCONID, deadlyEnemies; target 0.75 attack hits/turn
+expected actions: 4.80
+NONE            0.00
+STRENGTH        +2.46
+RITUAL          +3.70
+REGEN           +0.40
+STRENGTH_DOWN   -2.46
+WEAK            -2.25
+VULNERABLE      -0.71
+DEMISE          -1.31
+DOOM            0.00
+opening: REGEN (value +0.40)
+opening pool: 5.60 (starts at 6.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 1x14             damage 14  actual score 14.0  pool 14.22 -> 0.22, desire 0.75 -> -0.25, hits 1
+ 2 1x12             damage 12  actual score 12.0  pool 9.46 -> -2.54, desire 0.53 -> -0.47, hits 1
+ 3 Vulnerable 1     damage  0  actual score 5.0  pool 9.62 -> 4.62, desire 0.32 -> 0.32, hits 0
+ 4 1x13             damage 13  actual score 13.0  pool 13.13 -> 0.13, desire 1.04 -> 0.04, hits 1
+ 5 1x13 + Wound 1   damage 13  actual score 15.0  pool 10.61 -> -4.39, desire 0.79 -> -0.21, hits 1
+ 6 1x1 + Dazed 1    damage  1  actual score 2.5  pool 8.05 -> 5.55, desire 0.56 -> -0.44, hits 1
+ 7 Vulnerable 1     damage  0  actual score 5.0  pool 14.33 -> 9.33, desire 0.35 -> 0.35, hits 0
+ 8 1x12             damage 12  actual score 12.0  pool 17.52 -> 5.52, desire 1.07 -> 0.07, hits 1
+ 9 1x13             damage 13  actual score 13.0  pool 15.05 -> 2.05, desire 0.81 -> -0.19, hits 1
+10 1x7 + Vulnerable 1 damage  7  actual score 12.0  pool 11.71 -> -0.29, desire 0.58 -> -0.42, hits 1
+
+> dotnet run --no-build -- 4 TOADPOLE
+seed 4, TOADPOLE, standard; target 1.54 attack hits/turn
+expected actions: 2.80
+NONE            0.00
+THORNS          +2.67
+PLATING         +0.80
+WEAK            -1.54
+VULNERABLE      -0.71
+DEMISE          -0.92
+DOOM            0.00
+opening: VULNERABLE (value -0.71)
+opening pool: 4.71 (starts at 4.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 3x3 + Strength 1 damage  9  actual score 9.6  pool 9.57 -> -0.04, desire 1.54 -> -1.46, hits 3
+ 2 Strength 1       damage  0  actual score 0.6  pool 6.20 -> 5.58, desire 0.23 -> 0.23, hits 0
+ 3 Block 8          damage  0  actual score 3.2  pool 10.52 -> 7.32, desire 1.74 -> 1.74, hits 0
+ 4 1x8              damage 10  actual score 10.0  pool 11.39 -> 3.39, desire 3.11 -> 2.11, hits 1
+ 5 1x8              damage 10  actual score 10.0  pool 8.34 -> 0.34, desire 3.44 -> 2.44, hits 1
+ 6 3x3              damage 15  actual score 15.0  pool 6.84 -> -2.16, desire 3.73 -> 0.73, hits 3
+ 7 1x6              damage  8  actual score 8.0  pool 4.35 -> -1.65, desire 2.20 -> 1.20, hits 1
+ 8 3x1              damage  9  actual score 9.0  pool 5.05 -> 2.05, desire 2.62 -> -0.38, hits 3
+ 9 1x7              damage  9  actual score 9.0  pool 7.96 -> 0.96, desire 1.20 -> 0.20, hits 1
+10 Block 8          damage  0  actual score 3.2  pool 6.45 -> 3.25, desire 1.72 -> 1.72, hits 0

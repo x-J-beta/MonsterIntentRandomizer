@@ -56,12 +56,14 @@ var enemies = new[]
 var damage = SurvivalForecast.BlendDamage(new DamageEstimate(10, 2, 2), [],
     forecast.GetProperty("stagePriorWeightInPlayerRounds").GetDouble());
 var baseline = SurvivalForecast.Predict(enemies, "front", damage, scenarios, horizon);
-double expectedHits = hitWeights.Sum(pair => pair.Key * pair.Value) / hitWeights.Values.Sum();
+double expectedHits = profile.ExpectedHitsPerAttack;
+double attackShare = profile.ExpectedAttackTurnShare;
 double expectedAction = profile.ActionValue *
-    (profile.AttackFrequency + (1 - profile.AttackFrequency) * profile.NonAttackMultiplier);
-double expectedHitDamage = Math.Max(1, Math.Round(profile.ActionValue / expectedHits));
-var moves = new[] { new ExpectedMove(expectedAction, profile.AttackFrequency, expectedHitDamage, expectedHits) };
-Console.WriteLine($"{monsterId} expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
+    (attackShare + (1 - attackShare) * profile.NonAttackMultiplier);
+double expectedHitDamage = Math.Max(1, Math.Round(profile.ActionValue / Math.Max(1, expectedHits)));
+var moves = new[] { new ExpectedMove(expectedAction, attackShare, expectedHitDamage, expectedHits) };
+Console.WriteLine($"seed {seed}, {monsterId}, {ascension}; target {profile.AttackFrequency:F2} attack hits/turn");
+Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
 var options = new List<OpeningOption>();
 foreach (var option in draft.GetProperty("initialRandomStateOptions").EnumerateArray())
 {
@@ -89,6 +91,7 @@ Console.WriteLine($"opening: {selected?.State.Id ?? "NONE"} (value {selected?.Va
 
 var planner = new ActionPlanner(settings);
 var balances = planner.Start(profile, selected?.Value ?? 0);
+Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {profile.ActionValue * 0.5:F2} before state)");
 var effectValues = values.RootElement.GetProperty("effects");
 var caps = values.RootElement.GetProperty("generatedActionLimits");
 var catalog = new ActionCatalog(new ActionValuationSettings(
@@ -99,8 +102,7 @@ var catalog = new ActionCatalog(new ActionValuationSettings(
     caps.GetProperty("cardSlotValue").GetDouble(), discount,
     caps.GetProperty("maxAddedStrength").GetInt32(),
     caps.GetProperty("maxInsertedCards").GetInt32(),
-    caps.GetProperty("playerDebuffCooldownTurns").GetInt32(),
-    caps.GetProperty("minimumAttackValueShare").GetDouble()));
+    caps.GetProperty("playerDebuffCooldownTurns").GetInt32()));
 var history = new ActionHistory();
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 for (int turn = 1; turn <= 10; turn++)
@@ -119,7 +121,7 @@ for (int turn = 1; turn <= 10; turn++)
     var action = planner.Plan(balances, profile, candidates, actionRandom,
         canRandomize: stateId != "STUN" || turn > 1);
     balances = action.CanRandomize && action.Action is null
-        ? planner.Settle(action.Granted, profile.ActionValue, true)
+        ? planner.Settle(action.Granted, profile.ActionValue, 1)
         : action.After;
     if (action.Action is not null)
         history = history.Record(action.Action, turn);
@@ -127,7 +129,7 @@ for (int turn = 1; turn <= 10; turn++)
     Console.WriteLine(
         $"{turn,2} {moveName,-16} damage {action.Action?.Damage ?? 0,2}  " +
         $"actual score {action.Action?.ActualValue ?? action.Action?.Value ?? 0:F1}  " +
-        $"pool {action.Granted.ActionValue:F2} -> {balances.ActionValue:F2} " +
-        $"(opening {action.OpeningAdjustmentApplied:+0.00;-0.00;0.00}), " +
-        $"desire {action.Granted.AttackDesire:F2} -> {balances.AttackDesire:F2}");
+        $"pool {action.Granted.ActionValue:F2} -> {balances.ActionValue:F2}, " +
+        $"desire {action.Granted.AttackDesire:F2} -> {balances.AttackDesire:F2}, " +
+        $"hits {action.Action?.AttackHits ?? (action.CanRandomize ? 1 : 0)}");
 }

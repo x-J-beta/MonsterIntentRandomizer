@@ -34,8 +34,7 @@ public sealed record ActionContext(
 public sealed record ActionValuationSettings(
     double Block, double Weak, double WeakDamageReduction, double VulnerableDamageIncrease,
     double CardSlot, double Discount,
-    int MaxAddedStrength, int MaxInsertedCards, int PlayerDebuffCooldownTurns,
-    double MinimumAttackValueShare = 0.35);
+    int MaxAddedStrength, int MaxInsertedCards, int PlayerDebuffCooldownTurns);
 
 public sealed record ActionHistory(
     int AddedStrength = 0, int InsertedCards = 0, int LastPlayerDebuffTurn = int.MinValue,
@@ -66,7 +65,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var actions = profile.EnabledEffects ?? [];
         var survival = context.RemainingForecast ??
             SurvivalForecast.FromExpectedSurvival(profile.BaseExpectedSurvivalTurns, 8);
-        double expectedHits = hits.Length == 0 ? 0 : hits.Sum(pair => pair.Key * pair.Value) / hits.Sum(pair => pair.Value);
         // The current action occupies this turn. Strength first changes a later attack.
         double futureWindowWeight = survival.Select((window, index) =>
             index == 0 ? 0 : window.AliveAtAction * Math.Pow(settings.Discount, index)).Sum();
@@ -86,7 +84,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                             settings.Block);
                     break;
                 case EffectKind.Strength when history.AddedStrength < settings.MaxAddedStrength:
-                    Add(kind, 1, IntentStyle.Buff, expectedHits * profile.AttackFrequency * futureWindowWeight);
+                    Add(kind, 1, IntentStyle.Buff, profile.ExpectedAttackHitsPerTurn * futureWindowWeight);
                     break;
                 case EffectKind.Weak when canDebuff && !context.PlayerAlreadyWeak:
                     Add(kind, 1, IntentStyle.PlayerDebuff,
@@ -118,11 +116,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
 
         foreach (var hit in hits)
         {
-            // Keep light attacks, while avoiding token hits that would distort the attack rate.
-            int minPerHit = Math.Max(1, (int)Math.Ceiling(profile.ActionValue * settings.MinimumAttackValueShare / hit.Key));
             int maxPerHit = (int)Math.Ceiling(profile.ActionValue * (1 + profile.Volatility) / hit.Key);
-            double weight = hit.Value / Math.Max(1, maxPerHit - minPerHit + 1);
-            for (int amount = minPerHit; amount <= maxPerHit; amount++)
+            double weight = hit.Value / Math.Max(1, maxPerHit);
+            for (int amount = 1; amount <= maxPerHit; amount++)
             {
                 var attack = ActionCandidate.Attack($"{hit.Key}x{amount}", hit.Key, amount,
                     context.Strength, context.Weakened, weight);
@@ -132,10 +128,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 yield return attack;
                 foreach (var extra in extras)
                 {
-                    if (extra.Value > profile.ActionValue * 0.5 ||
-                        attack.Value + extra.Value > profile.ActionValue * (1 + profile.Volatility))
-                        continue;
-
                     yield return new ActionCandidate(
                         $"{attack.Id} + {extra.Effect.Kind} {extra.Effect.Amount}", extra.Style, true,
                         attack.Value + extra.Value, attack.Damage, attack.Weight / extraCounts[extra.Style],

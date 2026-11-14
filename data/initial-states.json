@@ -58,7 +58,7 @@
     },
     "maxAbsolutePressureDelta": 2,
     "maxAbsoluteShareOfStandardActionValue": 0.25,
-    "poolCompensationSettings": "action-values.json#pools",
+    "poolCompensation": "开场时一次性从行动力池减去有符号的全部状态估值。正面扣除，负面返还，余额可为负。",
     "notes": [
       "同一场景下比较有无该状态的即时及未来边际压力，配对使用相同的预定招式、目标情景、估计方法和反制条件。状态改变存活率及可行动回合时计入压力。",
       "要求绝对差值同时低于两项上限或等于边界。零收益、方向不符或无法可靠估值的候选出池。正负方向指相对怪物的战斗强度。",
