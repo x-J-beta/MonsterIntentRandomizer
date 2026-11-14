@@ -47,7 +47,8 @@ if (!enabled)
 var valuation = root.GetProperty("opening");
 var actions = root.GetProperty("actions");
 double weakReduction = actions.GetProperty("weakDamageReduction").GetDouble();
-double blockCoefficient = actions.GetProperty("block").GetDouble();
+var actionValuation = new ActionValuation(
+    actions.GetProperty("valuation").Deserialize<Dictionary<EffectKind, Dictionary<string, double>>>(inputs)!);
 var forecast = root.GetProperty("forecast");
 var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenario => new TargetingScenario(
     scenario.GetProperty("weight").GetDouble(), scenario.GetProperty("singleTargetFocusShare").GetDouble(),
@@ -124,9 +125,8 @@ var planner = new ActionPlanner(settings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
 var catalog = new ActionCatalog(new ActionValuationSettings(
-    blockCoefficient,
+    actionValuation,
     weakReduction,
-    actions.GetProperty("cardSlotValue").GetDouble(),
     actions.GetProperty("maxAddedStrength").GetInt32(),
     actions.GetProperty("maxInsertedCards").GetInt32(),
     actions.GetProperty("playerDebuffCooldownTurns").GetInt32(),
@@ -135,13 +135,9 @@ var catalog = new ActionCatalog(new ActionValuationSettings(
     actions.GetProperty("amounts").EnumerateObject().ToDictionary(
         field => Enum.Parse<EffectKind>(field.Name, ignoreCase: true),
         field => field.Value.Deserialize<int[]>()!),
-    actions.GetProperty("attack").GetDouble(),
-    actions.GetProperty("maxAddedRitual").GetInt32(), actions.GetProperty("burnPenalty").GetDouble(),
+    actions.GetProperty("maxAddedRitual").GetInt32(),
     actions.GetProperty("cardPlacementValues").Deserialize<StatusPlacementValues>(inputs),
-    actions.GetProperty("maxHardCardLimits").GetInt32(), actions.GetProperty("handBurnDamageChance").GetDouble(),
-    actions.GetProperty("heal").GetDouble(),
-    actions.GetProperty("effectTurns").Deserialize<Dictionary<EffectKind,double>>(inputs)!,
-    actions.GetProperty("beckonPenalty").GetDouble()));
+    actions.GetProperty("maxHardCardLimits").GetInt32(), actions.GetProperty("handBurnDamageChance").GetDouble()));
 var history = new ActionHistory();
 bool previousAttack = false;
 int intangibleTurns = ownOpening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);

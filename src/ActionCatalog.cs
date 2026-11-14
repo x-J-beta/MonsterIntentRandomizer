@@ -1,6 +1,10 @@
 namespace MonsterIntentRandomizer;
 
-public enum EffectKind { Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled, Ringing, Dazed, Wound, Burn, Beckon }
+public enum EffectKind
+{
+    Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled,
+    Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon
+}
 
 public enum EffectTarget { Self, Player }
 public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
@@ -10,7 +14,8 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Strength or EffectKind.Ritual or EffectKind.Intangible
         ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
-    public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or EffectKind.Ringing;
+    public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
+        EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown;
 }
 
 public sealed record StatusPlacement(EffectKind Card, StatusPile Pile, double Weight = 1)
@@ -42,14 +47,12 @@ public sealed record ActionContext(
     bool AllowHardCardLimit = true, double MissingHp = 0, bool AlreadyIntangible = false, double BeckonDraws = 0.6);
 
 public sealed record ActionValuationSettings(
-    double Block, double WeakDamageReduction, double CardSlot,
+    ActionValuation Valuation, double WeakDamageReduction,
     int MaxAddedStrength, int MaxInsertedCards, int PlayerDebuffCooldownTurns,
     int PureBlockCooldownTurns, int MinimumBaseDamagePerHit,
-    IReadOnlyDictionary<EffectKind, int[]> Amounts, double AttackCoefficient = 1,
-    int MaxAddedRitual = 1,
-    double BurnPenalty = 2, StatusPlacementValues? PlacementValues = null,
-    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1, double Heal = 0.45,
-    IReadOnlyDictionary<EffectKind, double>? EffectTurns = null, double BeckonPenalty = 3);
+    IReadOnlyDictionary<EffectKind, int[]> Amounts, int MaxAddedRitual = 1,
+    StatusPlacementValues? PlacementValues = null,
+    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1);
 
 public sealed record ActionHistory(
     int AddedStrength = 0, int InsertedCards = 0, int LastPlayerDebuffTurn = int.MinValue,
@@ -95,33 +98,35 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 {
                     case EffectKind.Block:
                         Add(kind, amount, IntentStyle.Defend,
-                            Math.Min(amount, Math.Max(0, context.ExpectedDamageAgainstMonster - context.ExistingBlock)) *
-                            settings.Block);
+                            effectiveAmount: Math.Min(amount, Math.Max(0, context.ExpectedDamageAgainstMonster - context.ExistingBlock)));
                         break;
                     case EffectKind.Heal:
-                        Add(kind, amount, IntentStyle.Defend, Math.Min(amount, Math.Max(0, context.MissingHp)) * settings.Heal);
+                        Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
                         break;
                     case EffectKind.Intangible when !context.AlreadyIntangible:
-                        Add(kind, amount, IntentStyle.Defend, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.Defend);
                         break;
                     case EffectKind.Strength when amount <= settings.MaxAddedStrength - history.AddedStrength:
-                        Add(kind, amount, IntentStyle.Buff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.Buff);
                         break;
                     case EffectKind.Ritual when amount <= settings.MaxAddedRitual - history.AddedRitual:
-                        Add(kind, amount, IntentStyle.Buff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.Buff);
                         break;
                     case EffectKind.Weak when canDebuff && !context.PlayerAlreadyWeak:
-                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Vulnerable when canDebuff && !context.PlayerAlreadyVulnerable:
-                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Tangled when canDebuff && !context.PlayerAlreadyRestricted:
-                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Ringing when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
                         context.AllowHardCardLimit && history.HardCardLimits < settings.MaxHardCardLimits:
-                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
+                        break;
+                    case EffectKind.StrengthDown or EffectKind.DexterityDown when canDebuff:
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon
                         when amount <= settings.MaxInsertedCards - history.InsertedCards:
@@ -130,6 +135,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                             placements = [new StatusPlacement(kind, kind == EffectKind.Wound ? StatusPile.Discard : StatusPile.Draw)];
                         foreach (var placement in placements)
                         {
+                            if (kind == EffectKind.Dazed && placement.Pile is StatusPile.Hand or StatusPile.Bottom)
+                                continue;
+
                             double draws = kind switch
                             {
                                 EffectKind.Dazed => context.DazedDraws, EffectKind.Wound => context.WoundDraws,
@@ -138,15 +146,10 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                             draws *= (settings.PlacementValues ?? new StatusPlacementValues()).For(placement.Pile);
                             if (kind == EffectKind.Dazed)
                                 draws = Math.Clamp(draws, 0, 1);
-                            double burnTriggers = placement.Pile == StatusPile.Hand ? settings.HandBurnDamageChance : draws;
-                            double penalty = kind switch
-                            {
-                                EffectKind.Burn => burnTriggers * settings.BurnPenalty,
-                                EffectKind.Beckon => draws * settings.BeckonPenalty,
-                                _ => 0
-                            };
-                            Add(kind, amount, IntentStyle.PlayerDebuff, amount * (draws * settings.CardSlot + penalty),
-                                placement.Pile, placement.Weight);
+                            double triggers = kind == EffectKind.Burn && placement.Pile == StatusPile.Hand
+                                ? settings.HandBurnDamageChance : draws;
+                            Add(kind, amount, IntentStyle.PlayerDebuff, placement.Pile, placement.Weight,
+                                draws: draws, triggers: triggers);
                         }
                         break;
                 }
@@ -178,7 +181,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 if (attack.Damage <= 0)
                     continue;
 
-                attack = attack with { Value = attack.Value * settings.AttackCoefficient };
+                attack = attack with { Value = settings.Valuation.Evaluate(EffectKind.Attack, profile, amount, hits: hit.Key) };
                 yield return attack;
                 foreach (var extra in extras)
                 {
@@ -193,18 +196,17 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             }
         }
 
-        void Add(EffectKind kind, int amount, IntentStyle style, double value, StatusPile? pile = null, double weight = 1)
+        void Add(EffectKind kind, int amount, IntentStyle style, StatusPile? pile = null, double weight = 1,
+            double effectiveAmount = 0, double draws = 0, double triggers = 0)
         {
+            double value = settings.Valuation.Evaluate(kind, profile, amount,
+                effectiveAmount: effectiveAmount, draws: draws, triggers: triggers);
             if (value > 0 && weight > 0 && profile.IntentWeights.GetValueOrDefault(style) > 0)
             {
                 int doses = settings.Amounts[kind].Where(dose => dose > 0).Distinct().Count();
                 extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, actions[kind] * weight / doses));
             }
         }
-
-        double StatusCost(EffectKind kind, int amount) =>
-            OpeningValuation.Evaluate(new StatusValue(amount, settings.EffectTurns?.GetValueOrDefault(kind) ?? 0),
-                profile.ActionValue);
     }
 
     private static string EffectName(ActionEffect effect) =>

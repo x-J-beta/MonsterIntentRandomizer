@@ -120,14 +120,28 @@ internal static class PrototypeChecks
         {
             [EffectKind.Block] = [3, 5, 8], [EffectKind.Strength] = [1], [EffectKind.Weak] = [1],
             [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1],
-            [EffectKind.Heal] = [3], [EffectKind.Intangible] = [1], [EffectKind.Beckon] = [1]
+            [EffectKind.Heal] = [3], [EffectKind.Intangible] = [1], [EffectKind.Beckon] = [1],
+            [EffectKind.Tangled] = [1], [EffectKind.StrengthDown] = [1, 2], [EffectKind.DexterityDown] = [1, 2]
         };
-        var catalogSettings = new ActionValuationSettings(0.4, 0.25, 2.5, 2, 2, 1, 1, 1, amounts,
-            EffectTurns: new Dictionary<EffectKind, double>
-            {
-                [EffectKind.Strength] = 0.2, [EffectKind.Weak] = 0.15, [EffectKind.Vulnerable] = 0.3,
-                [EffectKind.Ritual] = 0.4, [EffectKind.Ringing] = 0.35, [EffectKind.Intangible] = 0.9
-            });
+        var valuation = new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>>
+        {
+            [EffectKind.Attack] = new() { ["amount*hits"] = 1 },
+            [EffectKind.Block] = new() { ["effectiveAmount"] = 0.4 },
+            [EffectKind.Heal] = new() { ["effectiveAmount"] = 0.45 },
+            [EffectKind.Strength] = new() { ["amount*attackFrequency"] = 1.2 },
+            [EffectKind.Ritual] = new() { ["amount*attackFrequency*survivalTurns"] = 0.8 },
+            [EffectKind.Weak] = new() { ["amount*actionValue"] = 0.15 },
+            [EffectKind.Vulnerable] = new() { ["amount*actionValue"] = 0.3 },
+            [EffectKind.Intangible] = new() { ["amount*actionValue"] = 0.9 },
+            [EffectKind.Ringing] = new() { ["amount*actionValue"] = 0.35 },
+            [EffectKind.Tangled] = new() { ["fixed"] = 3 },
+            [EffectKind.StrengthDown] = new() { ["fixed"] = 2, ["amount"] = 0.5 },
+            [EffectKind.DexterityDown] = new() { ["fixed"] = 1.5, ["amount"] = 0.4 },
+            [EffectKind.Dazed] = new() { ["amount*draws"] = 1.5 },
+            [EffectKind.Wound] = new() { ["amount*draws"] = 2.5 },
+            [EffectKind.Beckon] = new() { ["amount*draws"] = 2.5, ["amount*triggers"] = 3 }
+        });
+        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 2, 2, 1, 1, 1, amounts);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
@@ -139,12 +153,15 @@ internal static class PrototypeChecks
         var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind);
-        Equal(0.2 * profile.ActionValue, Pure(EffectKind.Strength).Value, "strength equivalent turns");
+        Equal(1.2 * profile.AttackFrequency, Pure(EffectKind.Strength).Value, "strength uses attack frequency");
         Equal(0.9 * profile.ActionValue, Pure(EffectKind.Intangible).Value, "intangible equivalent turns");
         Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
         Equal(0.6 * (2.5 + 3), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
-        Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
+        Equal(0.9, Pure(EffectKind.Dazed).Value, "reduced dazed draw valuation");
         Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
+        Equal(3, Pure(EffectKind.Tangled).Value, "tangled has a fixed cost");
+        Equal(3, generated.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
+        Equal(2.3, generated.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
@@ -180,6 +197,17 @@ internal static class PrototypeChecks
             Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard ||
             !generated.Any(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]))
             throw new InvalidOperationException("Generated effects or ordering are incomplete.");
+        var cardPositions = varied with
+        {
+            CardPlacements = Enum.GetValues<StatusPile>().Select(pile => new StatusPlacement(EffectKind.Dazed, pile))
+                .Append(new StatusPlacement(EffectKind.Wound, StatusPile.Bottom)).ToArray()
+        };
+        var placed = catalog.Generate(cardPositions, context, new ActionHistory(), 1).ToArray();
+        var dazedPiles = placed.SelectMany(action => action.Effects!).Where(effect => effect.Kind == EffectKind.Dazed)
+            .Select(effect => effect.Pile).ToHashSet();
+        if (!dazedPiles.SetEquals([StatusPile.Top, StatusPile.Draw, StatusPile.Discard]) ||
+            !placed.Any(action => action.Id == "Wound 1 @Bottom"))
+            throw new InvalidOperationException("Dazed placement restrictions should only affect Dazed.");
         if (!generated.Any(action => action.IsAttack && action.Effects is [{ Amount: 1, Hits: 1 }]))
             throw new InvalidOperationException("The catalog omitted the lowest positive base damage.");
         var exhausted = new ActionHistory(2, 2, 1, 1);
@@ -192,7 +220,7 @@ internal static class PrototypeChecks
         }
 
         var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory(), 1);
-        if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.Kind is EffectKind.Weak or EffectKind.Vulnerable)))
+        if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.IsPlayerDebuff)))
             throw new InvalidOperationException("The catalog offered a debuff blocked by known Artifact.");
 
         var specialized = varied with
@@ -207,6 +235,8 @@ internal static class PrototypeChecks
         });
         var specializedActions = expanded.Generate(specialized, context, new ActionHistory(), 2).ToArray();
         var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
+        Equal(0.8 * specialized.AttackFrequency * specialized.BaseExpectedSurvivalTurns, ritual.Value,
+            "ritual uses attack frequency and expected survival");
         var history = new ActionHistory().Record(ritual, 2);
         Equal(0, history.RitualStrength, "newly cast ritual does not trigger immediately");
         var ringing = specializedActions.Single(action => action.Effects is [{ Kind: EffectKind.Ringing }]);

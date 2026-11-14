@@ -21,15 +21,15 @@ opening pool: 1.92 (starts at 4.00 before state)
 
 Action-pool trace (conditioning on continued survival):
  1 3x3              panel   9  actual score  9.0  action cost 9.00  pool 7.48 -> -1.52, desire 1.54 -> -1.46, hits 3
- 2 Strength 1       panel   0  actual score  1.6  action cost 1.60  pool 4.37 -> 2.77, desire 0.23 -> 0.23, hits 0
- 3 Strength 1       panel   0  actual score  1.6  action cost 1.60  pool 9.22 -> 7.62, desire 1.74 -> 1.74, hits 0
- 4 3x3 + Block 3    panel  15  actual score 16.2  action cost 10.20  pool 11.50 -> 1.30, desire 3.11 -> 0.11, hits 3
- 5 3x4              panel  18  actual score 18.0  action cost 12.00  pool 7.37 -> -4.63, desire 1.64 -> -1.36, hits 3
- 6 Block 3          panel   0  actual score  1.2  action cost 1.20  pool 3.54 -> 2.34, desire 0.31 -> 0.31, hits 0
- 7 3x3              panel  15  actual score 15.0  action cost 9.00  pool 7.90 -> -1.10, desire 1.82 -> -1.18, hits 3
- 8 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 5.58 -> 2.38, desire 0.48 -> 0.48, hits 0
- 9 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.48 -> -0.52, desire 1.97 -> -1.03, hits 3
-10 Block 5          panel   0  actual score  2.0  action cost 2.00  pool 5.76 -> 3.76, desire 0.62 -> 0.62, hits 0
+ 2 Strength 1       panel   0  actual score  1.8  action cost 1.85  pool 4.37 -> 2.52, desire 0.23 -> 0.23, hits 0
+ 3 Strength 1       panel   0  actual score  1.8  action cost 1.85  pool 9.03 -> 7.18, desire 1.74 -> 1.74, hits 0
+ 4 3x3              panel  15  actual score 15.0  action cost 9.00  pool 11.17 -> 2.17, desire 3.11 -> 0.11, hits 3
+ 5 3x4              panel  18  actual score 18.0  action cost 12.00  pool 8.03 -> -3.97, desire 1.64 -> -1.36, hits 3
+ 6 Block 3          panel   0  actual score  1.2  action cost 1.20  pool 4.03 -> 2.83, desire 0.31 -> 0.31, hits 0
+ 7 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.27 -> -0.73, desire 1.82 -> -1.18, hits 3
+ 8 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 5.86 -> 2.66, desire 0.48 -> 0.48, hits 0
+ 9 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.68 -> -0.32, desire 1.97 -> -1.03, hits 3
+10 Block 5          panel   0  actual score  2.0  action cost 2.00  pool 5.92 -> 3.92, desire 0.62 -> 0.62, hits 0
 
 > dotnet run --no-build -- 42 TOADPOLE standard data act3
 seed 42, TOADPOLE, standard, act3; target 1.54 attack hits/turn
@@ -46,15 +46,15 @@ opening pool: 1.92 (starts at 4.00 before state)
 
 Action-pool trace (conditioning on continued survival):
  1 3x3              panel   9  actual score  9.0  action cost 9.00  pool 7.48 -> -1.52, desire 1.54 -> -1.46, hits 3
- 2 Strength 1       panel   0  actual score  1.6  action cost 1.60  pool 4.37 -> 2.77, desire 0.23 -> 0.23, hits 0
- 3 Strength 1       panel   0  actual score  1.6  action cost 1.60  pool 9.22 -> 7.62, desire 1.74 -> 1.74, hits 0
- 4 3x3 + Block 3    panel  15  actual score 16.2  action cost 10.20  pool 11.50 -> 1.30, desire 3.11 -> 0.11, hits 3
- 5 3x4              panel  18  actual score 18.0  action cost 12.00  pool 7.37 -> -4.63, desire 1.64 -> -1.36, hits 3
- 6 Block 3          panel   0  actual score  1.2  action cost 1.20  pool 3.54 -> 2.34, desire 0.31 -> 0.31, hits 0
- 7 3x3              panel  15  actual score 15.0  action cost 9.00  pool 7.90 -> -1.10, desire 1.82 -> -1.18, hits 3
- 8 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 5.58 -> 2.38, desire 0.48 -> 0.48, hits 0
- 9 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.48 -> -0.52, desire 1.97 -> -1.03, hits 3
-10 Block 5          panel   0  actual score  2.0  action cost 2.00  pool 5.76 -> 3.76, desire 0.62 -> 0.62, hits 0
+ 2 Strength 1       panel   0  actual score  1.8  action cost 1.85  pool 4.37 -> 2.52, desire 0.23 -> 0.23, hits 0
+ 3 Strength 1       panel   0  actual score  1.8  action cost 1.85  pool 9.03 -> 7.18, desire 1.74 -> 1.74, hits 0
+ 4 3x3              panel  15  actual score 15.0  action cost 9.00  pool 11.17 -> 2.17, desire 3.11 -> 0.11, hits 3
+ 5 3x4              panel  18  actual score 18.0  action cost 12.00  pool 8.03 -> -3.97, desire 1.64 -> -1.36, hits 3
+ 6 Block 3          panel   0  actual score  1.2  action cost 1.20  pool 4.03 -> 2.83, desire 0.31 -> 0.31, hits 0
+ 7 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.27 -> -0.73, desire 1.82 -> -1.18, hits 3
+ 8 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 5.86 -> 2.66, desire 0.48 -> 0.48, hits 0
+ 9 3x3              panel  15  actual score 15.0  action cost 9.00  pool 8.68 -> -0.32, desire 1.97 -> -1.03, hits 3
+10 Block 5          panel   0  actual score  2.0  action cost 2.00  pool 5.92 -> 3.92, desire 0.62 -> 0.62, hits 0
 
 > dotnet run --no-build -- 42 FLYCONID deadlyEnemies
 seed 42, FLYCONID, deadlyEnemies, act1; target 0.75 attack hits/turn
@@ -73,16 +73,16 @@ opening: FLYCONID:STRENGTH (+2.40), FLYCONID:RITUAL (+4.80), rear:WEAK (-1.05) |
 opening pool: -1.20 (starts at 6.00 before state)
 
 Action-pool trace (conditioning on continued survival):
- 1 1x12 + Wound 1 @Bottom panel  13  actual score 13.9  action cost 12.90  pool 9.12 -> -3.78, desire 0.75 -> -0.25, hits 1
- 2 1x11             panel  13  actual score 13.0  action cost 11.00  pool 6.46 -> -4.54, desire 0.53 -> -0.47, hits 1
- 3 Dazed 1 @Draw    panel   0  actual score  1.5  action cost 1.50  pool 8.12 -> 6.62, desire 0.32 -> 0.32, hits 0
- 4 1x13 + Weak 1    panel  17  actual score 18.8  action cost 14.80  pool 14.63 -> -0.17, desire 1.04 -> 0.04, hits 1
- 5 1x14             panel  19  actual score 19.0  action cost 14.00  pool 10.39 -> -3.61, desire 0.79 -> -0.21, hits 1
- 6 1x1 + Vulnerable 1 panel   7  actual score 10.6  action cost 4.60  pool 8.63 -> 4.03, desire 0.56 -> -0.44, hits 1
- 7 1x13             panel  20  actual score 20.0  action cost 13.00  pool 13.20 -> 0.20, desire 0.35 -> -0.65, hits 1
- 8 Vulnerable 1     panel   0  actual score  3.6  action cost 3.60  pool 10.26 -> 6.66, desire 0.17 -> 0.17, hits 0
- 9 1x13             panel  22  actual score 22.0  action cost 13.00  pool 15.90 -> 2.90, desire 0.90 -> -0.10, hits 1
-10 1x11 + Weak 1    panel  21  actual score 22.8  action cost 12.80  pool 12.13 -> -0.67, desire 0.66 -> -0.34, hits 1
+ 1 1x13             panel  14  actual score 14.0  action cost 13.00  pool 9.12 -> -3.88, desire 0.75 -> -0.25, hits 1
+ 2 1x11             panel  13  actual score 13.0  action cost 11.00  pool 6.38 -> -4.62, desire 0.53 -> -0.47, hits 1
+ 3 Vulnerable 1     panel   0  actual score  3.6  action cost 3.60  pool 8.06 -> 4.46, desire 0.32 -> 0.32, hits 0
+ 4 1x13 + Dazed 1 @Draw panel  17  actual score 17.9  action cost 13.90  pool 13.01 -> -0.89, desire 1.04 -> 0.04, hits 1
+ 5 1x13 + Wound 1 @Discard panel  18  actual score 19.2  action cost 14.20  pool 9.85 -> -4.35, desire 0.79 -> -0.21, hits 1
+ 6 1x1 + Vulnerable 1 panel   7  actual score 10.6  action cost 4.60  pool 8.08 -> 3.48, desire 0.56 -> -0.44, hits 1
+ 7 1x13             panel  20  actual score 20.0  action cost 13.00  pool 12.78 -> -0.22, desire 0.35 -> -0.65, hits 1
+ 8 Vulnerable 1     panel   0  actual score  3.6  action cost 3.60  pool 9.95 -> 6.35, desire 0.17 -> 0.17, hits 0
+ 9 1x13             panel  22  actual score 22.0  action cost 13.00  pool 15.67 -> 2.67, desire 0.90 -> -0.10, hits 1
+10 1x11 + Weak 1    panel  21  actual score 22.8  action cost 12.80  pool 11.95 -> -0.85, desire 0.66 -> -0.34, hits 1
 
 > dotnet run --no-build -- 42 DAMP_CULTIST
 seed 42, DAMP_CULTIST, standard, act1; target 0.50 attack hits/turn
@@ -99,15 +99,15 @@ opening pool: -0.10 (starts at 0.50 before state)
 
 Action-pool trace (conditioning on continued survival):
  1 1x2              panel   3  actual score  3.0  action cost 2.00  pool 0.63 -> -1.37, desire 0.50 -> -0.50, hits 1
- 2 Strength 1       panel   0  actual score  0.2  action cost 0.20  pool -0.38 -> -0.58, desire 0.05 -> 0.05, hits 0
- 3 Ritual 1         panel   0  actual score  0.4  action cost 0.40  pool 0.37 -> -0.03, desire 0.55 -> 0.55, hits 0
- 4 1x1 + Strength 1 panel   6  actual score  6.2  action cost 1.20  pool 0.66 -> -0.54, desire 0.99 -> -0.01, hits 1
- 5 1x2              panel  10  actual score 10.0  action cost 2.00  pool 0.33 -> -1.67, desire 0.49 -> -0.51, hits 1
- 6 1x1              panel  11  actual score 11.0  action cost 1.00  pool -0.46 -> -1.46, desire 0.04 -> -0.96, hits 1
- 7 1x1              panel  13  actual score 13.0  action cost 1.00  pool -0.35 -> -1.35, desire -0.36 -> -1.36, hits 1
- 8 1x1              panel  15  actual score 15.0  action cost 1.00  pool -0.31 -> -1.31, desire -0.73 -> -1.73, hits 1
- 9 1x1              panel  17  actual score 17.0  action cost 1.00  pool -0.21 -> -1.21, desire -1.05 -> -2.05, hits 1
-10 1x1              panel  19  actual score 19.0  action cost 1.00  pool -0.12 -> -1.12, desire -1.35 -> -2.35, hits 1
+ 2 Strength 1       panel   0  actual score  0.6  action cost 0.60  pool -0.38 -> -0.98, desire 0.05 -> 0.05, hits 0
+ 3 Ritual 1         panel   0  actual score  1.4  action cost 1.40  pool 0.07 -> -1.33, desire 0.55 -> 0.55, hits 0
+ 4 1x2              panel   7  actual score  7.0  action cost 2.00  pool -0.32 -> -2.32, desire 0.99 -> -0.01, hits 1
+ 5 1x2 + Strength 1 panel   9  actual score  9.6  action cost 2.60  pool -1.00 -> -3.60, desire 0.49 -> -0.51, hits 1
+ 6 1x1              panel  11  actual score 11.0  action cost 1.00  pool -1.91 -> -2.91, desire 0.04 -> -0.96, hits 1
+ 7 1x1              panel  13  actual score 13.0  action cost 1.00  pool -1.44 -> -2.44, desire -0.36 -> -1.36, hits 1
+ 8 1x1              panel  15  actual score 15.0  action cost 1.00  pool -1.12 -> -2.12, desire -0.73 -> -1.73, hits 1
+ 9 1x1              panel  17  actual score 17.0  action cost 1.00  pool -0.83 -> -1.83, desire -1.05 -> -2.05, hits 1
+10 1x1              panel  19  actual score 19.0  action cost 1.00  pool -0.58 -> -1.58, desire -1.35 -> -2.35, hits 1
 
 > dotnet run --no-build -- 42 CEREMONIAL_BEAST
 seed 42, CEREMONIAL_BEAST, standard, act1; target 0.60 attack hits/turn
@@ -121,16 +121,16 @@ opening: rear:PLATING (+0.42) | encounter net +0.42, net limit 13.91
 opening pool: 10.41 (starts at 10.41 before state)
 
 Action-pool trace (conditioning on continued survival):
- 1 1x23             panel  23  actual score 23.0  action cost 23.00  pool 23.55 -> 0.55, desire 0.60 -> -0.40, hits 1
- 2 1x19 + Strength 1 panel  19  actual score 23.2  action cost 23.17  pool 14.99 -> -8.18, desire 0.24 -> -0.76, hits 1
- 3 Strength 1       panel   0  actual score  4.2  action cost 4.17  pool 11.96 -> 7.80, desire -0.08 -> -0.08, hits 0
- 4 1x22             panel  24  actual score 24.0  action cost 22.00  pool 21.02 -> -0.98, desire 0.52 -> -0.48, hits 1
- 5 Ringing 1        panel   0  actual score  7.3  action cost 7.29  pool 15.77 -> 8.48, desire 0.17 -> 0.17, hits 0
- 6 1x4              panel   6  actual score  6.0  action cost 4.00  pool 24.17 -> 20.17, desire 0.75 -> -0.25, hits 1
- 7 Weak 1           panel   0  actual score  3.1  action cost 3.12  pool 31.09 -> 27.97, desire 0.38 -> 0.38, hits 0
- 8 1x19             panel  21  actual score 21.0  action cost 19.00  pool 37.49 -> 18.49, desire 0.94 -> -0.06, hits 1
- 9 Weak 1           panel   0  actual score  3.1  action cost 3.12  pool 30.99 -> 27.87, desire 0.55 -> 0.55, hits 0
-10 1x16             panel  18  actual score 18.0  action cost 16.00  pool 36.87 -> 20.87, desire 1.09 -> 0.09, hits 1
+ 1 1x23 + Weak 1    panel  23  actual score 26.1  action cost 26.12  pool 23.55 -> -2.58, desire 0.60 -> -0.40, hits 1
+ 2 1x20 + Strength 1 panel  20  actual score 20.7  action cost 20.72  pool 12.65 -> -8.07, desire 0.24 -> -0.76, hits 1
+ 3 Ringing 1        panel   0  actual score  7.3  action cost 7.29  pool 12.04 -> 4.75, desire -0.08 -> -0.08, hits 0
+ 4 1x22             panel  23  actual score 23.0  action cost 22.00  pool 18.73 -> -3.27, desire 0.52 -> -0.48, hits 1
+ 5 Weak 1           panel   0  actual score  3.1  action cost 3.12  pool 14.06 -> 10.93, desire 0.17 -> 0.17, hits 0
+ 6 1x3 + Strength 1 panel   4  actual score  4.7  action cost 3.72  pool 26.01 -> 22.29, desire 0.75 -> -0.25, hits 1
+ 7 Weak 1           panel   0  actual score  3.1  action cost 3.12  pool 32.68 -> 29.56, desire 0.38 -> 0.38, hits 0
+ 8 1x19             panel  21  actual score 21.0  action cost 19.00  pool 38.68 -> 19.68, desire 0.94 -> -0.06, hits 1
+ 9 Weak 1           panel   0  actual score  3.1  action cost 3.12  pool 31.88 -> 28.76, desire 0.55 -> 0.55, hits 0
+10 1x16             panel  18  actual score 18.0  action cost 16.00  pool 37.54 -> 21.54, desire 1.09 -> 0.09, hits 1
 
 > dotnet run --no-build -- 42 BOWLBUG_NECTAR
 seed 42, BOWLBUG_NECTAR, standard, act2; target 1.00 attack hits/turn
@@ -219,14 +219,83 @@ opening pool: 10.30 (starts at 10.30 before state)
 Action-pool trace (conditioning on continued survival):
  1 3x8              panel  24  actual score 24.0  action cost 24.00  pool 24.93 -> 0.93, desire 1.25 -> -1.75, hits 3
  2 Heal 5           panel   0  actual score  2.2  action cost 2.25  pool 16.64 -> 14.39, desire -0.32 -> -0.32, hits 0
- 3 Strength 1       panel   0  actual score  4.1  action cost 4.12  pool 30.58 -> 26.46, desire 0.96 -> 0.96, hits 0
- 4 3x8              panel  27  actual score 27.0  action cost 24.00  pool 36.44 -> 12.44, desire 2.11 -> -0.89, hits 3
- 5 Heal 8           panel   0  actual score  2.7  action cost 2.70  pool 27.38 -> 24.68, desire 0.45 -> 0.45, hits 0
- 6 1x3 + Strength 1 panel   4  actual score  8.1  action cost 7.12  pool 37.98 -> 30.86, desire 1.66 -> 0.66, hits 1
- 7 3x6              panel  24  actual score 24.0  action cost 18.00  pool 40.61 -> 22.61, desire 1.84 -> -1.16, hits 3
- 8 Weak 1           panel   0  actual score  3.1  action cost 3.09  pool 35.01 -> 31.92, desire 0.21 -> 0.21, hits 0
- 9 3x6 + Heal 8     panel  24  actual score 26.7  action cost 20.70  pool 42.67 -> 21.97, desire 1.44 -> -1.56, hits 3
-10 Weak 1           panel   0  actual score  3.1  action cost 3.09  pool 33.94 -> 30.85, desire -0.16 -> -0.16, hits 0
+ 3 Weak 1           panel   0  actual score  3.1  action cost 3.09  pool 30.58 -> 27.49, desire 0.96 -> 0.96, hits 0
+ 4 3x8              panel  24  actual score 24.0  action cost 24.00  pool 37.21 -> 13.21, desire 2.11 -> -0.89, hits 3
+ 5 Heal 8           panel   0  actual score  2.7  action cost 2.70  pool 27.96 -> 25.26, desire 0.45 -> 0.45, hits 0
+ 6 1x3 + Weak 1     panel   3  actual score  6.1  action cost 6.09  pool 38.42 -> 32.33, desire 1.66 -> 0.66, hits 1
+ 7 3x5 + Strength 1 panel  15  actual score 16.5  action cost 16.50  pool 41.71 -> 25.21, desire 1.84 -> -1.16, hits 3
+ 8 Weak 1           panel   0  actual score  3.1  action cost 3.09  pool 36.96 -> 33.87, desire 0.21 -> 0.21, hits 0
+ 9 3x6 + Heal 3     panel  21  actual score 22.4  action cost 19.35  pool 44.13 -> 24.78, desire 1.44 -> -1.56, hits 3
+10 Weak 1           panel   0  actual score  3.1  action cost 3.09  pool 36.05 -> 32.96, desire -0.16 -> -0.16, hits 0
 
 > dotnet run --no-build -- 42 ARCHITECT
 ARCHITECT: original actions retained (enabled is false).
+
+> dotnet run --no-build -- 42 VINE_SHAMBLER
+seed 42, VINE_SHAMBLER, standard, act1; target 1.33 attack hits/turn
+player damage prior after blending: 10.0 single, 2.0 area per target
+expected actions: 5.80
+WEAK            -1.80
+VULNERABLE      -3.60
+DEMISE          -1.20
+DOOM            -1.44
+opening: rear:PLATING (+0.42) | encounter net +0.42, net limit 9.50
+opening pool: 6.00 (starts at 6.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 2x7              panel  14  actual score 14.0  action cost 14.00  pool 16.11 -> 2.11, desire 1.33 -> -0.67, hits 2
+ 2 2x6              panel  12  actual score 12.0  action cost 12.00  pool 12.33 -> 0.33, desire 0.73 -> -1.27, hits 2
+ 3 Tangled 1        panel   0  actual score  3.0  action cost 3.00  pool 13.59 -> 10.59, desire 0.18 -> 0.18, hits 0
+ 4 2x7              panel  14  actual score 14.0  action cost 14.00  pool 19.14 -> 5.14, desire 1.50 -> -0.50, hits 2
+ 5 2x7              panel  14  actual score 14.0  action cost 14.00  pool 16.03 -> 2.03, desire 0.88 -> -1.12, hits 2
+ 6 1x3              panel   3  actual score  3.0  action cost 3.00  pool 14.65 -> 11.65, desire 0.32 -> -0.68, hits 1
+ 7 2x5 + Tangled 1  panel  10  actual score 13.0  action cost 13.00  pool 20.52 -> 7.52, desire 0.72 -> -1.28, hits 2
+ 8 2x3              panel   6  actual score  6.0  action cost 6.00  pool 17.81 -> 11.81, desire 0.18 -> -1.82, hits 2
+ 9 Tangled 1        panel   0  actual score  3.0  action cost 3.00  pool 21.49 -> 18.49, desire -0.31 -> -0.31, hits 0
+10 2x3              panel   6  actual score  6.0  action cost 6.00  pool 25.39 -> 19.39, desire 1.05 -> -0.95, hits 2
+
+> dotnet run --no-build -- 42 THE_LOST
+seed 42, THE_LOST, standard, act3; target 1.00 attack hits/turn
+player damage prior after blending: 25.0 single, 7.0 area per target
+expected actions: 2.60
+WEAK            -1.20
+VULNERABLE      -2.40
+DEMISE          -0.80
+DOOM            -0.96
+opening: rear:PLATING (+0.42) | encounter net +0.42, net limit 7.50
+opening pool: 4.00 (starts at 4.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 2x5              panel  10  actual score 10.0  action cost 10.00  pool 8.62 -> -1.38, desire 1.00 -> -1.00, hits 2
+ 2 StrengthDown 2   panel   0  actual score  3.0  action cost 3.00  pool 4.17 -> 1.17, desire 0.10 -> 0.10, hits 0
+ 3 Strength 1       panel   0  actual score  1.2  action cost 1.20  pool 7.33 -> 6.13, desire 1.09 -> 1.09, hits 0
+ 4 2x5              panel  12  actual score 12.0  action cost 10.00  pool 10.02 -> 0.02, desire 1.98 -> -0.02, hits 2
+ 5 2x5              panel  12  actual score 12.0  action cost 10.00  pool 5.91 -> -4.09, desire 0.98 -> -1.02, hits 2
+ 6 Strength 1       panel   0  actual score  1.2  action cost 1.20  pool 3.29 -> 2.09, desire 0.08 -> 0.08, hits 0
+ 7 2x4              panel  12  actual score 12.0  action cost 8.00  pool 7.26 -> -0.74, desire 1.08 -> -0.92, hits 2
+ 8 StrengthDown 2   panel   0  actual score  3.0  action cost 3.00  pool 5.34 -> 2.34, desire 0.17 -> 0.17, hits 0
+ 9 2x4              panel  12  actual score 12.0  action cost 8.00  pool 7.87 -> -0.13, desire 1.15 -> -0.85, hits 2
+10 StrengthDown 2   panel   0  actual score  3.0  action cost 3.00  pool 5.48 -> 2.48, desire 0.24 -> 0.24, hits 0
+
+> dotnet run --no-build -- 42 THE_FORGOTTEN
+seed 42, THE_FORGOTTEN, standard, act3; target 0.50 attack hits/turn
+player damage prior after blending: 25.0 single, 7.0 area per target
+expected actions: 3.20
+WEAK            -1.20
+VULNERABLE      -2.40
+DEMISE          -0.80
+DOOM            -0.96
+opening: rear:PLATING (+0.42) | encounter net +0.42, net limit 7.50
+opening pool: 4.00 (starts at 4.00 before state)
+
+Action-pool trace (conditioning on continued survival):
+ 1 1x9 + DexterityDown 1 panel   9  actual score 10.9  action cost 10.90  pool 8.62 -> -2.28, desire 0.50 -> -0.50, hits 1
+ 2 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 3.49 -> 0.29, desire 0.05 -> 0.05, hits 0
+ 3 DexterityDown 2  panel   0  actual score  2.3  action cost 2.30  pool 6.68 -> 4.38, desire 0.55 -> 0.55, hits 0
+ 4 1x9              panel   9  actual score  9.0  action cost 9.00  pool 8.70 -> -0.30, desire 0.99 -> -0.01, hits 1
+ 5 1x9              panel   9  actual score  9.0  action cost 9.00  pool 5.67 -> -3.33, desire 0.49 -> -0.51, hits 1
+ 6 Block 3          panel   0  actual score  1.2  action cost 1.20  pool 3.86 -> 2.66, desire 0.04 -> 0.04, hits 0
+ 7 1x8              panel   8  actual score  8.0  action cost 8.00  pool 7.69 -> -0.31, desire 0.54 -> -0.46, hits 1
+ 8 Block 8          panel   0  actual score  3.2  action cost 3.20  pool 5.66 -> 2.46, desire 0.08 -> 0.08, hits 0
+ 9 DexterityDown 2  panel   0  actual score  2.3  action cost 2.30  pool 7.96 -> 5.66, desire 0.58 -> 0.58, hits 0
+10 1x7              panel   7  actual score  7.0  action cost 7.00  pool 9.95 -> 2.95, desire 1.02 -> 0.02, hits 1
