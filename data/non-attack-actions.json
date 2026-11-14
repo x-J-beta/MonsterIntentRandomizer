@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "v0.113.0",
+  "status": "design_estimates",
+  "scope": "单人标准模式。目录用于通用招式的组成效果与筛选，开场随机状态见 initial-states.json。",
+  "valueUnit": "1 点预告单体攻击伤害",
+  "sharedDefaultsFile": "action-values.json",
+  "eligibilityMeaning": {
+    "v1": "进入通用模板白名单，仍要求怪物画像显式启用且满足使用条件。",
+    "conditional": "有可解释的估值，验证目标、时序或连续触发上限后才启用。",
+    "scripted": "保留原版脚本或单独适配。没有可比较的通用数值时记 null。"
+  },
+  "scoringRules": {
+    "method": "在同一个公开战况和预测出招下，估算候选效果带来的增量。依次执行同一招式的各效果，再与原有公开状态下的基线对比。",
+    "forecast": "即时事件权重为 1，未来事件按共享系数逐回合折现，并乘存活概率、预计目标暴露以及触发概率。弱化玩家输出和保护怪物的系数用于把另一侧生命或伤害量折算为攻击压力。",
+    "duration": "只计相较现状新增的有效窗口。虚弱、易伤和脆弱各自的基础倍率固定，层数用于持续时间。预测要考虑施加时点、目标阵营与引擎的首次跳过衰减标记。公开早期实现会给玩家身上首次应用的减益设置 SkipNextDurationTick，重复施加走现有状态的数值修改路径。",
+    "damageTiming": "已发生的攻击与格挡不受后来施加的状态影响。易伤可影响同轮晚于施加者行动的队友。若估值预测已计入易伤增量，则不再把同一部分当成独立攻击增量。",
+    "attackFrequency": "有至少一个直接攻击效果的行动只计一次攻击回合。格挡、强化和减益标签可与攻击并存。反伤、毒和延迟失血不计为直接攻击回合，产生的伤害仍进入总压力。",
+    "protection": "预计有效格挡只计算清空前消耗量，先扣现有格挡；治疗与格挡导致的多活一轮用同一条反事实对比估算，避免把额外行动作为重复收益。",
+    "targeting": "按公开的目标分配预估。禁止用真实手牌、未公开摸牌顺序来决定出招。跨目标联动要纳入遭遇级总压力。"
+  },
+  "effects": [
+    {
+      "id": "self_block",
+      "vanillaCommand": "CreatureCmd.GainBlock",
+      "styleTags": ["defend"],
+      "eligibility": "v1",
+      "formula": "格挡系数 × min(新增格挡, max(0, 清空前预计打向本怪的伤害 - 同窗口已有格挡))",
+      "designDefaults": { "coefficient": 0.4, "coefficientRange": [0.3, 0.55], "suggestedAmountRange": [3, 12] },
+      "constraints": ["按作用时点计入所剩防御窗口。", "伤害已被保护覆盖时降低评分。", "防御风格才允许连续保护回合。"],
+      "evidence": ["nibbit", "infested_prism_diff"]
+    },
+    {
+      "id": "heal_self",
+      "vanillaCommand": "CreatureCmd.Heal",
+      "styleTags": ["defend"],
+      "eligibility": "v1",
+      "formula": "治疗系数 × 执行时预计能弥补的已损生命；接近额外行动临界点时用反事实压力校准",
+      "designDefaults": { "coefficient": 0.4, "coefficientRange": [0.3, 0.55], "suggestedAmountRange": [3, 10], "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["只允许治疗活着的自身。", "纯治疗要求有足够预计有效回血。", "连续治疗或叠加强保护需在画像有独立限制。"],
+      "evidence": ["knowledge_demon_impl"]
+    },
+    {
+      "id": "gain_strength_self",
+      "vanillaPowerType": "StrengthPower",
+      "styleTags": ["buff"],
+      "eligibility": "v1",
+      "formula": "折现后求和同一条预测中每次符合条件的攻击伤害差，包括弱化、易伤和取整的作用",
+      "designDefaults": { "expectedValuePerOrdinaryStack": [1.5, 3.5], "suggestedStacksPerUse": [1, 2], "suggestedMaxAddedStacksPerFight": 3 },
+      "constraints": ["按预计命中段数和存活定价，开场和高段数时通常更贵。", "后续伤害上限始终包含已有力量。", "涨层需要保留其预期收益及可反制回合。"],
+      "evidence": ["strength_impl", "nibbit", "decimillipede_front", "vantom"]
+    },
+    {
+      "id": "apply_weak_to_player",
+      "vanillaPowerType": "WeakPower",
+      "styleTags": ["playerDebuff"],
+      "eligibility": "v1",
+      "formula": "玩家输出折算系数 × 预计被减少的攻击伤害，普通情况下按新增覆盖期间合规攻击伤害的 25% 估算",
+      "designDefaults": { "vanillaReduction": 0.25, "coefficient": 0.45, "coefficientRange": [0.35, 0.55], "suggestedStacksPerUse": [1, 2] },
+      "constraints": ["先检查目标已有时长和人工制品。", "首次启用时优先 1 层，避免全战斗压制。"],
+      "evidence": ["weak_impl", "decimillipede_front"]
+    },
+    {
+      "id": "apply_vulnerable_to_player",
+      "vanillaPowerType": "VulnerablePower",
+      "styleTags": ["playerDebuff"],
+      "eligibility": "v1",
+      "formula": "新增覆盖的已预告或预测适用敌方攻击增量，普通倍率下是合规攻击伤害的 50%",
+      "designDefaults": { "vanillaIncrease": 0.5, "suggestedStacksPerUse": [1, 1] },
+      "constraints": ["新施加和重复叠层分别按实际衰减时点预测覆盖的本轮及后续攻击。", "与场上后续敌人联合评分，受爆发上限约束。", "先攻击后施加作为下限方案，先施加后攻击需要专用模板。"],
+      "evidence": ["vulnerable_impl", "power_commands_impl", "flyconid_local", "infested_prism_diff"]
+    },
+    {
+      "id": "apply_frail_to_player",
+      "vanillaPowerType": "FrailPower",
+      "styleTags": ["playerDebuff"],
+      "eligibility": "v1",
+      "formula": "新增覆盖窗口中预计有用的符合条件的格挡损失，普通情况下为合规格挡的 25%，按同期实际防御需求封顶",
+      "designDefaults": { "vanillaReduction": 0.25, "suggestedStacksPerUse": [1, 2] },
+      "constraints": ["生成时按公开战斗压力估算需求。", "无后续攻击或存在足量非卡牌格挡时估值降低。"],
+      "evidence": ["frail_impl", "flyconid_local", "louse_progenitor"]
+    },
+    {
+      "id": "insert_wound",
+      "vanillaCardType": "Wound",
+      "vanillaCommand": "CardPileCmd.AddToCombatAndPreview",
+      "styleTags": ["playerDebuff"],
+      "intent": "StatusCard",
+      "eligibility": "v1",
+      "formula": "折现后预计抽中次数 × 每次被占用的牌位价值，再乘该牌位预计构成实际资源损失的概率",
+      "designDefaults": { "valuePerCurrentlyUsableDrawSlotRange": [2, 3], "fallbackValuePerOrdinaryStatusRange": [1.5, 3.0], "suggestedCopiesPerUse": 1, "suggestedFirstPile": "discard" },
+      "constraints": ["由原版命令新建战斗期伤口，使用目标玩家自己的牌堆。", "预告说明进入哪个牌堆。", "短战斗中弃牌堆若来不及洗入，按低评分处理。", "同一遭遇先限制总塞牌量。"],
+      "evidence": ["wound_impl", "vantom_impl"]
+    },
+    {
+      "id": "gain_thorns",
+      "vanillaPowerType": "ThornsPower",
+      "styleTags": ["buff", "defend"],
+      "eligibility": "v1",
+      "formula": "折现后预计对本怪符合条件的命中段数 × 每次反击伤害，以伤害兑现或逼迫玩家转移目标校准",
+      "designDefaults": { "suggestedStacksPerUse": [1, 2], "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["仅允许反伤风格画像。", "按会触发的段数计价并限制总反伤峰值。", "多个带刺目标的首回合压力按遭遇计。"],
+      "evidence": ["toadpole", "thorns_impl"]
+    },
+    {
+      "id": "gain_artifact_self",
+      "vanillaPowerType": "ArtifactPower",
+      "styleTags": ["defend"],
+      "eligibility": "conditional",
+      "formula": "新增层实际挡住减益的概率 × 该次减益未生效所保留的行动价值",
+      "designDefaults": { "suggestedStacksPerUse": 1, "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["用固定情景估算减益出现率。", "与开场人工制品共享层数限制。", "不以预知玩家马上要用的牌决定是否生成。"],
+      "evidence": ["artifact_impl", "cubex_construct"]
+    },
+    {
+      "id": "gain_plating_self",
+      "vanillaPowerType": "PlatingPower",
+      "styleTags": ["defend"],
+      "eligibility": "conditional",
+      "formula": "各次状态触发产生的预计可消耗格挡按回合折现并乘格挡系数",
+      "designDefaults": { "suggestedStacksPerUse": [1, 3], "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["确认首次授予和层数衰减时点。", "开战赋予、怪物行动中赋予会导致不同防御窗口。", "不混入参与宿主唤醒脚本的原版状态组合。"],
+      "evidence": ["plating_impl", "slumbering_beetle_impl"]
+    },
+    {
+      "id": "gain_regen_self",
+      "vanillaPowerType": "RegenPower",
+      "styleTags": ["defend"],
+      "eligibility": "conditional",
+      "formula": "各次状态触发的实际可用治疗按回合折现并乘治疗系数，合并续命带来的行动增量",
+      "designDefaults": { "suggestedStacksPerUse": [2, 3], "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["只有活着且尚有缺血时产生收益。", "禁止与循环纯治疗组合造成长期回血锁。"],
+      "evidence": ["regen_impl"]
+    },
+    {
+      "id": "protect_or_heal_one_ally",
+      "vanillaCommands": ["CreatureCmd.GainBlock", "CreatureCmd.Heal"],
+      "styleTags": ["defend"],
+      "eligibility": "conditional",
+      "formula": "以受益友军为对象重算有效格挡或治疗，并反映保护它后保留的进攻与辅助行动",
+      "designDefaults": { "suggestedAmountRange": [3, 8], "maxTargets": 1 },
+      "constraints": ["要求一名活着且可预告的合法友军。", "目标死亡时按确定性失效规则处理。", "首版推迟全体保护和伤害转移。"],
+      "evidence": ["living_shield", "powers"]
+    },
+    {
+      "id": "strength_one_ally",
+      "vanillaPowerType": "StrengthPower",
+      "styleTags": ["buff"],
+      "eligibility": "conditional",
+      "formula": "按受益友军的存活和攻击段数估算该力量的增量，并计入本轮随后行动",
+      "designDefaults": { "suggestedStacksPerUse": 1, "maxTargets": 1, "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["同轮多次给一只怪强化要共享增益上限。", "首版推迟全体力量。"],
+      "evidence": ["strength_impl"]
+    },
+    {
+      "id": "shrink_player",
+      "vanillaPowerType": "ShrinkPower",
+      "styleTags": ["playerDebuff"],
+      "eligibility": "conditional",
+      "formula": "按独立状态的实际攻击修正、持续时点和玩家输出折算系数计价，与已有虚弱等合并重算",
+      "constraints": ["已有 Shrink 会显示施加者、改变模型大小，并在施加者死亡时移除。保留这套绑定或单独实现有明确时长的减伤模板。", "避免与虚弱叠加到长期压制攻击。"],
+      "evidence": ["shrinker_beetle", "shrink_impl"]
+    },
+    {
+      "id": "insert_burn",
+      "vanillaCardType": "Burn",
+      "vanillaCommand": "CardPileCmd.AddToCombatAndPreview",
+      "styleTags": ["playerDebuff"],
+      "intent": "StatusCard",
+      "eligibility": "conditional",
+      "formula": "塞牌牌位损失 + 预计留在手中至回合末的次数 × 2 点非攻击伤害",
+      "designDefaults": { "suggestedCopiesPerUse": 1, "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["确认执行时点、牌堆位置及预告。", "避免联动塞入手牌而立即产生不可预见的伤害。"],
+      "evidence": ["burn_impl"]
+    },
+    {
+      "id": "temporary_strength_down_player",
+      "vanillaPowerTypes": ["StrengthPower", "TemporaryStrengthPower"],
+      "styleTags": ["playerDebuff"],
+      "eligibility": "conditional",
+      "formula": "玩家输出折算系数 × 玩家在作用周期内所有合规攻击段的伤害损失",
+      "designDefaults": { "suggestedStacksPerUse": 1, "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["TemporaryStrengthPower 是抽象原版基类，需要具体来源。使用已有玩法适用的具体类或实现具备确定逆操作的通用状态。", "检验敌方回合施加后是否真正覆盖玩家可出牌窗口，避免使用会立即过期的状态。"],
+      "evidence": ["strength_impl", "temporary_strength_impl"]
+    },
+    {
+      "id": "decaying_poison_player",
+      "vanillaPowerType": "PoisonPower",
+      "styleTags": ["playerDebuff"],
+      "eligibility": "conditional",
+      "formula": "按每次触发的新增实际失血折现。一个初始 2 层、无重复叠加的样例在两次触发都发生时造成 2+1 点失血。",
+      "designDefaults": { "suggestedStacksPerUse": [1, 2], "suggestedMaxUsesPerFight": 1 },
+      "constraints": ["先核对目标玩家受到状态后的触发时点和净化交互。", "按能穿过格挡的血量压力控制峰值。"],
+      "evidence": ["poison_impl"]
+    }
+  ],
+  "scriptedAndDeferred": [
+    { "id": "summon", "eligibility": "scripted", "value": null, "estimateIfAdapted": "召唤物新增的有效 HP 压力加上其生存窗口内的行动价值，再扣取代的槽位或行动。", "reason": "依赖可用槽位、召唤物类型和战斗结束规则。", "evidence": ["living_fog_impl"] },
+    { "id": "revive_or_replace", "eligibility": "scripted", "value": null, "reason": "复生涉及已死单位、队友存活条件以及战斗结束判定，无法用普通治疗系数标定。", "evidence": ["decimillipede_front", "powers"] },
+    { "id": "hp_threshold_phase_move", "eligibility": "scripted", "value": null, "reason": "与特定怪物形态、血量阈值、眩晕或强制跳转绑定。", "evidence": ["slumbering_beetle_impl", "powers"] },
+    { "id": "escape_or_steal", "eligibility": "scripted", "value": null, "reason": "可能写入永久牌组或奖励，逃跑与倒计时也可能分别实现在状态和宿主 AI 中。", "evidence": ["thieving_hopper"] },
+    { "id": "card_restriction_or_affliction", "eligibility": "scripted", "value": null, "estimateIfAdapted": "固定对照牌组中，比较受影响回合可完成的计划、产出的格挡和伤害。", "reason": "Smoggy、Bound、Tainted、禁用格挡和强制选牌会严重改变某些玩家的有效手牌，保留原使用场景。", "evidence": ["living_fog", "infested_prism_diff", "powers", "knowledge_demon_impl"] },
+    { "id": "ambient_team_protection", "eligibility": "scripted", "value": null, "reason": "守卫、嘲讽、固定对象的格挡或转移受击需独立处理；触发链可能依赖指定队友。", "evidence": ["living_shield", "powers"] },
+    { "id": "scaling_ramp", "eligibility": "scripted", "value": null, "estimateIfAdapted": "按每次成长实际产生的增量重算后续攻击，并计入窗口之外还会继续成长。", "reason": "Ritual、Territorial 等可不断成长并放大多段攻击，需要专用预算曲线和终战约束。", "evidence": ["infested_prism_diff", "powers"] },
+    { "id": "unbounded_mitigation", "eligibility": "scripted", "value": null, "reason": "无实体、伤害上限、全伤害反射和滑溜对攻击段数、牌组和时点高度敏感。", "evidence": ["vantom", "powers"] },
+    { "id": "delayed_execute_or_permanent_loss", "eligibility": "scripted", "value": null, "reason": "处决、降低最大生命及持久牌组变化超出普通战斗期行动价值。", "evidence": ["powers"] },
+    { "id": "sleep_stun_or_empty_turn", "eligibility": "scripted", "value": null, "reason": "保留玩家触发的眩晕、原版蓄力和休息回合原语义。普通随机池不靠生产空行动来凑低值。", "evidence": ["slumbering_beetle_impl", "powers"] }
+  ],
+  "combinationCandidates": [
+    { "id": "attack_then_block", "styleTags": ["attack", "defend"], "effectOrder": ["attack", "self_block"], "requires": ["剩余有效格挡窗口", "遭遇伤害上限"], "countsAsAttack": true, "evidence": ["nibbit"] },
+    { "id": "attack_then_strength", "styleTags": ["attack", "buff"], "effectOrder": ["attack", "gain_strength_self"], "requires": ["战斗叠层上限", "多段峰值上限"], "countsAsAttack": true, "evidence": ["decimillipede_front"] },
+    { "id": "attack_then_player_debuff", "styleTags": ["attack", "playerDebuff"], "effectOrder": ["attack", ["apply_weak_to_player", "apply_vulnerable_to_player", "apply_frail_to_player"]], "requires": ["首版只带一种减益", "新增受影响窗口", "易伤与后续单位合计上限"], "countsAsAttack": true, "evidence": ["decimillipede_front", "flyconid_local", "infested_prism_diff"] },
+    { "id": "attack_then_status", "styleTags": ["attack", "playerDebuff"], "effectOrder": ["attack", "insert_wound"], "requires": ["低塞牌总量", "可预告牌名和牌堆"], "countsAsAttack": true, "evidence": ["vantom_impl"] },
+    { "id": "block_and_small_buff", "styleTags": ["defend", "buff"], "effectOrder": ["self_block", "gain_strength_self"], "requires": ["防御或成长风格", "首次选出后短期冷却", "总价值在预算内"], "countsAsAttack": false, "evidence": ["louse_progenitor"] },
+    { "id": "pure_non_attack", "effectOrder": ["one_allowed_non_attack_effect"], "requires": ["画像允许该行动", "候选预计价值超过最低收益", "对应攻击频率允许本回合不攻击"], "countsAsAttack": false, "evidence": ["nibbit", "toadpole"] }
+  ],
+  "starterDoses": {
+    "note": "以下是小型样例的条件估值。状态效果可持续到下一轮时，期望量已经含存活与折现。数值小的纯非攻击招使用较低的准备回合额度或作为组合效果。",
+    "examples": [
+      { "effectId": "self_block", "amount": 6, "assumption": "新增格挡预计实际消耗 5 点。", "value": 2 },
+      { "effectId": "heal_self", "amount": 8, "assumption": "执行时预计能有效回复 6 HP，且未跨过额外行动阈值。", "value": 2.4 },
+      { "effectId": "gain_strength_self", "amount": 1, "assumption": "预计受益的折现攻击段数为 2.5，无额外伤害倍率。", "value": 2.5 },
+      { "effectId": "gain_thorns", "amount": 2, "assumption": "预计遭受的折现有效命中段数为 1.5，实际结果待反伤反制与格挡校准。", "value": 3 },
+      { "effectId": "apply_weak_to_player", "amount": 1, "assumption": "实际覆盖一段折现后 16 点的玩家攻击，玩家输出折算系数 0.45。", "value": 1.8 },
+      { "effectId": "apply_vulnerable_to_player", "amount": 1, "assumption": "确实覆盖同一玩家承受的折现后 10 点攻击；没有覆盖攻击时估值为 0。", "value": 5 },
+      { "effectId": "apply_frail_to_player", "amount": 1, "assumption": "确实覆盖玩家本来需要的 8 点合规格挡。", "value": 2 },
+      { "effectId": "insert_wound", "amount": 1, "assumption": "近期折现后抽中且损失有用牌位的联合概率为 0.6，牌位价值 2.5。", "value": 1.5 }
+    ]
+  },
+  "calibrationCases": [
+    { "vanilla": "十足蜈蚣前段 Writhe 5×2、Bulk 6+2 力量、Constrict 8+1 虚弱。", "inference": "以 10 点作同一轮示例，2 力量约 4 点和 1 虚弱约 2 点能得到三个候选。原版实际先后顺序会改变两种状态的价值。", "evidence": ["decimillipede_front"] },
+    { "vanilla": "Nibbit 的 12 单击、6 伤害加 5 格挡、纯 2 力量，以及按站位区分的开场。", "inference": "同怪存在准备回合和主要攻击回合。用低值阶段或整体节奏校准，直接当三招等价会高估力量和格挡。", "evidence": ["nibbit"] },
+    { "vanilla": "育虱者的 14 攻击、9 攻击加 2 脆弱、14 格挡加 5 力量。", "inference": "2 脆弱约 5 点只适合对照需要挡伤的回合。长期成长招需要冷却，不能按同一权重反复抽。", "evidence": ["louse_progenitor"] },
+    { "vanilla": "较旧的感染棱柱 15 攻击，对照 Radiate 的 11 攻击和 11 格挡。v0.113.0 删除了 Radiate，Pulsate 改带易伤，原 Vital Spark 强化仍在。", "inference": "旧版差值可作格挡系数示例 (15−11)/11≈0.36。新版复合招需要按当轮易伤覆盖和原版特殊效果组成另算。", "evidence": ["infested_prism_diff"] },
+    { "vanilla": "蟾蜍蝌蚪 3×3、7 单击与 2 荆棘。", "inference": "同样的荆棘在先手和残血时价值不同。出荆棘的准备回合仍给玩家留有反制机会。", "evidence": ["toadpole"] },
+    { "vanilla": "本机 v0.113.0 飞蝇菌子易伤孢子只施加易伤，脆弱孢子才同时攻击和施加脆弱。原版按随机分支选招。", "inference": "纯易伤按非攻击回合计数；攻击加脆弱计一次攻击和一个减益标签。", "evidence": ["flyconid_local", "flyconid_impl"] },
+    { "vanilla": "较早反编译中的 Vantom Dismember 在攻击后向弃牌堆放入 3 张伤口。", "inference": "普通怪模板先从 1 张开始。弃牌堆和抽牌堆的预期命中率不同，不能直接搬用 Boss 的份量。", "evidence": ["vantom_impl", "wound_impl"] }
+  ],
+  "sources": {
+    "nibbit": "https://spire-codex.com/monsters/nibbit",
+    "decimillipede_front": "https://spire-codex.com/monsters/decimillipede_segment_front",
+    "louse_progenitor": "https://spire-codex.com/monsters/louse_progenitor",
+    "toadpole": "https://spire-codex.com/monsters/toadpole",
+    "flyconid_local": "本机 v0.113.0 / Steam Build 26625880：sts2.dll 的 Flyconid.VulnerableSporesMove、Flyconid.FrailSporesMove 及 GenerateMoveStateMachine。",
+    "flyconid_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/Flyconid.cs",
+    "vantom": "https://spire-codex.com/monsters/vantom",
+    "cubex_construct": "https://spire-codex.com/monsters/cubex_construct",
+    "shrinker_beetle": "https://spire-codex.com/monsters/shrinker_beetle",
+    "living_shield": "https://spire-codex.com/monsters/living_shield",
+    "living_fog": "https://spire-codex.com/monsters/living_fog",
+    "thieving_hopper": "https://spire-codex.com/monsters/thieving_hopper",
+    "powers": "https://spire-codex.com/powers",
+    "infested_prism_diff": "https://spire-codex.com/changelog/0.113.0#monsters",
+    "weak_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/WeakPower.cs",
+    "vulnerable_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/VulnerablePower.cs",
+    "power_commands_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Commands/PowerCmd.cs",
+    "frail_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/FrailPower.cs",
+    "strength_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/StrengthPower.cs",
+    "thorns_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ThornsPower.cs",
+    "artifact_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ArtifactPower.cs",
+    "plating_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PlatingPower.cs",
+    "regen_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/RegenPower.cs",
+    "shrink_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ShrinkPower.cs",
+    "poison_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PoisonPower.cs",
+    "temporary_strength_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/TemporaryStrengthPower.cs",
+    "burn_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Cards/Burn.cs",
+    "wound_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Cards/Wound.cs",
+    "knowledge_demon_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/KnowledgeDemon.cs",
+    "vantom_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/Vantom.cs",
+    "slumbering_beetle_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/SlumberingBeetle.cs",
+    "living_fog_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/LivingFog.cs"
+  },
+  "sourceCaveat": "v0.113.0 公开差分用于识别补丁改动；怪物目录和公开反编译快照可能来自早期版本。数值系数、建议层数与候选范围都是设计先验，需在目标版本实战校准。"
+}

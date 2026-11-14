@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gameVersion": "v0.113.0",
   "status": "design_examples",
   "scope": "single_player_standard_act_1_normal_monsters",
@@ -13,24 +13,33 @@
           { "id": "WHIRL", "hits": 1, "baseDamagePerHit": 7, "deadlyEnemiesDamagePerHit": 8 },
           { "id": "SPIKEN", "thorns": 2 }
         ],
-        "openingRule": "The front Toadpole starts with Spiken. The other starts with Whirl."
+        "openingRule": "前排用带刺开场，另一只用旋转开场。",
+        "regularCycleAttackFrequency": { "attackTurns": 2, "cycleTurns": 3 }
       },
       "draftProfile": {
         "style": "偏好多段攻击，准备回合可上荆棘",
-        "standardAttackBudget": 8,
-        "higherAscensionAttackBudget": 10,
-        "templateWeights": {
+        "actionValue": {
+          "standard": 8,
+          "deadlyEnemies": 10
+        },
+        "actionVolatility": 0.18,
+        "attackFrequency": 0.67,
+        "nonAttackValueMultiplier": 0.35,
+        "intentWeights": {
+          "attack": 55,
+          "buff": 40,
+          "defend": 5,
+          "playerDebuff": 0
+        },
+        "attackTemplateWeights": {
           "single_attack": 35,
           "multi_attack": 65
         },
-        "preparationTemplateWeights": {
-          "gain_thorns": 100
-        },
+        "nonAttackTemplates": ["gain_thorns", "self_block"],
         "allowedHitCounts": [1, 3],
         "maxRandomThornsStacks": 2,
         "preserveOpeningRole": true,
-        "initialRandomStateOptions": ["NONE", "THORNS"],
-        "initialRandomStateBudget": null
+        "initialRandomStateOptions": ["NONE", "THORNS", "WEAK", "VULNERABLE"]
       }
     },
     "FLYCONID": {
@@ -38,26 +47,35 @@
       "reference": {
         "source": "https://spire-codex.com/monsters/flyconid",
         "moves": [
-          { "id": "VULNERABLE_SPORES", "hits": 1, "baseDamagePerHit": 8, "deadlyEnemiesDamagePerHit": 9, "vulnerable": 2 },
+          { "id": "VULNERABLE_SPORES", "hits": 0, "vulnerable": 2 },
           { "id": "FRAIL_SPORES", "hits": 1, "baseDamagePerHit": 8, "deadlyEnemiesDamagePerHit": 9, "frail": 2 },
           { "id": "SMASH", "hits": 1, "baseDamagePerHit": 11, "deadlyEnemiesDamagePerHit": 12 }
         ],
-        "publicCycle": ["VULNERABLE_SPORES", "FRAIL_SPORES", "SMASH"]
+        "pattern": "random_with_separate_opening_branch",
+        "regularCycleAttackFrequency": null,
+        "notes": "本机 v0.113.0 程序集确认易伤孢子只施加减益，公开提取把脆弱孢子的伤害误归给它。常规行动依随机分支，避免用招式列表算频次。"
       },
       "draftProfile": {
         "style": "偏好单击附带减益，保留纯攻击",
-        "standardAttackBudget": 11,
-        "higherAscensionAttackBudget": 12,
-        "templateWeights": {
-          "single_attack": 40,
-          "single_attack_then_vulnerable": 25,
-          "single_attack_then_frail": 35
+        "actionValue": {
+          "standard": 11,
+          "deadlyEnemies": 12
         },
+        "actionVolatility": 0.15,
+        "attackFrequency": 0.75,
+        "nonAttackValueMultiplier": 0.45,
+        "intentWeights": {
+          "attack": 40,
+          "buff": 0,
+          "defend": 0,
+          "playerDebuff": 60
+        },
+        "attackTemplates": ["single_attack", "single_attack_then_vulnerable", "single_attack_then_frail"],
+        "nonAttackTemplates": ["apply_vulnerable_to_player", "apply_frail_to_player"],
         "allowedHitCounts": [1],
         "maxRandomDebuffStacksPerMove": 2,
         "maxConsecutiveDebuffMoves": 2,
-        "initialRandomStateOptions": ["NONE"],
-        "initialRandomStateBudget": null
+        "initialRandomStateOptions": ["NONE", "STRENGTH", "WEAK", "VULNERABLE"]
       }
     }
   }

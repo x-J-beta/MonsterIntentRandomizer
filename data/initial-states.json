@@ -1,31 +1,113 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gameVersion": "v0.113.0",
-  "status": "preliminary_review",
+  "status": "prototype_candidates_and_estimates",
   "defaultEligibility": "excluded_until_reviewed",
   "layerLimitsApplyOnlyToRandomlyAddedStates": true,
+  "scope": "single_player_standard_starting_monsters_with_an_explicit_opening_pool",
+  "sampling": {
+    "maxSelectedMonstersPerEncounter": 1,
+    "maxAddedStatesPerSelectedMonster": 1,
+    "defaultWeightsForSelectedMonster": {
+      "none": 80,
+      "positive": 10,
+      "negative": 10
+    },
+    "notes": [
+      "在开场怪物中最多等概率选一只有合法候选的怪，再按正负分档抽签。80/10/10 是被选怪物的条件概率。",
+      "候选全集先用怪物画像、原版机制、施加条件和开场额度过滤。所在档为空时把该档权重并入空档，不向另一档补抽。",
+      "用独立的遭遇种子确定选中的怪物与状态，增援不重新抽开场状态。"
+    ]
+  },
+  "valuation": {
+    "basis": "signed_pressure_with_candidate_minus_pressure_without_candidate",
+    "positiveSignMeans": "more_threatening_to_player",
+    "enemyTurnHorizon": 3,
+    "futureDiscountPerEnemyTurn": 0.8,
+    "maxAbsolutePressureDelta": 2,
+    "maxAbsoluteShareOfStandardActionValue": 0.25,
+    "compensateFirstActionValue": false,
+    "notes": [
+      "同一场景下比较有无该状态的即时及未来边际压力，配对使用相同的预定招式、目标情景、估计方法和反制条件。状态改变存活率及可行动回合时计入压力。",
+      "要求绝对差值同时低于两项上限或等于边界。零收益、方向不符或无法可靠估值的候选出池。正负方向指相对怪物的战斗强度。",
+      "分别按攻击段数、预计有效格挡和状态持续窗口算真实变化。禁止同一状态重复扣减行动预算；实际伤害仍按现有状态核对遭遇首轮峰值。",
+      "正负选中概率对称不保证平均强度相同。校准时分别记录各档抽中率、平均实际差值、首轮预告伤害和遭遇失血。"
+    ]
+  },
+  "application": {
+    "phase": "after_vanilla_opening_setup_before_first_player_side_start",
+    "useNativePowerCommand": true,
+    "keepExistingNativePowersAndScriptedBundles": true,
+    "awaitBeforeScoringFirstMoveAndPublishingIntent": true,
+    "notes": [
+      "等待原版固有能力施加，再通过原版 PowerCmd 施加已选状态。完成后以实际生效的层数生成或刷新首招意图。",
+      "原版已有同类状态、宿主特殊或流程不明时，先移除候选。免疫或人工制品可拦住减益时移除对应负面候选，避免抵消或消耗原版权益。若实际未生效，不追加一个随机替代状态。",
+      "本机 v0.113.0 的 Weak、Vulnerable、Frail 均从敌方 AfterSideTurnEnd 调用 TickDownDuration。按计划时点新施加的 1 层覆盖第一轮，敌方回合末衰减。需用首轮实战核对挂接时序和应用后的 SkipNextDurationTick。"
+    ]
+  },
   "eligible": {
     "NONE": {
+      "polarity": "none",
       "maxStacks": 0,
       "reason": "允许在开场方案中保持原版配置。"
     },
     "STRENGTH": {
+      "polarity": "positive",
+      "powerId": "STRENGTH",
+      "amount": 1,
       "maxStacks": 1,
-      "reason": "仅修改符合条件的自身攻击。开场按首轮起预计兑现的段数估价，并检查多段峰值。"
+      "reason": "原版按每段合规攻击增加伤害。首轮起有效，按预计可兑现的受影响段数估价，并检查多段峰值。"
+    },
+    "STRENGTH_DOWN": {
+      "polarity": "negative",
+      "powerId": "STRENGTH",
+      "amount": -1,
+      "maxStacks": 1,
+      "reason": "原版 StrengthPower 允许负层。按各段减 1 后实际损失估价，考虑取整、伤害下限与剩余受影响段数。"
+    },
+    "WEAK": {
+      "polarity": "negative",
+      "powerId": "WEAK",
+      "amount": 1,
+      "maxStacks": 1,
+      "reason": "持有者合规攻击的通用伤害乘数为 0.75，取实际逐段差值。按计划时点施加可覆盖首个敌方行动，首轮预期无攻击时出池。"
+    },
+    "VULNERABLE": {
+      "polarity": "negative",
+      "powerId": "VULNERABLE",
+      "amount": 1,
+      "maxStacks": 1,
+      "reason": "持有者受到的合规攻击使用 1.5 倍通用伤害。覆盖首个玩家行动。若已有存活模型，优先按可能少出的敌方招式估值；若只用粗估，按预计有效额外伤害折算为负压力。二者属于同一收益，不同时相加。"
     },
     "ARTIFACT": {
+      "polarity": "positive",
+      "powerId": "ARTIFACT",
+      "amount": 1,
       "maxStacks": 1,
       "reason": "抵消持有者收到的减益。需要明确的开场额度和候选设置。"
     },
     "THORNS": {
+      "polarity": "positive",
+      "powerId": "THORNS",
+      "amount": 1,
       "maxStacks": 1,
       "reason": "响应通用的攻击事件。仅供允许反伤风格的怪物，并检查玩家多段攻击下的风险。"
     }
   },
   "conditional": {
     "PLATING": {
+      "polarity": "positive",
+      "powerId": "PLATING",
+      "amount": 1,
       "reason": "独立使用时自动获得格挡。需要验证首次授予时点，且要保留熟睡甲虫等宿主对原版甲覆的唤醒联动。",
       "conditions": ["opening_timing_verified", "not_part_of_an_existing_scripted_bundle", "counts_toward_opening_budget"]
+    },
+    "FRAIL": {
+      "polarity": "negative",
+      "powerId": "FRAIL",
+      "amount": 1,
+      "reason": "可降低怪物主动招式提供的合规格挡。必须存在首轮可受影响的主动格挡，并验证结算标志。甲覆等非主动招式格挡无法作为估值依据。",
+      "conditions": ["verified_powered_monster_move_block", "has_effect_in_first_enemy_action_window"]
     }
   },
   "excluded": {
@@ -49,9 +131,19 @@
   "deferredForBalance": {
     "RITUAL": "永久逐回合加力量，会放大后续多段伤害。",
     "TERRITORIAL": "逐回合加力量，需要独立校准成长曲线和战斗长度。",
-    "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。"
+    "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。",
+    "DEXTERITY": "原版允许正负层并可修改合规怪物主动格挡。持久效果只对有稳定格挡频率的怪有可估价值，首版用持续窗口更小的脆弱作备选。"
+  },
+  "mechanicsEvidence": {
+    "localGameBuild": "26625880",
+    "inspection": "只读检查本机 v0.113.0 sts2.dll 的方法和 IL，确认 StrengthPower/DexterityPower.AllowNegative、Weak/Vulnerable/Frail 的敌方回合末扣减，以及 Frail 的 PoweredCardOrMonsterMoveBlock 过滤。公开反编译用于交叉核对，开场挂接仍待游戏内验证。"
   },
   "references": [
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/StrengthPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/WeakPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/VulnerablePower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/FrailPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PlatingPower.cs",
     "https://spire-codex.com/monsters/cubex_construct",
     "https://spire-codex.com/monsters/thieving_hopper",
     "https://spire-codex.com/powers/flutter",

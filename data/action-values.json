@@ -1,14 +1,21 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gameVersion": "v0.113.0",
   "status": "design_estimates",
   "unit": "one_point_of_telegraphed_single_target_attack",
   "limits": {
-    "candidateRelativeTolerance": 0.15,
-    "candidateMinimumAbsoluteTolerance": 1,
+    "defaultActionVolatility": 0.15,
+    "maximumLowValueRoundingAllowance": 1,
+    "targetValueDistribution": "triangular_centered",
     "pressureWindowEnemyTurns": 3,
     "futureDiscountPerEnemyTurn": 0.8
   },
+  "attackFrequency": {
+    "basis": "randomizable_opportunities_containing_at_least_one_active_attack",
+    "excludes": ["fixed_scripted_actions", "player_forced_stun", "passive_damage"],
+    "compoundAttackCount": 1
+  },
+  "intentWeights": ["attack", "buff", "defend", "playerDebuff"],
   "effects": {
     "attack": {
       "coefficientPerDamage": 1,
@@ -42,8 +49,8 @@
       "basis": "newly_covered_card_block_expected_to_be_used"
     },
     "status_card": {
-      "expectedValuePerOrdinaryCard": [1.5, 3.0],
-      "basis": "draw_probability_times_hand_slot_cost_plus_expected_card_penalty"
+      "valuePerExpectedOccupiedDrawSlot": [1.5, 3.0],
+      "basis": "expected_draw_count_times_hand_slot_cost_plus_expected_card_penalty"
     },
     "thorns": {
       "basis": "discounted_expected_eligible_hits_received_times_retaliation_damage"
