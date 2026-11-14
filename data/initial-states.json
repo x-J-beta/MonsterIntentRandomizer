@@ -1,7 +1,7 @@
 {
   "schemaVersion": 6,
   "gameVersion": "v0.113.0",
-  "status": "prototype_pool_and_mechanics_reference",
+  "status": "runtime_pool_and_mechanics_reference",
   "defaultEligibility": "excluded_until_reviewed",
   "layerLimitsApplyOnlyToRandomlyAddedStates": true,
   "scope": "single_player_standard_starting_monsters_with_an_explicit_opening_pool",
@@ -28,7 +28,7 @@
       "原版已有同类状态、宿主特殊或流程不明时，先移除候选。免疫或人工制品可拦住减益时移除对应负面候选，避免抵消或消耗原版权益。若实际未生效，不追加一个随机替代状态。",
       "本机 v0.113.0 的 Weak、Vulnerable、Frail 均从敌方 AfterSideTurnEnd 调用 TickDownDuration。按计划时点新施加的 1 层覆盖第一轮，敌方回合末衰减。需用首轮实战核对挂接时序和应用后的 SkipNextDurationTick。"
     ],
-    "status": "game_integration_pending"
+    "status": "integrated_for_singleplayer"
   },
   "eligible": {
     "NONE": {
@@ -72,10 +72,10 @@
       "reason": "持有者回合末达到灾厄阈值时处决。"
     },
     "IMBALANCED": {
-      "reason": "原型按怪物画像的 fullBlockChance 模拟攻击遭完全格挡后跳过行动。"
+      "reason": "游戏版由原版受击逻辑处理完全格挡后的眩晕。命令行用画像的 fullBlockChance 近似。"
     },
     "STUN": {
-      "reason": "跳过开场行动。原型保留画像标记的强制首招。"
+      "reason": "通过原版眩晕命令跳过开场行动。画像标记的强制首招保留。"
     }
   },
   "conditional": {
@@ -133,7 +133,7 @@
   },
   "mechanicsEvidence": {
     "localGameBuild": "26625880",
-    "inspection": "本机 v0.113.0 sts2.dll 的只读 IL 已确认仪式回合末累计力量、再生回合末治疗并扣层、甲覆开场给格挡、荆棘在合规受击前触发、消亡在持有者参加的回合末造成不递减的生命损失、灾厄在回合末检查生命阈值。开场挂接仍待游戏内验证。"
+    "inspection": "本机 v0.113.0 sts2.dll 的只读 IL 已确认仪式回合末累计力量、再生回合末治疗并扣层、甲覆开场给格挡、荆棘在合规受击前触发、消亡在持有者参加的回合末造成不递减的生命损失、灾厄在回合末检查生命阈值。游戏内冒烟测试已确认开场力量可以在第一回合生成预告前施加。"
   },
   "references": [
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/StrengthPower.cs",

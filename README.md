@@ -4,7 +4,7 @@
 
 ## 安装与设置
 
-将 [dist/MonsterIntentRandomizer](dist/MonsterIntentRandomizer) 文件夹放入游戏目录的 `mods`，重启游戏并在原版的模组界面启用。包内只需 `MonsterIntentRandomizer.dll` 与 `MonsterIntentRandomizer.json`。
+构建 Mod 项目时，自动把 DLL 和清单安装到游戏目录的 `mods\MonsterIntentRandomizer`。重启游戏并在原版的模组界面启用。用预构建包时，可将 [dist/MonsterIntentRandomizer](dist/MonsterIntentRandomizer) 文件夹放入游戏的 `mods`。
 
 游戏中打开 **设置 → 常规 → 怪物意图随机 · 设置**。常用参数可以直接调，逐怪参数页可以调整基础行动力、攻击段数、预期寿命、波动及四类意图倾向。全局参数页和画像 JSON 页可以直接改估值公式、开场候选、状态牌位置等。点击保存后从下一场战斗生效。配置保存于 `user://mod_data/MonsterIntentRandomizer/config.json`。局中重开战斗时，使用当前设置和该局种子重新生成。
 
@@ -21,6 +21,6 @@ dotnet build .\mod\MonsterIntentRandomizer.Mod.csproj -c Release
 dotnet run -- --check
 ```
 
-游戏位于其他位置时可传入 `"-p:GamePath=D:\路径\Slay the Spire 2"`。构建自动更新 `dist\MonsterIntentRandomizer`。命令行原型可用于对照逐怪参数，包含战斗中保留原版行动的怪物。
+游戏位于其他位置时可传入 `"-p:GamePath=D:\路径\Slay the Spire 2"`。构建同时更新 `dist\MonsterIntentRandomizer`。只需打包时可传入 `-p:InstallMod=false`。命令行原型可用于对照逐怪参数，包含战斗中保留原版行动的怪物。
 
 估值及参数格式见 [设计](DESIGN.md)。

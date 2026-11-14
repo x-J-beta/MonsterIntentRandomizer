@@ -8,6 +8,8 @@
     <GamePath Condition="'$(GamePath)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\..\common\Slay the Spire 2</GamePath>
     <GameAssemblyDir>$(GamePath)\data_sts2_windows_x86_64</GameAssemblyDir>
     <PackageDir>$(MSBuildThisFileDirectory)..\dist\MonsterIntentRandomizer</PackageDir>
+    <InstallMod Condition="'$(InstallMod)' == ''">true</InstallMod>
+    <ModInstallDir>$(GamePath)\mods\MonsterIntentRandomizer</ModInstallDir>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs" />
@@ -21,5 +23,11 @@
     <MakeDir Directories="$(PackageDir)" />
     <Copy SourceFiles="$(TargetPath);$(MSBuildProjectDirectory)\MonsterIntentRandomizer.json"
           DestinationFolder="$(PackageDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="InstallLocalMod" AfterTargets="PackageMod"
+          Condition="'$(InstallMod)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Copy SourceFiles="$(PackageDir)\MonsterIntentRandomizer.dll;$(PackageDir)\MonsterIntentRandomizer.json"
+          DestinationFolder="$(ModInstallDir)" SkipUnchangedFiles="true" />
+    <Message Text="Installed MonsterIntentRandomizer to $(ModInstallDir)" Importance="high" />
   </Target>
 </Project>
