@@ -1,15 +1,15 @@
 namespace MonsterIntentRandomizer;
 
-public enum EffectKind { Attack, Block, Strength, Ritual, Weak, Vulnerable, Tangled, Ringing, Dazed, Wound, Burn }
+public enum EffectKind { Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled, Ringing, Dazed, Wound, Burn, Beckon }
 
 public enum EffectTarget { Self, Player }
 public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
 {
-    public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Strength or EffectKind.Ritual
+    public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Strength or EffectKind.Ritual or EffectKind.Intangible
         ? EffectTarget.Self : EffectTarget.Player;
-    public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn;
+    public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or EffectKind.Ringing;
 }
 
@@ -30,30 +30,26 @@ public sealed record StatusPlacementValues(double Draw = 1, double Discard = 0.6
 
 public sealed record ActionContext(
     double ExpectedDamageAgainstMonster,
-    double ExpectedPlayerAttackDamage,
-    double ExpectedEnemyAttackDamageAgainstPlayer,
     int Strength = 0,
     bool Weakened = false,
     bool PlayerAlreadyWeak = false,
     bool PlayerAlreadyVulnerable = false,
     bool PlayerHasArtifact = false,
-    IReadOnlyList<ForecastWindow>? RemainingForecast = null,
     double DazedDraws = 0,
     double WoundDraws = 0,
-    double ExistingBlock = 0, double ExpectedCardsPlayed = 3,
-    double ExpectedAttackCardsPlayed = 1.4, double ExpectedEnergyPressure = 0.65,
+    double ExistingBlock = 0,
     double BurnDraws = 0.6, bool PlayerAlreadyRestricted = false,
-    bool AllowHardCardLimit = true);
+    bool AllowHardCardLimit = true, double MissingHp = 0, bool AlreadyIntangible = false, double BeckonDraws = 0.6);
 
 public sealed record ActionValuationSettings(
-    double Block, double Weak, double WeakDamageReduction, double VulnerableDamageIncrease,
-    double CardSlot, double Discount,
+    double Block, double WeakDamageReduction, double CardSlot,
     int MaxAddedStrength, int MaxInsertedCards, int PlayerDebuffCooldownTurns,
-    int ForecastHorizon, int PureBlockCooldownTurns, int MinimumBaseDamagePerHit,
+    int PureBlockCooldownTurns, int MinimumBaseDamagePerHit,
     IReadOnlyDictionary<EffectKind, int[]> Amounts, double AttackCoefficient = 1,
-    int MaxAddedRitual = 1, double TangledEnergyValue = 2.5, double RingingCardValue = 2,
+    int MaxAddedRitual = 1,
     double BurnPenalty = 2, StatusPlacementValues? PlacementValues = null,
-    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1);
+    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1, double Heal = 0.45,
+    IReadOnlyDictionary<EffectKind, double>? EffectTurns = null, double BeckonPenalty = 3);
 
 public sealed record ActionHistory(
     int AddedStrength = 0, int InsertedCards = 0, int LastPlayerDebuffTurn = int.MinValue,
@@ -86,13 +82,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var hits = (profile.HitWeights ?? new Dictionary<int, double> { [1] = 1 })
             .Where(pair => pair.Key > 0 && pair.Value > 0).OrderBy(pair => pair.Key).ToArray();
         var actions = profile.EffectWeights ?? new Dictionary<EffectKind, double>();
-        var survival = context.RemainingForecast ??
-            SurvivalForecast.FromExpectedSurvival(profile.BaseExpectedSurvivalTurns, settings.ForecastHorizon);
-        // The current action occupies this turn. Strength first changes a later attack.
-        double futureWindowWeight = survival.Select((window, index) =>
-            index == 0 ? 0 : window.AliveAtAction * Math.Pow(settings.Discount, index)).Sum();
-        double ritualWindowWeight = survival.Select((window, index) =>
-            Math.Max(0, index - 1) * window.AliveAtAction * Math.Pow(settings.Discount, index)).Sum();
         bool canDebuff = !context.PlayerHasArtifact &&
             (history.LastPlayerDebuffTurn == int.MinValue ||
                 turn - history.LastPlayerDebuffTurn > settings.PlayerDebuffCooldownTurns);
@@ -109,32 +98,32 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                             Math.Min(amount, Math.Max(0, context.ExpectedDamageAgainstMonster - context.ExistingBlock)) *
                             settings.Block);
                         break;
+                    case EffectKind.Heal:
+                        Add(kind, amount, IntentStyle.Defend, Math.Min(amount, Math.Max(0, context.MissingHp)) * settings.Heal);
+                        break;
+                    case EffectKind.Intangible when !context.AlreadyIntangible:
+                        Add(kind, amount, IntentStyle.Defend, StatusCost(kind, amount));
+                        break;
                     case EffectKind.Strength when amount <= settings.MaxAddedStrength - history.AddedStrength:
-                        Add(kind, amount, IntentStyle.Buff, amount * profile.ExpectedAttackHitsPerTurn * futureWindowWeight);
+                        Add(kind, amount, IntentStyle.Buff, StatusCost(kind, amount));
                         break;
                     case EffectKind.Ritual when amount <= settings.MaxAddedRitual - history.AddedRitual:
-                        Add(kind, amount, IntentStyle.Buff, amount * profile.ExpectedAttackHitsPerTurn * ritualWindowWeight);
+                        Add(kind, amount, IntentStyle.Buff, StatusCost(kind, amount));
                         break;
                     case EffectKind.Weak when canDebuff && !context.PlayerAlreadyWeak:
-                        Add(kind, amount, IntentStyle.PlayerDebuff,
-                            context.ExpectedPlayerAttackDamage * settings.WeakDamageReduction * settings.Weak *
-                            DebuffWindowWeight(amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
                         break;
                     case EffectKind.Vulnerable when canDebuff && !context.PlayerAlreadyVulnerable:
-                        Add(kind, amount, IntentStyle.PlayerDebuff,
-                            context.ExpectedEnemyAttackDamageAgainstPlayer * settings.VulnerableDamageIncrease *
-                            DebuffWindowWeight(amount));
+                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
                         break;
                     case EffectKind.Tangled when canDebuff && !context.PlayerAlreadyRestricted:
-                        Add(kind, amount, IntentStyle.PlayerDebuff, amount * context.ExpectedAttackCardsPlayed *
-                            context.ExpectedEnergyPressure * settings.TangledEnergyValue);
+                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
                         break;
                     case EffectKind.Ringing when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
                         context.AllowHardCardLimit && history.HardCardLimits < settings.MaxHardCardLimits:
-                        Add(kind, amount, IntentStyle.PlayerDebuff,
-                            Math.Max(0, context.ExpectedCardsPlayed - 1) * settings.RingingCardValue);
+                        Add(kind, amount, IntentStyle.PlayerDebuff, StatusCost(kind, amount));
                         break;
-                    case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn
+                    case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon
                         when amount <= settings.MaxInsertedCards - history.InsertedCards:
                         var placements = profile.CardPlacements?.Where(place => place.Card == kind).ToArray();
                         if (placements is not { Length: > 0 })
@@ -144,13 +133,18 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                             double draws = kind switch
                             {
                                 EffectKind.Dazed => context.DazedDraws, EffectKind.Wound => context.WoundDraws,
-                                _ => context.BurnDraws
+                                EffectKind.Beckon => context.BeckonDraws, _ => context.BurnDraws
                             };
                             draws *= (settings.PlacementValues ?? new StatusPlacementValues()).For(placement.Pile);
                             if (kind == EffectKind.Dazed)
                                 draws = Math.Clamp(draws, 0, 1);
                             double burnTriggers = placement.Pile == StatusPile.Hand ? settings.HandBurnDamageChance : draws;
-                            double penalty = kind == EffectKind.Burn ? burnTriggers * settings.BurnPenalty : 0;
+                            double penalty = kind switch
+                            {
+                                EffectKind.Burn => burnTriggers * settings.BurnPenalty,
+                                EffectKind.Beckon => draws * settings.BeckonPenalty,
+                                _ => 0
+                            };
                             Add(kind, amount, IntentStyle.PlayerDebuff, amount * (draws * settings.CardSlot + penalty),
                                 placement.Pile, placement.Weight);
                         }
@@ -188,7 +182,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 yield return attack;
                 foreach (var extra in extras)
                 {
-                    if (extra.Effect.Kind == EffectKind.Ringing)
+                    if (extra.Effect.Kind is EffectKind.Ringing or EffectKind.Intangible)
                         continue;
                     yield return new ActionCandidate(
                         $"{attack.Id} + {EffectName(extra.Effect)}", extra.Style, true,
@@ -208,8 +202,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             }
         }
 
-        double DebuffWindowWeight(int amount) =>
-            Enumerable.Range(0, Math.Min(amount, settings.ForecastHorizon)).Sum(index => Math.Pow(settings.Discount, index));
+        double StatusCost(EffectKind kind, int amount) =>
+            OpeningValuation.Evaluate(new StatusValue(amount, settings.EffectTurns?.GetValueOrDefault(kind) ?? 0),
+                profile.ActionValue);
     }
 
     private static string EffectName(ActionEffect effect) =>

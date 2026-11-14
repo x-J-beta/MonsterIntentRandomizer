@@ -1,64 +1,22 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "gameVersion": "v0.113.0",
-  "status": "prototype_candidates_and_estimates",
+  "status": "prototype_pool_and_mechanics_reference",
   "defaultEligibility": "excluded_until_reviewed",
   "layerLimitsApplyOnlyToRandomlyAddedStates": true,
   "scope": "single_player_standard_starting_monsters_with_an_explicit_opening_pool",
   "runtimeSettingsFile": "settings.json",
   "sampling": {
     "notes": [
-      "对全场候选多次按权重抽取无变化、正面或负面档，可给单怪多个不同状态。抽中空档不补抽。",
-      "每次按已抽状态更新同一怪的边际估值。按单怪和全场绝对值之和限制，正负状态无法抵消额度。",
-      "用独立的遭遇种子确定选中的怪物与状态，增援不重新抽开场状态。"
+      "按配置多次抽取无变化、正面或负面档，抽中空档时结束本次抽取。",
+      "全场抽取结束后，将正负估值相抵再核对净值。超额时逐个移除最能让净值接近零的状态。",
+      "净值绝对值上限为全场基础行动力之和乘 opening.maxEncounterValueMultiplier。"
     ]
   },
   "valuation": {
-    "basis": "signed_pressure_with_candidate_minus_pressure_without_candidate",
+    "formula": "actionValue × abs(amount) × turns",
     "positiveSignMeans": "more_threatening_to_player",
-    "fallbackExpectedLifetimeProfileField": "baseExpectedSurvivalTurns",
-    "expectedLifetimeUnit": "expected_enemy_actions_after_player_turns",
-    "futureDiscountPerEnemyTurn": 0.8,
-    "effectiveHpCoefficient": 0.4,
-    "monsterSpecificInputs": {
-      "actionValue": "用于估计额外存活窗口的出招压力，以及限制开场状态的净增减值。",
-      "attackFrequencyAndHitDistribution": "已确定的出招使用实际合规段数，未定回合使用该怪的攻击频次乘期望段数。模板权重影响期望段数。",
-      "defensiveTemplatesAndCurrentHp": "用该怪的主动格挡、回血和当轮掉血推算可兑现的防御与缺血。数字来自初始档位和即时战况。",
-      "targetPriorityAndAllies": "用该怪的位置、威胁、队友和阶段推算挨打、被上减益或带着治疗撑到下轮的几率。"
-    },
-    "survivalForecast": {
-      "maxEnemyWindows": 8,
-      "recentPlayerRoundLimit": 3,
-      "stagePriorWeightInPlayerRounds": 2,
-      "damagePriorSource": "stage_or_encounter_calibration",
-      "scenarios": [
-        { "id": "focus", "weight": 0.4, "singleTargetFocusShare": 0.85, "areaDamageMultiplier": 0.75 },
-        { "id": "balanced", "weight": 0.4, "singleTargetFocusShare": 0.65, "areaDamageMultiplier": 1 },
-        { "id": "area", "weight": 0.2, "singleTargetFocusShare": 0.45, "areaDamageMultiplier": 1.5 }
-      ],
-      "publicInputs": ["current_hp", "max_hp", "current_block_and_expiry", "visible_powers", "targetability", "living_allies", "act_and_encounter_phase", "spawn_timing", "action_eligibility", "recent_player_damage_by_targeting_type"],
-      "recomputeAt": ["opening", "planning_enemy_moves", "spawn", "death", "phase_change"],
-      "results": ["probability_alive_at_each_enemy_window", "probability_alive_at_each_enemy_turn_end", "expected_remaining_enemy_windows", "player_window_target_exposure", "forecast_truncated"],
-      "notes": [
-        "按幕和遭遇阶段提供单体伤害池及每目标群伤先验。用最近完整玩家轮更新，伤害样本口径包含被格挡的有效输出。先验尚未校准，缺少可信场景输入时用画像的基础生存时间。",
-        "按固定玩家策略分配每轮单体伤害，按可受击目标结算群伤。目标死亡后重新分配。进入相同当前阶段的对照组和状态组复用权重和出招策略。",
-        "战斗时点决定当前轮玩家剩余伤害和怪物的行动资格。首领未知下一阶段采用当前血条和阶段边界。超出窗口的存活标记截断，持续成长候选需要充足覆盖。"
-      ]
-    },
-    "lifetimeWeighting": {
-      "persistent": "按战中预测的 S[t] 乘该窗口的条件期望效果及 0.8^(t - 1)。回退时对第 t 个敌方行动窗口使用 clamp(基础预期生存时间 - (t - 1), 0, 1) 近似 S[t]。",
-      "duration": "按原版持续时间以及该状态实际会触发的窗口计价。只保留预计存在的窗口，不额外乘整场寿命。",
-      "singleUse": "按首次合格触发在死亡前出现的概率乘单次价值，耗尽即停止。用存活时间估计触发机会及折现。",
-      "playerWindow": "第一个玩家行动窗口发生在敌方第一次行动之前，要单独保留。后续玩家窗口用承接的上一敌方行动存活率作快速近似。预期敌方行动少于一次的怪也仍可在首轮被攻击、反伤或受到减益。"
-    },
-    "poolCompensation": "开场时一次性从行动力池减去有符号的全部状态估值。正面扣除，负面返还，余额可为负。",
-    "notes": [
-      "同一场景下比较有无该状态的即时及未来边际压力，配对使用相同的预定招式、目标情景、估计方法和反制条件。状态改变存活率及可行动回合时计入压力。",
-      "要求绝对差值同时低于两项上限或等于边界。零收益、方向不符或无法可靠估值的候选出池。正负方向指相对怪物的战斗强度。",
-      "分别按攻击段数、预计有效格挡和状态持续窗口算真实变化。选中的状态只向行动力池登记一次净估值，实际预告伤害仍按状态结算。",
-      "按档概率与过滤后的实际出场率、净均值分别记录。正面档比负面档高 10 个百分点。若两档单次平均幅度接近，原型整体压力会略升。",
-      "开场用原版或无额外状态的出招分布做基准，战中用当前生命、队友和阶段重算。若状态会改变存活，用同一情景比较变化前后。单次只使用一种估值途径，避免反复乘生存率或重复收取未来行动收益。"
-    ]
+    "poolCompensation": "每只怪的有符号状态净值一次性从该怪行动力池扣除。负面返还全额，余额可以为负。"
   },
   "application": {
     "phase": "after_vanilla_opening_setup_before_first_player_side_start",
@@ -69,167 +27,80 @@
       "等待原版固有能力施加，再通过原版 PowerCmd 施加已选状态。完成后以实际生效的层数生成或刷新首招意图。",
       "原版已有同类状态、宿主特殊或流程不明时，先移除候选。免疫或人工制品可拦住减益时移除对应负面候选，避免抵消或消耗原版权益。若实际未生效，不追加一个随机替代状态。",
       "本机 v0.113.0 的 Weak、Vulnerable、Frail 均从敌方 AfterSideTurnEnd 调用 TickDownDuration。按计划时点新施加的 1 层覆盖第一轮，敌方回合末衰减。需用首轮实战核对挂接时序和应用后的 SkipNextDurationTick。"
-    ]
+    ],
+    "status": "game_integration_pending"
   },
   "eligible": {
     "NONE": {
-      "polarity": "none",
-      "maxStacks": 0,
-      "reason": "允许在开场方案中保持原版配置。"
+      "reason": "保持原版开场。"
     },
     "STRENGTH": {
-      "polarity": "positive",
-      "powerId": "STRENGTH",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "formula": "sum(discount[t] * survivalAtAction[t] * expectedPoweredHitsIfAlive[t] * marginalDamagePerHit[t])",
-      "perWindowBasis": "合规攻击频次 × 平均命中段数 × 每段实际伤害增量",
-      "reason": "原版按每段合规攻击增加伤害。首轮起有效，按预计可兑现的受影响段数估价，并检查多段峰值。"
+      "reason": "对每段合规攻击增加伤害。"
     },
     "RITUAL": {
-      "polarity": "positive",
-      "powerId": "RITUAL",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "formula": "sum(discount[t] * survivalAtAction[t] * expectedPoweredHitsIfAlive[t] * ritualAmount * effectiveRitualTriggersBeforeAttack[t])",
-      "reason": "按敌方回合末累计的力量估值。开场首击尚无加成。目标版本在敌方行动期间施加时会置跳过标记。用实际力量结算校正多段和其他状态修正。",
-      "conditions": ["forecast_covers_relevant_growth", "passes_per_target_damage_peaks", "no_scripted_ritual_or_equivalent_growth"]
+      "reason": "按持有者的回合末结算力量成长。"
     },
     "REGEN": {
-      "polarity": "positive",
-      "powerId": "REGEN",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "formula": "0.4 * sum(discount[t] * survivalAtTurnEnd[t] * expectedEffectiveHealIfAlive[t])",
-      "perWindowBasis": "有效回血 = min(触发时缺失生命, max(0, 初始层数 - 之前耗掉的层数))",
-      "reason": "持有者参与的回合末存活时治疗并减一层。若跨越续命阈值，以配对预测所得额外行动价值替代直接回血折算。"
+      "reason": "持有者参与的回合末治疗并减层。"
     },
     "PLATING": {
-      "polarity": "positive",
-      "powerId": "PLATING",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "formula": "0.4 * sum(discount[t] * expectedExtraBlockAbsorbedInPlayerWindow[t])",
-      "perWindowBasis": "按首个玩家窗口授予、怪物回合末再授予和原版扣层实际时点求新增挡伤。首轮已有格挡与新增格挡共同受可吸收伤害限制。",
-      "reason": "独立使用时自动获得格挡。熟睡甲虫等宿主对原版甲覆有唤醒联动，避免混入其脚本状态组合。",
-      "conditions": ["not_part_of_an_existing_scripted_bundle", "uses_native_opening_hooks"]
-    },
-    "STRENGTH_DOWN": {
-      "polarity": "negative",
-      "powerId": "STRENGTH",
-      "amount": -1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "perWindowBasis": "合规攻击频次 × 平均命中段数 × 每段实际伤害减量，按负值计",
-      "reason": "原版 StrengthPower 允许负层。按各段减 1 后实际损失估价，考虑取整、伤害下限与剩余受影响段数。"
-    },
-    "WEAK": {
-      "polarity": "negative",
-      "powerId": "WEAK",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "perWindowBasis": "有覆盖的敌方攻击窗口内，合规攻击逐段结算前后的伤害差",
-      "reason": "持有者合规攻击的通用伤害乘数为 0.75，取实际逐段差值。按计划时点施加可覆盖首个敌方行动，首轮预期无攻击时出池。"
-    },
-    "VULNERABLE": {
-      "polarity": "negative",
-      "powerId": "VULNERABLE",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "perWindowBasis": "有覆盖的玩家攻击窗口内，折算新增有效伤害或由此少打的敌方行动",
-      "reason": "持有者受到的合规攻击使用 1.5 倍通用伤害。覆盖首个玩家行动。若已有存活模型，优先按可能少出的敌方招式估值；若只用粗估，按预计有效额外伤害折算为负压力。二者属于同一收益，不同时相加。"
-    },
-    "DEMISE": {
-      "polarity": "negative",
-      "powerId": "DEMISE",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "formula": "有无状态的折现行动差；行动不变时按 0.4 × 折现有效生命损失估算",
-      "reason": "持有者回合结束时按层失去生命，预测持续到死亡。"
-    },
-    "DOOM": {
-      "polarity": "negative",
-      "powerId": "DOOM",
-      "amount": 3,
-      "maxStacks": 3,
-      "valueModel": "persistent",
-      "formula": "持有者回合末达到处决线时结算，按因此少掉的折现行动价值估价",
-      "conditions": ["ordinary_monster", "no_scripted_death_or_phase", "forecast_reaches_execution_threshold"]
+      "reason": "可独立给出格挡，已有原版唤醒联动的组合应当留给原版。"
     },
     "ARTIFACT": {
-      "polarity": "positive",
-      "powerId": "ARTIFACT",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "singleUse",
-      "formula": "sum(discount[t] * probabilityFirstEligibleDebuffBlockedAt[t] * expectedValueOfBlockedDebuff[t])",
-      "perWindowBasis": "按存活期内首次合格减益的发生概率和价值计价",
-      "reason": "抵消持有者收到的减益。需要明确的开场额度和候选设置。"
+      "reason": "抵消收到的减益。"
     },
     "THORNS": {
-      "polarity": "positive",
-      "powerId": "THORNS",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "formula": "sum(discount[t] * expectedEffectiveRetaliationTriggers[t] * thornsAmount)",
-      "perWindowBasis": "合规受击段数 × 每次反伤的有效价值，从首个玩家窗口开始",
-      "reason": "响应通用的攻击事件。仅供允许反伤风格的怪物，并检查玩家多段攻击下的风险。"
+      "reason": "通过通用受击事件反击。"
+    },
+    "INTANGIBLE": {
+      "reason": "灵魂异鱼画像的开场和出招候选。"
+    },
+    "STRENGTH_DOWN": {
+      "powerId": "STRENGTH",
+      "reason": "以负层施加原版力量。"
+    },
+    "WEAK": {
+      "reason": "降低持有者合规攻击的伤害。"
+    },
+    "VULNERABLE": {
+      "reason": "提高持有者受到的合规攻击伤害。"
+    },
+    "DEMISE": {
+      "reason": "持有者参加的回合结束时失去生命。"
+    },
+    "DOOM": {
+      "reason": "持有者回合末达到灾厄阈值时处决。"
+    },
+    "IMBALANCED": {
+      "reason": "原型按怪物画像的 fullBlockChance 模拟攻击遭完全格挡后跳过行动。"
+    },
+    "STUN": {
+      "reason": "跳过开场行动。原型保留画像标记的强制首招。"
     }
   },
   "conditional": {
-    "IMBALANCED": {
-      "polarity": "negative",
-      "amount": 1,
-      "valueModel": "conditional",
-      "formula": "完全格挡概率 × 预计前一轮攻击概率 × 折现后下一次行动价值",
-      "reason": "仅在带 fullBlockChance 的宿主画像中使用。石虫沿用原版固有失衡。"
-    },
-    "STUN": {
-      "polarity": "negative",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "singleUse",
-      "formula": "扣除首个可随机行动的期望价值",
-      "conditions": ["ordinary_monster", "no_fixed_opening", "first_opportunity_can_be_skipped"],
-      "reason": "实际对接原版眩晕命令。保留剧情、同步或强制开场；走同一个开场负面额度筛选。"
-    },
     "FRAIL": {
-      "polarity": "negative",
-      "powerId": "FRAIL",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "perWindowBasis": "实际覆盖期间的合规主动格挡损失 × 可利用率 × 格挡换算系数",
       "reason": "可降低怪物主动招式提供的合规格挡。必须存在首轮可受影响的主动格挡，并验证结算标志。甲覆等非主动招式格挡无法作为估值依据。",
-      "conditions": ["verified_powered_monster_move_block", "has_effect_in_first_enemy_action_window"]
+      "conditions": [
+        "verified_powered_monster_move_block",
+        "has_effect_in_first_enemy_action_window"
+      ]
     },
     "DEXTERITY": {
-      "polarity": "positive",
-      "powerId": "DEXTERITY",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "perWindowBasis": "合规主动格挡频次 × 新增格挡的预计可利用量 × 格挡换算系数",
       "reason": "定量影响符合标志的自身主动格挡，适合格挡频率稳定的怪物。",
-      "conditions": ["verified_powered_monster_move_block", "profile_has_predictable_block_frequency", "power_not_used_as_script_input"]
+      "conditions": [
+        "verified_powered_monster_move_block",
+        "profile_has_predictable_block_frequency",
+        "power_not_used_as_script_input"
+      ]
     },
     "DEXTERITY_DOWN": {
-      "polarity": "negative",
-      "powerId": "DEXTERITY",
-      "amount": -1,
-      "maxStacks": 1,
-      "valueModel": "persistent",
-      "perWindowBasis": "合规主动格挡频次 × 减少的有效格挡 × 格挡换算系数，按负值计",
       "reason": "按实际损失的主动格挡估值，格挡最低为零。排除把敏捷另作招式变量的怪物。",
-      "conditions": ["verified_powered_monster_move_block", "profile_has_predictable_block_frequency", "power_not_used_as_script_input"]
+      "conditions": [
+        "verified_powered_monster_move_block",
+        "profile_has_predictable_block_frequency",
+        "power_not_used_as_script_input"
+      ]
     }
   },
   "excluded": {
@@ -257,7 +128,6 @@
   },
   "deferredForBalance": {
     "TERRITORIAL": "逐回合加力量，需要独立校准成长曲线和战斗长度。",
-    "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。",
     "VIGOR": "单次增伤可能影响同一招的多段伤害。验证目标版怪物攻击命令的增伤和消耗同步后再纳入。",
     "POISON": "可做负面候补。定价需按预计兑现的中毒跳数，并检查敌方行动前死亡以及和玩家毒系能力的联动。"
   },
@@ -286,6 +156,8 @@
     "https://spire-codex.com/powers/tank",
     "https://spire-codex.com/powers/territorial",
     "https://spire-codex.com/powers/vital_spark",
-    "https://github.com/Hexpion/Slay-the-spire-2/tree/main/Slay%20the%20Spire%202/src/Core/Models/Powers"
+    "https://github.com/Hexpion/Slay-the-spire-2/tree/main/Slay%20the%20Spire%202/src/Core/Models/Powers",
+    "https://spire-codex.com/monsters/soul_fysh",
+    "https://spire-codex.com/powers/intangible"
   ]
 }

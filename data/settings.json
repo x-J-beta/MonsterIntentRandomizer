@@ -10,18 +10,19 @@
   "actions": {
     "attack": 1,
     "block": 0.4,
-    "heal": 0.4,
-    "weak": 0.45,
+    "heal": 0.45,
     "weakDamageReduction": 0.25,
-    "vulnerableDamageIncrease": 0.5,
     "cardSlotValue": 2.5,
     "maxAddedStrength": 2,
     "maxAddedRitual": 1,
-    "tangledEnergyValue": 2.5,
-    "ringingCardValue": 2,
+    "effectTurns": {
+      "Strength": 0.2, "Ritual": 0.4, "Intangible": 0.9,
+      "Weak": 0.15, "Vulnerable": 0.3, "Tangled": 0.25, "Ringing": 0.35
+    },
     "maxHardCardLimits": 1,
     "hardCardLimitFirstTurn": 2,
     "burnPenalty": 2,
+    "beckonPenalty": 3,
     "handBurnDamageChance": 1,
     "cardPlacementValues": { "hand": 0.35, "top": 1.4, "draw": 1, "bottom": 0.45, "discard": 0.6 },
     "maxInsertedCards": 2,
@@ -30,6 +31,8 @@
     "minimumBaseDamagePerHit": 1,
     "amounts": {
       "Block": [3, 5, 8],
+      "Heal": [3, 5, 8],
+      "Intangible": [1],
       "Strength": [1],
       "Ritual": [1],
       "Weak": [1],
@@ -38,37 +41,33 @@
       "Ringing": [1],
       "Dazed": [1],
       "Wound": [1],
-      "Burn": [1]
+      "Burn": [1],
+      "Beckon": [1, 2]
     }
   },
   "opening": {
     "weights": { "none": 30, "positive": 40, "negative": 30 },
     "attempts": 3,
     "maxPerMonster": 2,
-    "maxEncounterAbsoluteValue": 6,
-    "maxAbsoluteValue": 5,
-    "maxActionValueShare": 0.55,
-    "effectiveHpCoefficient": 0.4,
-    "vulnerableHpCoefficient": 0.7,
-    "vulnerableRetargetShare": 0.3,
-    "amounts": {
-      "STRENGTH": 1,
-      "RITUAL": 1,
-      "REGEN": 1,
-      "PLATING": 1,
-      "STRENGTH_DOWN": -1,
-      "WEAK": 1,
-      "VULNERABLE": 1,
-      "DEMISE": 1,
-      "DOOM": 3,
-      "ARTIFACT": 1,
-      "THORNS": 1,
-      "IMBALANCED": 1,
-      "STUN": 1
+    "maxEncounterValueMultiplier": 0.5,
+    "states": {
+      "STRENGTH": { "amount": 1, "turns": 0.2 },
+      "RITUAL": { "amount": 1, "turns": 0.4 },
+      "REGEN": { "amount": 1, "turns": 0.08 },
+      "PLATING": { "amount": 1, "turns": 0.06 },
+      "INTANGIBLE": { "amount": 1, "turns": 0.9 },
+      "STRENGTH_DOWN": { "amount": -1, "turns": -0.2 },
+      "WEAK": { "amount": 1, "turns": -0.15 },
+      "VULNERABLE": { "amount": 1, "turns": -0.3 },
+      "DEMISE": { "amount": 1, "turns": -0.1 },
+      "DOOM": { "amount": 3, "turns": -0.04 },
+      "ARTIFACT": { "amount": 1, "turns": 0.12 },
+      "THORNS": { "amount": 1, "turns": 0.2 },
+      "IMBALANCED": { "amount": 1, "turns": -0.25 },
+      "STUN": { "amount": 1, "turns": -1 }
     }
   },
   "forecast": {
-    "discount": 0.8,
     "maxEnemyWindows": 8,
     "recentPlayerRoundLimit": 3,
     "stagePriorWeightInPlayerRounds": 2,
@@ -97,23 +96,18 @@
     "allies": [
       {
         "id": "rear", "hp": 23, "maxHp": 23, "block": 0, "priority": 1,
-        "expectedMove": { "value": 7, "attackFrequency": 0.65, "damagePerHit": 4, "hits": 2 },
+        "actionValue": 7,
         "openingStates": ["PLATING", "WEAK", "DEMISE"]
       }
     ],
     "recentPlayerDamage": [],
     "turnContext": {
       "expectedDamageAgainstMonster": 8,
-      "expectedPlayerAttackDamage": 12,
-      "expectedEnemyAttackDamageAgainstPlayer": 10,
       "dazedDraws": 0.6,
       "woundDraws": 0.8,
       "burnDraws": 0.6,
-      "expectedCardsPlayed": 3,
-      "expectedAttackCardsPlayed": 1.4,
-      "expectedEnergyPressure": 0.65
-    },
-    "artifactValue": 0,
-    "artifactChancePerTargetedWindow": 0
+      "beckonDraws": 0.6,
+      "missingHp": 6
+    }
   }
 }

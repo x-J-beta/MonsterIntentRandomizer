@@ -7,7 +7,6 @@ internal static class PrototypeChecks
         var scenario = new[] { new TargetingScenario(1, 1, 1) };
         var target = new EnemySnapshot("test", 8, 8, 0, 0);
         var attack = new DamageEstimate(3, 0, 1);
-        var expectedMoves = new[] { new ExpectedMove(7, 1, 7, 1) };
         var baseline = SurvivalForecast.Predict([target], target.Id, attack, scenario, 4);
         Equal(2, baseline.Sum(window => window.AliveAtAction), "baseline actions");
         var guarded = SurvivalForecast.Predict([target, new EnemySnapshot("ally", 9, 9, 0, 1)],
@@ -18,17 +17,9 @@ internal static class PrototypeChecks
         Equal(0, late[0].AliveAtAction, "no action on spawn round");
         Equal(1, late[1].AliveAtAction, "late spawn survives next window");
 
-        CheckOpening("DEMISE", 1, -0.72);
-        CheckOpening("DEMISE", 2, -5.6);
-        CheckOpening("DOOM", 5, -5.6);
-        CheckOpening("DOOM", 1, 0);
-        CheckOpening("STUN", 1, -7);
-        CheckOpening("WEAK", 1, -2);
-        CheckOpening("RITUAL", 1, 0.8);
-        CheckOpening("REGEN", 1, 0.4);
-        // The first two points of Block let this monster survive to act a third time.
-        CheckOpening("PLATING", 1, 4.48);
-        CheckOpening("ARTIFACT", 1, 2, artifactValue: 2, artifactChance: 1);
+        Equal(-3, OpeningValuation.Evaluate(new StatusValue(1, -0.3), 10), "opening vulnerable");
+        Equal(9, OpeningValuation.Evaluate(new StatusValue(1, 0.9), 10), "opening intangible");
+        Equal(-4, OpeningValuation.Evaluate(new StatusValue(-2, -0.2), 10), "negative strength amounts");
         Equal(1.5, SurvivalForecast.FromExpectedSurvival(1.5, 4).Sum(window => window.AliveAtAction),
             "profile survival fallback");
         try
@@ -41,38 +32,22 @@ internal static class PrototypeChecks
         {
         }
 
-        var variant = new OpeningState("DEMISE", 1);
-        var onlyNegatives = new Dictionary<string, IReadOnlyList<OpeningOption>>
-        {
-            [target.Id] = [new OpeningOption(variant, -1), new OpeningOption(new OpeningState("STUN", 1), -7)]
-        };
-        var budgets = new Dictionary<string, double> { [target.Id] = 2 };
-        if (OpeningValuation.ChooseTarget(onlyNegatives, budgets, 100, 0, 0, new Random(1)) is not null ||
-            OpeningValuation.ChooseTarget(onlyNegatives, budgets, 0, 100, 0, new Random(1))?.State != variant)
-        {
-            throw new InvalidOperationException("Opening selection violated polarity or budget.");
-        }
         var openingOptions = new Dictionary<string, IReadOnlyList<OpeningOption>>
         {
             ["first"] = [new(new OpeningState("STRENGTH", 1), 2)],
-            ["second"] = [new(new OpeningState("WEAK", 1), -2), new(variant, -0.5)]
+            ["second"] = [new(new OpeningState("WEAK", 1), -2)]
         };
-        var openingBudgets = new Dictionary<string, double> { ["first"] = 3, ["second"] = 3 };
-        var draws = new OpeningDraws(0, 1, 1, 12, 2, 2.5);
-        var result = OpeningValuation.Draw(openingOptions, openingBudgets, draws, new Random(11));
-        if (result.Count < 2 || result.Sum(pick => Math.Abs(pick.Value)) > 2.5)
-            throw new InvalidOperationException("Multiple opening draws exceeded the sum-of-absolute-values budget.");
-
-        double VulnerableValue(double potential)
-        {
-            var attacker = new DamageEstimate(potential, 0, 1);
-            var before = SurvivalForecast.Predict([target with { Hp = 100 }], target.Id, attacker, scenario, 4);
-            var state = new OpeningState("VULNERABLE", 1);
-            var after = SurvivalForecast.Predict([target with { Hp = 100 }], target.Id, attacker, scenario, 4, opening: state);
-            return OpeningValuation.Evaluate(state, before, after, expectedMoves, 0.8)!.Value;
-        }
-        if (VulnerableValue(15) >= VulnerableValue(5))
-            throw new InvalidOperationException("Vulnerable did not scale with potential player damage.");
+        var openingActionValues = new Dictionary<string, double> { ["first"] = 3, ["second"] = 3 };
+        var draws = new OpeningDraws(0, 1, 1, 12, 2, 0.5);
+        var result = OpeningValuation.Draw(openingOptions, openingActionValues, draws, new Random(11));
+        if (result.Count != 2 || Math.Abs(result.Sum(pick => pick.Value)) > 3)
+            throw new InvalidOperationException("Opposite opening values should cancel within the net budget.");
+        if (OpeningValuation.Draw(openingOptions, openingActionValues,
+                draws with { MaxEncounterValueMultiplier = 0.25 }, new Random(11)).Count != 2)
+            throw new InvalidOperationException("Large opposite effects should cancel before the budget is checked.");
+        if (OpeningValuation.Draw(openingOptions, openingActionValues,
+                draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25 }, new Random(11)).Count != 0)
+            throw new InvalidOperationException("An unbalanced opening exceeded the encounter multiplier.");
 
         var planner = new ActionPlanner(new PoolSettings(0.75, 0.9));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
@@ -144,10 +119,15 @@ internal static class PrototypeChecks
         var amounts = new Dictionary<EffectKind, int[]>
         {
             [EffectKind.Block] = [3, 5, 8], [EffectKind.Strength] = [1], [EffectKind.Weak] = [1],
-            [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1]
+            [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1],
+            [EffectKind.Heal] = [3], [EffectKind.Intangible] = [1], [EffectKind.Beckon] = [1]
         };
-        var catalogSettings = new ActionValuationSettings(0.4, 0.45, 0.25, 0.5, 2.5, 0.8, 2, 2, 1,
-            8, 1, 1, amounts);
+        var catalogSettings = new ActionValuationSettings(0.4, 0.25, 2.5, 2, 2, 1, 1, 1, amounts,
+            EffectTurns: new Dictionary<EffectKind, double>
+            {
+                [EffectKind.Strength] = 0.2, [EffectKind.Weak] = 0.15, [EffectKind.Vulnerable] = 0.3,
+                [EffectKind.Ritual] = 0.4, [EffectKind.Ringing] = 0.35, [EffectKind.Intangible] = 0.9
+            });
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
@@ -155,15 +135,17 @@ internal static class PrototypeChecks
             EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
-        var context = new ActionContext(6, 12, 6, DazedDraws: 0.6, WoundDraws: 0.8);
+        var context = new ActionContext(6, DazedDraws: 0.6, WoundDraws: 0.8, MissingHp: 3);
         var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind);
-        Equal(0.8 * profile.AttackFrequency, Pure(EffectKind.Strength).Value,
-            "strength scales with future attacks, not this turn");
+        Equal(0.2 * profile.ActionValue, Pure(EffectKind.Strength).Value, "strength equivalent turns");
+        Equal(0.9 * profile.ActionValue, Pure(EffectKind.Intangible).Value, "intangible equivalent turns");
+        Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
+        Equal(0.6 * (2.5 + 3), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
         Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
-        Equal(3, Pure(EffectKind.Vulnerable).Value, "vulnerable values covered damage");
+        Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
         Equal(mixed.Damage + Pure(EffectKind.Weak).Value, mixed.ActualScore, "compound score includes its debuff");
@@ -187,7 +169,7 @@ internal static class PrototypeChecks
         var tuned = tunedCatalog.Generate(varied, context with { Weakened = true }, new ActionHistory(AddedStrength: 1), 1)
             .ToArray();
         Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
-        Equal(1.35 * 1.8, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
+        Equal(2 * 0.15 * profile.ActionValue, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
         if (tuned.Any(action => action.Effects!.Any(effect =>
                 (effect.Kind == EffectKind.Strength && effect.Amount == 2) ||
                 (effect.Kind == EffectKind.Attack && effect.Amount < 2))))
@@ -237,13 +219,6 @@ internal static class PrototypeChecks
         Console.WriteLine($"Single-hit sample: {attacks / 2000:F3} hits/turn (target {profile.AttackFrequency:F2}).");
         Console.WriteLine($"Three-hit sample: {totalHits / 2000:F3} hits/turn (target {multiProfile.AttackFrequency:F2}).");
 
-        void CheckOpening(string id, int amount, double expected, double artifactValue = 0, double artifactChance = 0)
-        {
-            var state = new OpeningState(id, amount);
-            var modified = SurvivalForecast.Predict([target], target.Id, attack, scenario, 4, opening: state);
-            Equal(expected, OpeningValuation.Evaluate(state, baseline, modified, expectedMoves,
-                0.8, artifactValue, artifactChance) ?? double.NaN, id);
-        }
     }
 
     private static void Equal(double expected, double actual, string name)

@@ -47,8 +47,6 @@ if (!enabled)
 var valuation = root.GetProperty("opening");
 var actions = root.GetProperty("actions");
 double weakReduction = actions.GetProperty("weakDamageReduction").GetDouble();
-double vulnerableIncrease = actions.GetProperty("vulnerableDamageIncrease").GetDouble();
-double healCoefficient = actions.GetProperty("heal").GetDouble();
 double blockCoefficient = actions.GetProperty("block").GetDouble();
 var forecast = root.GetProperty("forecast");
 var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenario => new TargetingScenario(
@@ -56,7 +54,6 @@ var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenar
     scenario.GetProperty("areaDamageMultiplier").GetDouble(),
     scenario.TryGetProperty("damageMultiplier", out var roll) ? roll.GetDouble() : 1)).ToArray();
 int horizon = forecast.GetProperty("maxEnemyWindows").GetInt32();
-double discount = forecast.GetProperty("discount").GetDouble();
 double hp = entry.GetProperty("hp").GetDouble();
 var allyInputs = sample.GetProperty("allies").EnumerateArray().ToArray();
 var enemies = new[]
@@ -77,104 +74,77 @@ var damage = SurvivalForecast.BlendDamage(forecast.GetProperty("playerDamageBySt
     forecast.GetProperty("stagePriorWeightInPlayerRounds").GetDouble());
 double firstPlayerWindow = sample.GetProperty("firstPlayerWindowFraction").GetDouble();
 var baseline = SurvivalForecast.Predict(enemies, monsterId, damage, scenarios, horizon, firstPlayerWindow);
-double expectedHits = profile.ExpectedHitsPerAttack;
-double attackShare = profile.ExpectedAttackTurnShare;
-double expectedAction = profile.ActionValue *
-    (attackShare + (1 - attackShare) * profile.NonAttackMultiplier);
-double expectedHitDamage = Math.Max(1, Math.Round(profile.ActionValue / Math.Max(1, expectedHits)));
-var moves = new[] { new ExpectedMove(expectedAction, attackShare, expectedHitDamage, expectedHits) };
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
 Console.WriteLine($"player damage prior after blending: {damage.SingleTarget:F1} single, {damage.AreaPerTarget:F1} area per target");
 Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
-var options = new List<OpeningOption>();
-double retargetShare = valuation.GetProperty("vulnerableRetargetShare").GetDouble();
-double vulnerableHpCoefficient = valuation.GetProperty("vulnerableHpCoefficient").GetDouble();
 double fullBlockChance = entry.TryGetProperty("fullBlockChance", out var blockChance) ? blockChance.GetDouble() : 0;
-double? ValueState(string id, OpeningState state, IReadOnlyList<OpeningPick> previous)
+var stateValues = valuation.GetProperty("states").Deserialize<Dictionary<string, StatusValue>>(inputs)!;
+OpeningOption[] Options(EnemySnapshot enemy, JsonElement states, double value)
 {
-    bool primary = id == monsterId;
-    var ally = primary ? default : allyInputs.Single(input => input.GetProperty("id").GetString() == id);
-    var ownStates = previous.Where(pick => pick.MonsterId == id).Select(pick => pick.State).ToArray();
-    var allyStates = previous.Where(pick => pick.MonsterId != id).GroupBy(pick => pick.MonsterId)
-        .ToDictionary(group => group.Key, group => group.Select(pick => pick.State).ToArray());
-    var before = primary && previous.Count == 0 ? baseline :
-        SurvivalForecast.Predict(enemies, id, damage, scenarios, horizon, firstPlayerWindow,
-            vulnerableDamageIncrease: vulnerableIncrease, additionalOpening: ownStates,
-            vulnerableRetargetShare: retargetShare, allyOpening: allyStates);
-    var after = SurvivalForecast.Predict(enemies, id, damage, scenarios, horizon, firstPlayerWindow, opening: state,
-        vulnerableDamageIncrease: vulnerableIncrease, additionalOpening: ownStates,
-        vulnerableRetargetShare: retargetShare, allyOpening: allyStates);
-    var expected = primary ? moves : [ally.GetProperty("expectedMove").Deserialize<ExpectedMove>(inputs)!];
-    return OpeningValuation.Evaluate(state, before, after, expected, discount,
-        sample.GetProperty("artifactValue").GetDouble(), sample.GetProperty("artifactChancePerTargetedWindow").GetDouble(),
-        weakReduction, healCoefficient, blockCoefficient, valuation.GetProperty("effectiveHpCoefficient").GetDouble(),
-        vulnerableHpCoefficient, primary ? fullBlockChance : 0);
+    return states.EnumerateArray().Select(option => option.GetString()!)
+        .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
+            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
+        .Select(id =>
+        {
+            var state = stateValues[id];
+            return new OpeningOption(new OpeningState(id, state.Amount), OpeningValuation.Evaluate(state, value));
+        }).ToArray();
 }
-foreach (var option in ProfileSetting("openingStates").EnumerateArray())
-{
-    string id = option.GetString()!;
-    if (id == "STUN" && enemies[0].FixedOpening)
-        continue;
-    var state = new OpeningState(id, valuation.GetProperty("amounts").GetProperty(id).GetInt32());
-    double? value = ValueState(monsterId, state, []);
-    options.Add(new OpeningOption(state, value));
-    Console.WriteLine($"{id,-15} {value?.ToString("+0.00;-0.00;0.00") ?? "unknown"}");
-}
+var options = Options(enemies[0], ProfileSetting("openingStates"), profile.ActionValue);
+foreach (var option in options)
+    Console.WriteLine($"{option.State.Id,-15} {option.Value:+0.00;-0.00;0.00}");
 
 var openingRandom = new Random(seed);
 var actionRandom = new Random(seed ^ 0x649AAB81);
 var imbalanceRandom = new Random(seed ^ 0x4B82C097);
 var openingWeights = valuation.GetProperty("weights");
-double Budget(double actionValue) => Math.Min(valuation.GetProperty("maxAbsoluteValue").GetDouble(),
-    valuation.GetProperty("maxActionValueShare").GetDouble() * actionValue);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
-var budgets = new Dictionary<string, double> { [monsterId] = Budget(profile.ActionValue) };
-foreach (var ally in allyInputs.Where(input => input.TryGetProperty("openingStates", out _) && input.TryGetProperty("expectedMove", out _)))
+var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
+foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue", out _)))
 {
     string id = ally.GetProperty("id").GetString()!;
-    var snapshot = enemies.Single(enemy => enemy.Id == id);
-    choicesByMonster[id] = ally.GetProperty("openingStates").EnumerateArray().Select(option => option.GetString()!)
-        .Where(state => !(state == "STUN" && snapshot.FixedOpening) &&
-            !(state is "DOOM" or "DEMISE" && snapshot.ScriptedDeath))
-        .Select(state => new OpeningState(state, valuation.GetProperty("amounts").GetProperty(state).GetInt32()))
-        .Select(state => new OpeningOption(state, ValueState(id, state, []))).ToArray();
-    budgets[id] = Budget(ally.GetProperty("expectedMove").GetProperty("value").GetDouble());
+    actionValues[id] = ally.GetProperty("actionValue").GetDouble();
+    if (ally.TryGetProperty("openingStates", out var allyStates))
+        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), allyStates, actionValues[id]);
 }
 var selected = OpeningValuation.Draw(
-    choicesByMonster, budgets,
+    choicesByMonster, actionValues,
     new OpeningDraws(openingWeights.GetProperty("none").GetDouble(), openingWeights.GetProperty("positive").GetDouble(),
         openingWeights.GetProperty("negative").GetDouble(), valuation.GetProperty("attempts").GetInt32(),
-        valuation.GetProperty("maxPerMonster").GetInt32(), valuation.GetProperty("maxEncounterAbsoluteValue").GetDouble()),
-    openingRandom, ValueState);
+        valuation.GetProperty("maxPerMonster").GetInt32(), valuation.GetProperty("maxEncounterValueMultiplier").GetDouble()),
+    openingRandom);
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();
 double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
     $"{pick.MonsterId}:{pick.State.Id} ({pick.Value:+0.00;-0.00;0.00})"))) +
-    $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, absolute {selected.Sum(pick => Math.Abs(pick.Value)):F2}");
+    $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, " +
+    $"net limit {actionValues.Values.Sum() * valuation.GetProperty("maxEncounterValueMultiplier").GetDouble():F2}");
 
 var planner = new ActionPlanner(settings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
 var catalog = new ActionCatalog(new ActionValuationSettings(
     blockCoefficient,
-    actions.GetProperty("weak").GetDouble(),
-    weakReduction, vulnerableIncrease,
-    actions.GetProperty("cardSlotValue").GetDouble(), discount,
+    weakReduction,
+    actions.GetProperty("cardSlotValue").GetDouble(),
     actions.GetProperty("maxAddedStrength").GetInt32(),
     actions.GetProperty("maxInsertedCards").GetInt32(),
     actions.GetProperty("playerDebuffCooldownTurns").GetInt32(),
-    horizon, actions.GetProperty("pureBlockCooldownTurns").GetInt32(),
+    actions.GetProperty("pureBlockCooldownTurns").GetInt32(),
     actions.GetProperty("minimumBaseDamagePerHit").GetInt32(),
     actions.GetProperty("amounts").EnumerateObject().ToDictionary(
         field => Enum.Parse<EffectKind>(field.Name, ignoreCase: true),
         field => field.Value.Deserialize<int[]>()!),
     actions.GetProperty("attack").GetDouble(),
-    actions.GetProperty("maxAddedRitual").GetInt32(), actions.GetProperty("tangledEnergyValue").GetDouble(),
-    actions.GetProperty("ringingCardValue").GetDouble(), actions.GetProperty("burnPenalty").GetDouble(),
+    actions.GetProperty("maxAddedRitual").GetInt32(), actions.GetProperty("burnPenalty").GetDouble(),
     actions.GetProperty("cardPlacementValues").Deserialize<StatusPlacementValues>(inputs),
-    actions.GetProperty("maxHardCardLimits").GetInt32(), actions.GetProperty("handBurnDamageChance").GetDouble()));
+    actions.GetProperty("maxHardCardLimits").GetInt32(), actions.GetProperty("handBurnDamageChance").GetDouble(),
+    actions.GetProperty("heal").GetDouble(),
+    actions.GetProperty("effectTurns").Deserialize<Dictionary<EffectKind,double>>(inputs)!,
+    actions.GetProperty("beckonPenalty").GetDouble()));
 var history = new ActionHistory();
 bool previousAttack = false;
+int intangibleTurns = ownOpening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
 var turnContext = sample.GetProperty("turnContext").Deserialize<ActionContext>(inputs)!;
 bool hasFallback = sample.TryGetProperty("fallback", out var fallback);
 int fallbackHits = hasFallback && fallback.TryGetProperty("attackHits", out var fallbackCount)
@@ -197,6 +167,7 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
     bool imbalanced = ownOpening.Any(pick => pick.State.Id == "IMBALANCED");
     bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
     var context = turnContext with { Strength = strength, Weakened = weak,
+        AlreadyIntangible = turnContext.AlreadyIntangible || intangibleTurns > 0,
         AllowHardCardLimit = turnContext.AllowHardCardLimit && turn >= actions.GetProperty("hardCardLimitFirstTurn").GetInt32() };
     var candidates = catalog.Generate(profile, context, history, turn);
     var action = planner.Plan(balances, profile, candidates, actionRandom,
@@ -211,6 +182,8 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
     else
         history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
     previousAttack = action.Action?.IsAttack ?? (usedFallback && fallbackHits > 0);
+    intangibleTurns = Math.Max(0, intangibleTurns - 1) +
+        (action.Action?.Effects?.Where(effect => effect.Kind == EffectKind.Intangible).Sum(effect => effect.Amount) ?? 0);
     string moveName = action.Action?.Id ?? (usedFallback ? "vanilla fallback" : skipFromImbalance ? "imbalanced" : "skipped");
     string actualScore = usedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
     Console.WriteLine(
