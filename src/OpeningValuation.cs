@@ -8,7 +8,9 @@ public static class OpeningValuation
     public static double? Evaluate(
         OpeningState state, IReadOnlyList<ForecastWindow> baseline,
         IReadOnlyList<ForecastWindow> modified, IReadOnlyList<ExpectedMove> moves, double discount,
-        double artifactValue = 0, double artifactChancePerTargetedWindow = 0)
+        double artifactValue = 0, double artifactChancePerTargetedWindow = 0,
+        double weakDamageReduction = 0.25, double healCoefficient = 0.4,
+        double blockCoefficient = 0.4, double effectiveHpCoefficient = 0.4)
     {
         double value = 0;
         double artifactRemaining = 1;
@@ -26,7 +28,8 @@ public static class OpeningValuation
                 "STRENGTH_DOWN" => HitChange(move, -Math.Abs(state.Amount)) * before.AliveAtAction,
                 "WEAK" when index < state.Amount =>
                     move.AttackFrequency * move.Hits *
-                    (CombatMath.AttackDamagePerHit(move.DamagePerHit, weak: true) - move.DamagePerHit) *
+                    (CombatMath.AttackDamagePerHit(move.DamagePerHit, weak: true,
+                        weakDamageReduction: weakDamageReduction) - move.DamagePerHit) *
                     before.AliveAtAction,
                 "WEAK" => 0,
                 "RITUAL" => HitChange(move, state.Amount * index) * before.AliveAtAction,
@@ -52,12 +55,13 @@ public static class OpeningValuation
             for (int index = 0; index < modified.Count; index++)
             {
                 ForecastWindow after = modified[index];
-                value += Math.Pow(discount, index) * 0.4 * (state.Id switch
+                value += Math.Pow(discount, index) * (state.Id switch
                 {
-                    "REGEN" => after.Healing,
-                    "PLATING" => after.ExtraBlockUsed,
-                    "DEMISE" => -after.RemovedEnemyHp,
-                    "VULNERABLE" => -Math.Max(0, after.IncomingAttackDamage - baseline[index].IncomingAttackDamage),
+                    "REGEN" => healCoefficient * after.Healing,
+                    "PLATING" => blockCoefficient * after.ExtraBlockUsed,
+                    "DEMISE" => -effectiveHpCoefficient * after.RemovedEnemyHp,
+                    "VULNERABLE" => -effectiveHpCoefficient *
+                        Math.Max(0, after.IncomingAttackDamage - baseline[index].IncomingAttackDamage),
                     _ => 0
                 });
             }

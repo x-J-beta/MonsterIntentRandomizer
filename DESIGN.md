@@ -12,6 +12,19 @@
 
 在项目目录运行 `dotnet run -- 42 TOADPOLE` 或 `dotnet run -- 42 FLYCONID`，可查看两个画像的生存预测、开场状态估值及 10 轮出招轨迹。可增加第三个参数 `deadlyEnemies` 使用高进阶行动价值。`dotnet run -- --check` 运行固定种子校验。原型使用已安装的 .NET SDK 和 .NET 8 运行时，无额外包。命令行样例使用固定的公开战况先验，游戏接入时由战斗快照提供实时上下文。
 
+输出中的 `actual score` 是状态结算后、玩家格挡前的攻击面板总伤害。纯格挡、强化、减益和塞牌显示 0。复合招只把实际面板攻击显示在这一列，`action cost` 则记录行动力池扣除的完整估值。原版回退的面板数值未知时显示 `n/a`，样例可用 `fallback.panelDamage` 提供。
+
+### 运行配置
+
+| 文件 | 可以调整的运行参数 |
+| --- | --- |
+| [monster-profiles.json](data/monster-profiles.json) | 怪物行动价值和进阶档、波动、攻击目标段数、模板权重、允许的段数、效果种类、开场状态选项和基础生存时间 |
+| [action-values.json](data/action-values.json) | 双池留存率、起始余额、余额对选招的影响、选择权重的最小散布、行动估值系数、每种效果的可选剂量及已有频次限制 |
+| [initial-states.json](data/initial-states.json) | 开场抽取权重、状态层数、可选状态估值范围、有效生命折算、生存预测窗口、情景与折现 |
+| [prototype-scenarios.json](data/prototype-scenarios.json) | 默认种子、样例怪、轨迹轮数、场上队友、入场时点、参考和近期伤害、行动估值上下文、原版回退样例 |
+
+默认从 `data/` 读取。使用 `dotnet run -- 42 TOADPOLE standard <配置目录>` 可读取另一套文件，便于并排保留不同参数。其他设计参考如逐怪原版基线与非攻击行动目录用于查阅。
+
 ### 行动力池与攻击欲望池
 
 - **行动力池**每个可随机回合保留上轮余额的 75%，再加行动力。补充值在攻击档和非攻击档之间按预计攻击回合比例加权，并按波动做三角扰动。行动力无容量，可为负。相应档位价值与余额的平均值用作抽取目标，最低为零。距离目标越远，选中权重越低。高于余额的招式仍可抽到，选中后扣完整基础分。
@@ -34,6 +47,7 @@
 | [action-values.json](data/action-values.json) | 公共估值尺度和随机参数的初值 |
 | [monster-profiles.json](data/monster-profiles.json) | 蟾蜍蝌蚪、飞蝇菌子的怪物参数样例 |
 | [initial-states.json](data/initial-states.json) | 开场正负状态、抽取规则和排除理由 |
+| [prototype-scenarios.json](data/prototype-scenarios.json) | 命令行样例初始战况和输出参数 |
 
 ## 每种怪物的参数
 

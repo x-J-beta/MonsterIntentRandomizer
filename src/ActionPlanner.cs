@@ -4,28 +4,34 @@ public enum IntentStyle { Attack, Buff, Defend, PlayerDebuff }
 
 public sealed record ActionCandidate(
     string Id, IntentStyle Style, bool IsAttack, double Value, double Damage, double Weight = 1,
-    double? ActualValue = null, IReadOnlyList<ActionEffect>? Effects = null)
+    IReadOnlyList<ActionEffect>? Effects = null)
 {
+    public double ActualScore => Damage;
+
     public int AttackHits => Effects?.Where(effect => effect.Kind == EffectKind.Attack).Sum(effect => effect.Hits)
         ?? (IsAttack ? 1 : 0);
 
     public static ActionCandidate Attack(
-        string id, int hitCount, int baseDamagePerHit, int strength, bool weak, double weight)
+        string id, int hitCount, int baseDamagePerHit, int strength, bool weak, double weight,
+        double weakDamageReduction = 0.25)
     {
         double baseDamage = hitCount * baseDamagePerHit;
-        double actualDamage = hitCount * CombatMath.AttackDamagePerHit(baseDamagePerHit, strength, weak);
-        return new ActionCandidate(id, IntentStyle.Attack, true, baseDamage, actualDamage, weight, actualDamage,
+        double actualDamage = hitCount * CombatMath.AttackDamagePerHit(baseDamagePerHit, strength, weak, weakDamageReduction);
+        return new ActionCandidate(id, IntentStyle.Attack, true, baseDamage, actualDamage, weight,
             [new ActionEffect(EffectKind.Attack, baseDamagePerHit, hitCount)]);
     }
 }
 
 internal static class CombatMath
 {
-    public static double AttackDamagePerHit(double baseDamage, int strength = 0, bool weak = false) =>
-        Math.Floor(Math.Max(0, baseDamage + strength) * (weak ? 0.75 : 1));
+    public static double AttackDamagePerHit(double baseDamage, int strength = 0, bool weak = false,
+        double weakDamageReduction = 0.25) =>
+        Math.Floor(Math.Max(0, baseDamage + strength) * (weak ? 1 - weakDamageReduction : 1));
 }
 
-public sealed record PoolSettings(double ActionValueRetention, double AttackDesireRetention);
+public sealed record PoolSettings(
+    double ActionValueRetention, double AttackDesireRetention, double InitialActionValueShare = 0.5,
+    double InitialAttackDesire = 0, double BalanceTargetWeight = 0.5, double MinimumSelectionSpread = 0.5);
 
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
@@ -60,7 +66,7 @@ public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools Af
 public sealed class ActionPlanner(PoolSettings settings)
 {
     public Pools Start(MonsterProfile profile, double openingValue = 0) =>
-        new(profile.ActionValue * 0.5 - openingValue, 0);
+        new(profile.ActionValue * settings.InitialActionValueShare - openingValue, settings.InitialAttackDesire);
 
     public ActionPlan Plan(
         Pools previous, MonsterProfile profile, IEnumerable<ActionCandidate> candidates,
@@ -106,13 +112,13 @@ public sealed class ActionPlanner(PoolSettings settings)
     public Pools Settle(Pools granted, double value, int attackHits) =>
         new(granted.ActionValue - value, granted.AttackDesire - attackHits);
 
-    private static ActionCandidate? Pick(
+    private ActionCandidate? Pick(
         IEnumerable<ActionCandidate> eligible, bool isAttack, MonsterProfile profile,
         double available, Random random)
     {
         double tierValue = profile.ActionValue * (isAttack ? 1 : profile.NonAttackMultiplier);
-        double target = Math.Max(0, (tierValue + available) / 2);
-        double scale = Math.Max(0.5, tierValue * profile.Volatility);
+        double target = Math.Max(0, tierValue + (available - tierValue) * settings.BalanceTargetWeight);
+        double scale = Math.Max(settings.MinimumSelectionSpread, tierValue * profile.Volatility);
         var weighted = eligible.Where(candidate => candidate.IsAttack == isAttack).Select(candidate =>
         {
             double distance = Math.Abs(candidate.Value - target);

@@ -8,11 +8,13 @@ if (args.Length > 0 && args[0] == "--check")
     return;
 }
 
-int seed = args.Length > 0 ? int.Parse(args[0], CultureInfo.InvariantCulture) : 42;
-string monsterId = args.Length > 1 ? args[1].ToUpperInvariant() : "TOADPOLE";
-string ascension = args.Length > 2 ? args[2] : "standard";
-string folder = Path.Combine(Directory.GetCurrentDirectory(), "data");
+string folder = args.Length > 3 ? args[3] : Path.Combine(Directory.GetCurrentDirectory(), "data");
 var inputs = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+using var simulation = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "prototype-scenarios.json")));
+var sample = simulation.RootElement;
+int seed = args.Length > 0 ? int.Parse(args[0], CultureInfo.InvariantCulture) : sample.GetProperty("defaultSeed").GetInt32();
+string monsterId = (args.Length > 1 ? args[1] : sample.GetProperty("defaultMonsterId").GetString()!).ToUpperInvariant();
+string ascension = args.Length > 2 ? args[2] : sample.GetProperty("defaultActionValueTier").GetString()!;
 using var profiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "monster-profiles.json")));
 using var values = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "action-values.json")));
 using var states = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "initial-states.json")));
@@ -39,6 +41,11 @@ var profile = new MonsterProfile(
         .Select(effect => Enum.Parse<EffectKind>(effect.GetString()!)).ToArray());
 
 var valuation = states.RootElement.GetProperty("valuation");
+var effectValues = values.RootElement.GetProperty("effects");
+double weakReduction = effectValues.GetProperty("weak").GetProperty("attackDamageReduction").GetDouble();
+double vulnerableIncrease = effectValues.GetProperty("vulnerable").GetProperty("attackDamageIncrease").GetDouble();
+double healCoefficient = effectValues.GetProperty("heal").GetProperty("coefficientPerEffectiveHp").GetDouble();
+double blockCoefficient = effectValues.GetProperty("block").GetProperty("coefficientPerEffectiveBlock").GetDouble();
 var forecast = valuation.GetProperty("survivalForecast");
 var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenario => new TargetingScenario(
     scenario.GetProperty("weight").GetDouble(), scenario.GetProperty("singleTargetFocusShare").GetDouble(),
@@ -48,14 +55,19 @@ double discount = valuation.GetProperty("futureDiscountPerEnemyTurn").GetDouble(
 double hp = entry.GetProperty("demoHp").GetDouble();
 var enemies = new[]
 {
-    new EnemySnapshot("front", hp, hp, 0, 0,
-        FixedOpening: draft.TryGetProperty("preserveOpeningRole", out var opening) && opening.GetBoolean()),
-    new EnemySnapshot("rear", 23, 23, 0, 1)
-};
+    new EnemySnapshot(monsterId, hp, hp, sample.GetProperty("targetBlock").GetDouble(),
+        sample.GetProperty("targetPriority").GetDouble(),
+        FirstPlayerWindow: sample.GetProperty("targetFirstPlayerWindow").GetInt32(),
+        FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32(),
+        FixedOpening: draft.TryGetProperty("preserveOpeningRole", out var opening) && opening.GetBoolean())
+}.Concat(sample.GetProperty("allies").Deserialize<EnemySnapshot[]>(inputs)!).ToArray();
 // Reference output for one early Act 1 demonstration, until an encounter adapter supplies observations.
-var damage = SurvivalForecast.BlendDamage(new DamageEstimate(10, 2, 2), [],
+var damage = SurvivalForecast.BlendDamage(sample.GetProperty("stageDamagePrior").Deserialize<DamageEstimate>(inputs)!,
+    sample.GetProperty("recentPlayerDamage").Deserialize<DamageEstimate[]>(inputs)!
+        .TakeLast(forecast.GetProperty("recentPlayerRoundLimit").GetInt32()),
     forecast.GetProperty("stagePriorWeightInPlayerRounds").GetDouble());
-var baseline = SurvivalForecast.Predict(enemies, "front", damage, scenarios, horizon);
+double firstPlayerWindow = sample.GetProperty("firstPlayerWindowFraction").GetDouble();
+var baseline = SurvivalForecast.Predict(enemies, monsterId, damage, scenarios, horizon, firstPlayerWindow);
 double expectedHits = profile.ExpectedHitsPerAttack;
 double attackShare = profile.ExpectedAttackTurnShare;
 double expectedAction = profile.ActionValue *
@@ -71,8 +83,11 @@ foreach (var option in draft.GetProperty("initialRandomStateOptions").EnumerateA
     var candidate = states.RootElement.GetProperty("eligible").TryGetProperty(id, out var eligibleState)
         ? eligibleState : states.RootElement.GetProperty("conditional").GetProperty(id);
     var state = new OpeningState(id, candidate.TryGetProperty("amount", out var amount) ? amount.GetInt32() : 0);
-    var modified = SurvivalForecast.Predict(enemies, "front", damage, scenarios, horizon, opening: state);
-    double? value = OpeningValuation.Evaluate(state, baseline, modified, moves, discount);
+    var modified = SurvivalForecast.Predict(enemies, monsterId, damage, scenarios, horizon, firstPlayerWindow, opening: state,
+        vulnerableDamageIncrease: vulnerableIncrease);
+    double? value = OpeningValuation.Evaluate(state, baseline, modified, moves, discount,
+        sample.GetProperty("artifactValue").GetDouble(), sample.GetProperty("artifactChancePerTargetedWindow").GetDouble(),
+        weakReduction, healCoefficient, blockCoefficient, valuation.GetProperty("effectiveHpCoefficient").GetDouble());
     options.Add(new OpeningOption(state, value));
     Console.WriteLine($"{id,-15} {value?.ToString("+0.00;-0.00;0.00") ?? "unknown"}");
 }
@@ -83,53 +98,66 @@ var openingWeights = states.RootElement.GetProperty("sampling").GetProperty("def
 double budget = Math.Min(valuation.GetProperty("maxAbsolutePressureDelta").GetDouble(),
     valuation.GetProperty("maxAbsoluteShareOfStandardActionValue").GetDouble() * profile.ActionValue);
 var selected = OpeningValuation.ChooseTarget(
-    new Dictionary<string, IReadOnlyList<OpeningOption>> { ["front"] = options },
-    new Dictionary<string, double> { ["front"] = budget },
+    new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options },
+    new Dictionary<string, double> { [monsterId] = budget },
     openingWeights.GetProperty("positive").GetDouble(), openingWeights.GetProperty("negative").GetDouble(),
     openingWeights.GetProperty("none").GetDouble(), openingRandom);
 Console.WriteLine($"opening: {selected?.State.Id ?? "NONE"} (value {selected?.Value ?? 0:+0.00;-0.00;0.00})");
 
 var planner = new ActionPlanner(settings);
 var balances = planner.Start(profile, selected?.Value ?? 0);
-Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {profile.ActionValue * 0.5:F2} before state)");
-var effectValues = values.RootElement.GetProperty("effects");
+Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
 var caps = values.RootElement.GetProperty("generatedActionLimits");
 var catalog = new ActionCatalog(new ActionValuationSettings(
-    effectValues.GetProperty("block").GetProperty("coefficientPerEffectiveBlock").GetDouble(),
+    blockCoefficient,
     effectValues.GetProperty("weak").GetProperty("coefficientPerPreventedPlayerDamage").GetDouble(),
-    effectValues.GetProperty("weak").GetProperty("attackDamageReduction").GetDouble(),
-    effectValues.GetProperty("vulnerable").GetProperty("attackDamageIncrease").GetDouble(),
+    weakReduction, vulnerableIncrease,
     caps.GetProperty("cardSlotValue").GetDouble(), discount,
     caps.GetProperty("maxAddedStrength").GetInt32(),
     caps.GetProperty("maxInsertedCards").GetInt32(),
-    caps.GetProperty("playerDebuffCooldownTurns").GetInt32()));
+    caps.GetProperty("playerDebuffCooldownTurns").GetInt32(),
+    horizon, caps.GetProperty("pureBlockCooldownTurns").GetInt32(),
+    caps.GetProperty("minimumBaseDamagePerHit").GetInt32(),
+    caps.GetProperty("amounts").EnumerateObject().ToDictionary(
+        field => Enum.Parse<EffectKind>(field.Name, ignoreCase: true),
+        field => field.Value.Deserialize<int[]>()!),
+    effectValues.GetProperty("attack").GetProperty("coefficientPerDamage").GetDouble()));
 var history = new ActionHistory();
+var turnContext = sample.GetProperty("turnContext").Deserialize<ActionContext>(inputs)!;
+var fallback = sample.GetProperty("fallback");
+int fallbackHits = fallback.GetProperty("attackHits").GetInt32();
+double fallbackActionValue = fallback.TryGetProperty("actionValue", out var fallbackValue)
+    ? fallbackValue.GetDouble() : profile.ActionValue;
+string fallbackScore = fallback.TryGetProperty("panelDamage", out var fallbackDamage)
+    ? fallbackDamage.GetDouble().ToString("F1") : "n/a";
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-for (int turn = 1; turn <= 10; turn++)
+for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
 {
     string? stateId = selected?.State.Id;
     int amount = selected?.State.Amount ?? 0;
-    int strength = history.AddedStrength + (stateId switch
+    int strength = turnContext.Strength + history.AddedStrength + (stateId switch
     {
         "STRENGTH" or "STRENGTH_DOWN" => amount,
         "RITUAL" => (turn - 1) * amount,
         _ => 0
     });
-    bool weak = stateId == "WEAK" && turn <= amount;
-    var context = new ActionContext(8, 12, 10, strength, weak, DazedDraws: 0.6, WoundDraws: 0.8);
+    bool weak = turnContext.Weakened || (stateId == "WEAK" && turn <= amount);
+    var context = turnContext with { Strength = strength, Weakened = weak };
     var candidates = catalog.Generate(profile, context, history, turn);
     var action = planner.Plan(balances, profile, candidates, actionRandom,
         canRandomize: stateId != "STUN" || turn > 1);
-    balances = action.CanRandomize && action.Action is null
-        ? planner.Settle(action.Granted, profile.ActionValue, 1)
+    bool usedFallback = action.CanRandomize && action.Action is null;
+    balances = usedFallback
+        ? planner.Settle(action.Granted, fallbackActionValue, fallbackHits)
         : action.After;
     if (action.Action is not null)
         history = history.Record(action.Action, turn);
-    string moveName = action.Action?.Id ?? (action.CanRandomize ? "vanilla fallback" : "skipped");
+    string moveName = action.Action?.Id ?? (usedFallback ? "vanilla fallback" : "skipped");
+    string actualScore = usedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
     Console.WriteLine(
-        $"{turn,2} {moveName,-16} damage {action.Action?.Damage ?? 0,2}  " +
-        $"actual score {action.Action?.ActualValue ?? action.Action?.Value ?? 0:F1}  " +
+        $"{turn,2} {moveName,-16} actual score {actualScore,4}  " +
+        $"action cost {(action.Action?.Value ?? (usedFallback ? fallbackActionValue : 0)):F2}  " +
         $"pool {action.Granted.ActionValue:F2} -> {balances.ActionValue:F2}, " +
         $"desire {action.Granted.AttackDesire:F2} -> {balances.AttackDesire:F2}, " +
-        $"hits {action.Action?.AttackHits ?? (action.CanRandomize ? 1 : 0)}");
+        $"hits {action.Action?.AttackHits ?? (usedFallback ? fallbackHits : 0)}");
 }

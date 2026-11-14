@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "gameVersion": "v0.113.0",
   "status": "design_estimates",
   "unit": "one_point_of_telegraphed_single_target_attack",
@@ -16,13 +16,27 @@
   },
   "pools": {
     "actionValueRetention": 0.75,
-    "attackDesireRetention": 0.9
+    "attackDesireRetention": 0.9,
+    "initialActionValueShare": 0.5,
+    "initialAttackDesire": 0,
+    "balanceTargetWeight": 0.5,
+    "minimumSelectionSpread": 0.5
   },
   "generatedActionLimits": {
     "cardSlotValue": 2.5,
     "maxAddedStrength": 2,
     "maxInsertedCards": 2,
-    "playerDebuffCooldownTurns": 1
+    "playerDebuffCooldownTurns": 1,
+    "pureBlockCooldownTurns": 1,
+    "minimumBaseDamagePerHit": 1,
+    "amounts": {
+      "Block": [3, 5, 8],
+      "Strength": [1],
+      "Weak": [1],
+      "Vulnerable": [1],
+      "Dazed": [1],
+      "Wound": [1]
+    }
   },
   "intentWeights": ["attack", "buff", "defend", "playerDebuff"],
   "effects": {

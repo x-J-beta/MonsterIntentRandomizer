@@ -25,6 +25,7 @@
     "fallbackExpectedLifetimeProfileField": "baseExpectedSurvivalTurns",
     "expectedLifetimeUnit": "expected_enemy_actions_after_player_turns",
     "futureDiscountPerEnemyTurn": 0.8,
+    "effectiveHpCoefficient": 0.4,
     "monsterSpecificInputs": {
       "actionValue": "用于估计额外存活窗口的出招压力，以及限制开场状态的净增减值。",
       "attackFrequencyAndHitDistribution": "已确定的出招使用实际合规段数，未定回合使用该怪的攻击频次乘期望段数。模板权重影响期望段数。",

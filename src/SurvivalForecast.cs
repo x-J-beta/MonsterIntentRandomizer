@@ -18,7 +18,7 @@ public static class SurvivalForecast
     public static ForecastWindow[] Predict(
         IReadOnlyList<EnemySnapshot> enemies, string targetId, DamageEstimate damage,
         IReadOnlyList<TargetingScenario> scenarios, int horizon, double firstPlayerWindowFraction = 1,
-        OpeningState? opening = null)
+        OpeningState? opening = null, double vulnerableDamageIncrease = 0.5)
     {
         int target = Enumerable.Range(0, enemies.Count).FirstOrDefault(i => enemies[i].Id == targetId, -1);
         if (target < 0)
@@ -67,7 +67,7 @@ public static class SurvivalForecast
                     {
                         if (opening?.Id == "VULNERABLE" && turn <= opening.Amount)
                         {
-                            received *= 1.5;
+                            received *= 1 + vulnerableDamageIncrease;
                         }
                         incoming = Math.Min(received, hp[index] + block + nextPlatingBlock);
                         // Approximate hit count scales with the damage assigned to this creature.

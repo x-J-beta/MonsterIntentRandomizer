@@ -120,7 +120,14 @@ internal static class PrototypeChecks
         if (Math.Abs(totalHits / 2000 - 1.5) > 0.12)
             throw new InvalidOperationException($"Unexpected multihit rate: {totalHits / 2000:F3}.");
 
-        var catalog = new ActionCatalog(new ActionValuationSettings(0.4, 0.45, 0.25, 0.5, 2.5, 0.8, 2, 2, 1));
+        var amounts = new Dictionary<EffectKind, int[]>
+        {
+            [EffectKind.Block] = [3, 5, 8], [EffectKind.Strength] = [1], [EffectKind.Weak] = [1],
+            [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1]
+        };
+        var catalogSettings = new ActionValuationSettings(0.4, 0.45, 0.25, 0.5, 2.5, 0.8, 2, 2, 1,
+            8, 1, 1, amounts);
+        var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
             HitWeights = new Dictionary<int, double> { [1] = 1, [3] = 1 },
@@ -140,6 +147,26 @@ internal static class PrototypeChecks
         Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
         Equal(2, Pure(EffectKind.Wound).Value, "wound draw valuation");
         Equal(3, Pure(EffectKind.Vulnerable).Value, "vulnerable values covered damage");
+        Equal(0, Pure(EffectKind.Block).ActualScore, "block has no attack panel damage");
+        var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
+        Equal(mixed.Effects![0].Amount * mixed.AttackHits, mixed.ActualScore, "compound score uses panel damage");
+        if (mixed.Value <= mixed.ActualScore)
+            throw new InvalidOperationException("Compound action cost did not include its debuff.");
+        var customAmounts = new Dictionary<EffectKind, int[]>(amounts)
+        {
+            [EffectKind.Block] = [4], [EffectKind.Strength] = [1, 2], [EffectKind.Weak] = [2]
+        };
+        var tunedCatalog = new ActionCatalog(catalogSettings with { Amounts = customAmounts, MinimumBaseDamagePerHit = 2 });
+        var tuned = tunedCatalog.Generate(varied, context with { Weakened = true }, new ActionHistory(AddedStrength: 1), 1)
+            .ToArray();
+        Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
+        Equal(1.35 * 1.8, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
+        if (tuned.Any(action => action.Effects!.Any(effect =>
+                (effect.Kind == EffectKind.Strength && effect.Amount == 2) ||
+                (effect.Kind == EffectKind.Attack && effect.Amount < 2))))
+            throw new InvalidOperationException("Configured dosages bypassed generation limits.");
+        Equal(9, new ActionPlanner(new PoolSettings(0.75, 0.9, 1, 3)).Start(profile, -1).ActionValue,
+            "configured starting pool");
         if (Pure(EffectKind.Dazed).Effects![0].Pile != StatusPile.Draw ||
             Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard ||
             !generated.Any(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]))
