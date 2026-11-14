@@ -81,6 +81,18 @@
       "evidence": ["frail_impl", "flyconid_local", "louse_progenitor"]
     },
     {
+      "id": "insert_dazed",
+      "vanillaCardType": "Dazed",
+      "vanillaCommand": "CardPileCmd.AddToCombatAndPreview",
+      "styleTags": ["playerDebuff"],
+      "intent": "StatusCard",
+      "eligibility": "v1",
+      "formula": "窗口内折现后预计抽中的概率 × 牌位价值。带虚无，默认每张最多折算一次。",
+      "designDefaults": { "suggestedCopiesPerUse": 1, "suggestedFirstPile": "draw" },
+      "constraints": ["战斗内加入目标玩家抽牌堆。", "与伤口共用每场塞牌上限。", "公开预告牌名和牌堆。"],
+      "evidence": ["dazed"]
+    },
+    {
       "id": "insert_wound",
       "vanillaCardType": "Wound",
       "vanillaCommand": "CardPileCmd.AddToCombatAndPreview",
@@ -265,6 +277,7 @@
     "temporary_strength_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/TemporaryStrengthPower.cs",
     "burn_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Cards/Burn.cs",
     "wound_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Cards/Wound.cs",
+    "dazed": "https://spire-codex.com/cards/dazed",
     "knowledge_demon_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/KnowledgeDemon.cs",
     "vantom_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/Vantom.cs",
     "slumbering_beetle_impl": "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Monsters/SlumberingBeetle.cs",

@@ -1,11 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "gameVersion": "v0.113.0",
   "status": "design_estimates",
   "unit": "one_point_of_telegraphed_single_target_attack",
   "limits": {
     "defaultActionVolatility": 0.15,
-    "maximumLowValueRoundingAllowance": 1,
     "targetValueDistribution": "triangular_centered",
     "pressureWindowEnemyTurns": 3,
     "futureDiscountPerEnemyTurn": 0.8
@@ -19,7 +18,18 @@
     "actionValueRetention": 0.75,
     "attackDesireRetention": 0.9,
     "actionCapacityInTurns": 1.6,
-    "attackDesireCapacity": 2
+    "attackDesireCapacity": 2,
+    "openingPositiveCharge": 1,
+    "openingNegativeRefund": 1,
+    "openingAdjustmentTurns": 2,
+    "openingRefundDelayTurns": 1
+  },
+  "generatedActionLimits": {
+    "cardSlotValue": 2.5,
+    "maxAddedStrength": 2,
+    "maxInsertedCards": 2,
+    "playerDebuffCooldownTurns": 1,
+    "minimumAttackValueShare": 0.35
   },
   "intentWeights": ["attack", "buff", "defend", "playerDebuff"],
   "effects": {

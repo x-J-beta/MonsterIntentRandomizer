@@ -57,24 +57,24 @@ internal static class PrototypeChecks
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
         var random = new Random(2026);
-        Equal(3, planner.Plan(new Pools(4, 1), profile, [], 6, random, canRandomize: false).After.ActionValue,
+        Equal(3, planner.Plan(new Pools(4, 1), profile, [], random, canRandomize: false).After.ActionValue,
             "skipped turns only decay");
         var choices = new[]
         {
             new ActionCandidate("attack", IntentStyle.Attack, true, 6, 6),
             new ActionCandidate("defend", IntentStyle.Defend, false, 2, 0)
         };
-        var capped = planner.Plan(new Pools(5, 2), profile, choices, 5, random);
-        if (capped.Action?.Id != "defend")
-            throw new InvalidOperationException("Damage cap did not remove the attack.");
+        var amplified = ActionCandidate.Attack("multi", 3, 3, 2, weak: false, 1);
+        var boosted = planner.Plan(new Pools(8, 2), profile, [amplified], random);
+        Equal(15, boosted.Action?.Damage ?? 0, "actual damage is not capped");
         var weakened = ActionCandidate.Attack("multi", 3, 3, 0, weak: true, 1);
         Equal(9, weakened.Value, "weak does not refill pool spending");
-        Equal(6, weakened.Damage, "weak changes the damage cap check");
+        Equal(6, weakened.Damage, "weak changes actual damage");
         double attacks = 0;
         Pools pools = default;
         for (int i = 0; i < 2000; i++)
         {
-            var plan = planner.Plan(pools, profile, choices, 6, random);
+            var plan = planner.Plan(pools, profile, choices, random);
             if (plan.Action is null || plan.After.ActionValue < 0 || plan.Action.Value > plan.Granted.ActionValue)
                 throw new InvalidOperationException("Pool overspent or failed to select from an affordable catalog.");
             pools = plan.After;
@@ -82,6 +82,65 @@ internal static class PrototypeChecks
         }
         if (Math.Abs(attacks / 2000 - profile.AttackFrequency) > 0.06)
             throw new InvalidOperationException($"Unexpected long-run attack frequency: {attacks / 2000:P1}");
+
+        ActionPlan FirstTurn(double value) =>
+            planner.Plan(planner.Start(profile, value), profile, [], new Random(9));
+        Equal(-1, FirstTurn(2).OpeningAdjustmentApplied, "charge first installment for positive state");
+        Equal(0, FirstTurn(-2).OpeningAdjustmentApplied, "keep weakened opening");
+        Pools queued = FirstTurn(-2).After;
+        var skipped = planner.Plan(queued, profile, [], random, canRandomize: false);
+        Equal(2, skipped.After.OpeningAdjustment, "skipped turn retains opening adjustment");
+        var second = planner.Plan(skipped.After with { ActionValue = 0 }, profile, [], random);
+        Equal(1, second.OpeningAdjustmentApplied, "delayed opening refund");
+        var third = planner.Plan(second.After with { ActionValue = 0 }, profile, [], random);
+        Equal(1, third.OpeningAdjustmentApplied, "second refund installment");
+        Equal(0, third.After.OpeningAdjustment, "opening refund applies once");
+        var full = planner.Plan(queued with { ActionValue = 100 }, profile, [], random);
+        Equal(0, full.OpeningAdjustmentApplied, "full pool cannot receive credit");
+        Equal(2, full.After.OpeningAdjustment, "full pool retains queued credit");
+        var cheap = planner.Plan(queued with { ActionValue = 0 }, profile, [choices[1]], random);
+        Equal(1, cheap.OpeningAdjustmentApplied, "affordable light action receives credit");
+        Equal(cheap.Granted.ActionValue - 2, cheap.After.ActionValue, "unused refund carries forward");
+
+        var catalog = new ActionCatalog(new ActionValuationSettings(0.4, 0.45, 0.25, 0.5, 2.5, 0.8, 2, 2, 1));
+        var varied = profile with
+        {
+            HitWeights = new Dictionary<int, double> { [1] = 1, [3] = 1 },
+            EnabledEffects =
+            [
+                EffectKind.Block, EffectKind.Strength, EffectKind.Weak,
+                EffectKind.Vulnerable, EffectKind.Dazed, EffectKind.Wound
+            ],
+            IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
+        };
+        var context = new ActionContext(6, 12, 6, DazedDraws: 0.6, WoundDraws: 0.8);
+        var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
+        ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
+            action.Effects![0].Kind == kind);
+        Equal(0.8 * 2 * profile.AttackFrequency, Pure(EffectKind.Strength).Value,
+            "strength scales with future attacks, not this turn");
+        Equal(1.5, Pure(EffectKind.Dazed).Value, "dazed draw valuation");
+        Equal(2, Pure(EffectKind.Wound).Value, "wound draw valuation");
+        Equal(3, Pure(EffectKind.Vulnerable).Value, "vulnerable values covered damage");
+        if (Pure(EffectKind.Dazed).Effects![0].Pile != StatusPile.Draw ||
+            Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard ||
+            !generated.Any(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]))
+            throw new InvalidOperationException("Generated effects or ordering are incomplete.");
+        if (generated.Any(action => action.IsAttack &&
+                action.Effects![0].Amount * action.Effects[0].Hits < profile.ActionValue * 0.35))
+            throw new InvalidOperationException("A token hit bypassed the attack floor.");
+        var exhausted = new ActionHistory(2, 2, 1, 1);
+        var limited = catalog.Generate(varied, context, exhausted, 2).ToArray();
+        if (limited.Any(action => action.Effects!.Any(effect => effect.Kind is
+                EffectKind.Strength or EffectKind.Dazed or EffectKind.Wound or EffectKind.Weak or EffectKind.Vulnerable)) ||
+            limited.Any(action => !action.IsAttack && action.Effects!.Any(effect => effect.Kind == EffectKind.Block)))
+        {
+            throw new InvalidOperationException("Repeat or encounter caps were ignored.");
+        }
+
+        var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory(), 1);
+        if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.Kind is EffectKind.Weak or EffectKind.Vulnerable)))
+            throw new InvalidOperationException("The catalog offered a debuff blocked by known Artifact.");
         Console.WriteLine($"Prototype checks passed. Attack sample: {attacks / 2000:P1}.");
 
         void CheckOpening(string id, int amount, double expected, double artifactValue = 0, double artifactChance = 0)

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "gameVersion": "v0.113.0",
   "status": "design_examples",
   "scope": "single_player_standard_act_1_normal_monsters",
@@ -8,6 +8,7 @@
   "profiles": {
     "TOADPOLE": {
       "name": "蟾蜍蝌蚪",
+      "demoHp": 23,
       "reference": {
         "source": "https://spire-codex.com/monsters/toadpole",
         "moves": [
@@ -19,7 +20,7 @@
         "regularCycleAttackFrequency": { "attackTurns": 2, "cycleTurns": 3 }
       },
       "draftProfile": {
-        "style": "偏好多段攻击，准备回合可上荆棘",
+        "style": "偏好多段攻击，随机准备招包含力量和格挡，原版前排开场带刺",
         "baseExpectedSurvivalTurns": 1.5,
         "actionValue": {
           "standard": 8,
@@ -38,15 +39,15 @@
           "single_attack": 35,
           "multi_attack": 65
         },
-        "nonAttackTemplates": ["gain_thorns", "self_block"],
         "allowedHitCounts": [1, 3],
-        "maxRandomThornsStacks": 2,
+        "basicEffects": ["Block", "Strength"],
         "preserveOpeningRole": true,
         "initialRandomStateOptions": ["NONE", "THORNS", "PLATING", "WEAK", "VULNERABLE", "DEMISE", "DOOM"]
       }
     },
     "FLYCONID": {
       "name": "飞蝇菌子",
+      "demoHp": 48,
       "reference": {
         "source": "https://spire-codex.com/monsters/flyconid",
         "moves": [
@@ -74,11 +75,8 @@
           "defend": 0,
           "playerDebuff": 60
         },
-        "attackTemplates": ["single_attack", "single_attack_then_vulnerable", "single_attack_then_frail"],
-        "nonAttackTemplates": ["apply_vulnerable_to_player", "apply_frail_to_player"],
         "allowedHitCounts": [1],
-        "maxRandomDebuffStacksPerMove": 2,
-        "maxConsecutiveDebuffMoves": 2,
+        "basicEffects": ["Weak", "Vulnerable", "Dazed", "Wound"],
         "initialRandomStateOptions": ["NONE", "STRENGTH", "RITUAL", "REGEN", "STRENGTH_DOWN", "WEAK", "VULNERABLE", "DEMISE", "DOOM"]
       }
     }

@@ -71,7 +71,7 @@ public static class OpeningValuation
         move.AttackFrequency * move.Hits *
         (CombatMath.AttackDamagePerHit(move.DamagePerHit, amount) - move.DamagePerHit);
 
-    public static (string MonsterId, OpeningState State)? ChooseTarget(
+    public static (string MonsterId, OpeningState State, double Value)? ChooseTarget(
         IReadOnlyDictionary<string, IReadOnlyList<OpeningOption>> candidatesByMonster,
         IReadOnlyDictionary<string, double> budgets, double positiveWeight, double negativeWeight,
         double noneWeight, Random random)
@@ -92,6 +92,7 @@ public static class OpeningValuation
             return null;
         }
         var target = eligible[random.Next(eligible.Length)];
-        return (target.Key, target.Options[random.Next(target.Options.Length)].State);
+        var choice = target.Options[random.Next(target.Options.Length)];
+        return (target.Key, choice.State, choice.Value!.Value);
     }
 }
