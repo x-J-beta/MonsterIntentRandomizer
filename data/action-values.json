@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "v0.113.0",
+  "status": "design_estimates",
+  "unit": "one_point_of_telegraphed_single_target_attack",
+  "limits": {
+    "candidateRelativeTolerance": 0.15,
+    "candidateMinimumAbsoluteTolerance": 1,
+    "pressureWindowEnemyTurns": 3,
+    "futureDiscountPerEnemyTurn": 0.8
+  },
+  "effects": {
+    "attack": {
+      "coefficientPerDamage": 1,
+      "aggregation": "resolve_each_hit_per_target"
+    },
+    "block": {
+      "coefficientPerEffectiveBlock": 0.4,
+      "suggestedRange": [0.3, 0.55]
+    },
+    "heal": {
+      "coefficientPerEffectiveHp": 0.4,
+      "suggestedRange": [0.3, 0.55],
+      "cap": "missing_hp"
+    },
+    "strength": {
+      "expectedValuePerStackForOrdinaryMonsters": [1.5, 3.5],
+      "basis": "discounted_expected_future_powered_hits"
+    },
+    "weak": {
+      "attackDamageReduction": 0.25,
+      "coefficientPerPreventedPlayerDamage": 0.45,
+      "suggestedCoefficientRange": [0.35, 0.55],
+      "basis": "newly_covered_player_attack_windows"
+    },
+    "vulnerable": {
+      "attackDamageIncrease": 0.5,
+      "basis": "newly_covered_powered_attacks_from_enemies_in_execution_order"
+    },
+    "frail": {
+      "cardBlockReduction": 0.25,
+      "basis": "newly_covered_card_block_expected_to_be_used"
+    },
+    "status_card": {
+      "expectedValuePerOrdinaryCard": [1.5, 3.0],
+      "basis": "draw_probability_times_hand_slot_cost_plus_expected_card_penalty"
+    },
+    "thorns": {
+      "basis": "discounted_expected_eligible_hits_received_times_retaliation_damage"
+    },
+    "artifact": {
+      "basis": "estimated_value_of_debuffs_prevented",
+      "requiresExplicitOpeningBudget": true
+    }
+  },
+  "equalValueExamples": {
+    "assumptions": {
+      "effectiveBlockCoefficient": 0.4,
+      "weakCoefficient": 0.5,
+      "expectedPlayerAttackDamageAffectedByWeak": 16,
+      "discountedExpectedFutureHitsAffectedByStrength": 3
+    },
+    "candidates": [
+      { "effects": ["10 damage"], "value": 10 },
+      { "effects": ["2 hits for 4", "5 effective Block"], "value": 10 },
+      { "effects": ["7 damage", "1 Strength"], "value": 10 },
+      { "effects": ["8 damage", "1 Weak"], "value": 10 }
+    ]
+  },
+  "references": [
+    "https://spire-codex.com/mechanics/combat-mechanics",
+    "https://spire-codex.com/monsters/decimillipede_segment_front",
+    "https://spire-codex.com/monsters/louse_progenitor"
+  ]
+}

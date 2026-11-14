@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "v0.113.0",
+  "status": "preliminary_review",
+  "defaultEligibility": "excluded_until_reviewed",
+  "layerLimitsApplyOnlyToRandomlyAddedStates": true,
+  "eligible": {
+    "NONE": {
+      "maxStacks": 0,
+      "reason": "允许在开场方案中保持原版配置。"
+    },
+    "STRENGTH": {
+      "maxStacks": 1,
+      "reason": "仅修改符合条件的自身攻击。开场按首轮起预计兑现的段数估价，并检查多段峰值。"
+    },
+    "ARTIFACT": {
+      "maxStacks": 1,
+      "reason": "抵消持有者收到的减益。需要明确的开场额度和候选设置。"
+    },
+    "THORNS": {
+      "maxStacks": 1,
+      "reason": "响应通用的攻击事件。仅供允许反伤风格的怪物，并检查玩家多段攻击下的风险。"
+    }
+  },
+  "conditional": {
+    "PLATING": {
+      "reason": "独立使用时自动获得格挡。需要验证首次授予时点，且要保留熟睡甲虫等宿主对原版甲覆的唤醒联动。",
+      "conditions": ["opening_timing_verified", "not_part_of_an_existing_scripted_bundle", "counts_toward_opening_budget"]
+    }
+  },
+  "excluded": {
+    "ESCAPE_ARTIST": "状态只维护倒数，逃跑由偷窃草蜢自身的行动状态机执行。挂到别的怪物身上会得到没有同等效果的倒数。",
+    "SLUMBER": "受伤和回合结束路径调用熟睡甲虫专属的唤醒招式。",
+    "SHRIEK": "依赖 TerrorEel 的怪物类型及专属状态。",
+    "PLOW": "仪式兽有专用的眩晕、力量清除和动作切换。",
+    "FLUTTER": "层数耗尽时读取招式历史并访问偷窃草蜢的悬浮状态。",
+    "BURROWED": "与 Tunneler 的破盾和出土动作、格挡时序绑定。",
+    "CURL_UP": "触发动画并可能修改育虱者专属的卷曲字段。",
+    "IMBALANCED": "击晕之外还可能设置 BowlbugRock 的失衡状态。",
+    "STOCK": "Axebot 死亡时从原槽位生成替身，还影响战斗结束判定。",
+    "INFESTED": "宿主死亡后生成幼虫，与精英遭遇的槽位和阶段逻辑绑定。",
+    "ILLUSION": "涉及随从、保留死亡单位、原招式历史和复活。",
+    "TANK": "在施加和移除时联动场上队友。",
+    "GUARDED": "依赖施加者及其死亡，不能直接按持有者的一次性开场效果估价。",
+    "HEIST": "绑定被盗物的所有者并改变奖励。",
+    "SANDPIT": "改变玩家和宠物的位置，并在倒数后触发处决与遭遇演出。",
+    "VITAL_SPARK": "虽然挂在怪物身上，但会侵蚀玩家所有技能牌，价值依赖玩家牌组。"
+  },
+  "deferredForBalance": {
+    "RITUAL": "永久逐回合加力量，会放大后续多段伤害。",
+    "TERRITORIAL": "逐回合加力量，需要独立校准成长曲线和战斗长度。",
+    "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。"
+  },
+  "references": [
+    "https://spire-codex.com/monsters/cubex_construct",
+    "https://spire-codex.com/monsters/thieving_hopper",
+    "https://spire-codex.com/powers/flutter",
+    "https://spire-codex.com/powers/tank",
+    "https://spire-codex.com/powers/territorial",
+    "https://spire-codex.com/powers/vital_spark",
+    "https://github.com/Hexpion/Slay-the-spire-2/tree/main/Slay%20the%20Spire%202/src/Core/Models/Powers"
+  ]
+}

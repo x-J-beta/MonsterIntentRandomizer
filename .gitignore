@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.idea/
+.godot/
+*.csproj.user
+*.suo
+*.log
+local-runs/
+dist/
+
