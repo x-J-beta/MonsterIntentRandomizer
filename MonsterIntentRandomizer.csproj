@@ -6,5 +6,9 @@
     <UseAppHost>false</UseAppHost>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" />
+  </ItemGroup>
 </Project>

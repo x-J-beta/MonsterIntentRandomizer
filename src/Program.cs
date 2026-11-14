@@ -18,38 +18,19 @@ int seed = args.Length > 0 ? int.Parse(args[0], CultureInfo.InvariantCulture) : 
 string monsterId = (args.Length > 1 ? args[1] : sample.GetProperty("defaultMonsterId").GetString()!).ToUpperInvariant();
 string ascension = args.Length > 2 ? args[2] : sample.GetProperty("defaultActionValueTier").GetString()!;
 using var profiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "monster-profiles.json")));
-var settings = root.GetProperty("pools").Deserialize<PoolSettings>(inputs)!;
-var defaults = profiles.RootElement.GetProperty("defaults");
+var rules = new RuleConfiguration(root, profiles.RootElement);
 var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
-var hitWeights = ProfileSetting("hitWeights").Deserialize<Dictionary<int, double>>(inputs)!;
-double basicActionValue = entry.GetProperty("actionValue").GetDouble();
+var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
     throw new ArgumentException($"Unknown action value tier: {ascension}.");
-var profile = new MonsterProfile(
-    ascension == "deadlyEnemies" && entry.TryGetProperty("deadlyEnemies", out var higher) ? higher.GetDouble() : basicActionValue,
-    ProfileSetting("volatility").GetDouble(),
-    entry.GetProperty("attackFrequency").GetDouble(),
-    ProfileSetting("nonAttackMultiplier").GetDouble(),
-    ProfileSetting("survivalTurns").GetDouble(),
-    entry.GetProperty("preferences").EnumerateObject().ToDictionary(
-        field => Enum.Parse<IntentStyle>(field.Name, ignoreCase: true), field => field.Value.GetDouble()),
-    hitWeights,
-    entry.TryGetProperty("effects", out var effects) ? effects.EnumerateObject().ToDictionary(
-        field => Enum.Parse<EffectKind>(field.Name, ignoreCase: true), field => field.Value.GetDouble()) : null,
-    entry.TryGetProperty("cards", out var cards) ? cards.Deserialize<StatusPlacement[]>(inputs) : null);
-bool enabled = !entry.TryGetProperty("enabled", out var flag) || flag.GetBoolean();
-if (!enabled)
+var profile = configured.AtAscension(ascension == "deadlyEnemies");
+if (!configured.Enabled)
 {
     Console.WriteLine($"{monsterId}: original actions retained (enabled is false).");
     return;
 }
 
-var valuation = root.GetProperty("opening");
-var actions = root.GetProperty("actions");
-double weakReduction = actions.GetProperty("weakDamageReduction").GetDouble();
-var actionValuation = new ActionValuation(
-    actions.GetProperty("valuation").Deserialize<Dictionary<EffectKind, Dictionary<string, double>>>(inputs)!);
-var forecast = root.GetProperty("forecast");
+var forecast = rules.Forecast;
 var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenario => new TargetingScenario(
     scenario.GetProperty("weight").GetDouble(), scenario.GetProperty("singleTargetFocusShare").GetDouble(),
     scenario.GetProperty("areaDamageMultiplier").GetDouble(),
@@ -79,26 +60,24 @@ Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {prof
 Console.WriteLine($"player damage prior after blending: {damage.SingleTarget:F1} single, {damage.AreaPerTarget:F1} area per target");
 Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
 double fullBlockChance = entry.TryGetProperty("fullBlockChance", out var blockChance) ? blockChance.GetDouble() : 0;
-var stateValues = valuation.GetProperty("states").Deserialize<Dictionary<string, StatusValue>>(inputs)!;
-OpeningOption[] Options(EnemySnapshot enemy, JsonElement states, double value)
+OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, double value)
 {
-    return states.EnumerateArray().Select(option => option.GetString()!)
+    return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
             !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
         .Select(id =>
         {
-            var state = stateValues[id];
+            var state = rules.OpeningValues[id];
             return new OpeningOption(new OpeningState(id, state.Amount), OpeningValuation.Evaluate(state, value));
         }).ToArray();
 }
-var options = Options(enemies[0], ProfileSetting("openingStates"), profile.ActionValue);
+var options = Options(enemies[0], configured.OpeningStates, profile.ActionValue);
 foreach (var option in options)
     Console.WriteLine($"{option.State.Id,-15} {option.Value:+0.00;-0.00;0.00}");
 
 var openingRandom = new Random(seed);
 var actionRandom = new Random(seed ^ 0x649AAB81);
 var imbalanceRandom = new Random(seed ^ 0x4B82C097);
-var openingWeights = valuation.GetProperty("weights");
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
 var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
 foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue", out _)))
@@ -106,42 +85,24 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
     string id = ally.GetProperty("id").GetString()!;
     actionValues[id] = ally.GetProperty("actionValue").GetDouble();
     if (ally.TryGetProperty("openingStates", out var allyStates))
-        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), allyStates, actionValues[id]);
+        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), RuleConfiguration.Read<string[]>(allyStates), actionValues[id]);
 }
-var selected = OpeningValuation.Draw(
-    choicesByMonster, actionValues,
-    new OpeningDraws(openingWeights.GetProperty("none").GetDouble(), openingWeights.GetProperty("positive").GetDouble(),
-        openingWeights.GetProperty("negative").GetDouble(), valuation.GetProperty("attempts").GetInt32(),
-        valuation.GetProperty("maxPerMonster").GetInt32(), valuation.GetProperty("maxEncounterValueMultiplier").GetDouble()),
-    openingRandom);
+var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();
 double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
     $"{pick.MonsterId}:{pick.State.Id} ({pick.Value:+0.00;-0.00;0.00})"))) +
     $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, " +
-    $"net limit {actionValues.Values.Sum() * valuation.GetProperty("maxEncounterValueMultiplier").GetDouble():F2}");
+    $"net limit {actionValues.Values.Sum() * rules.Draws.MaxEncounterValueMultiplier:F2}");
 
-var planner = new ActionPlanner(settings);
+var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
-var catalog = new ActionCatalog(new ActionValuationSettings(
-    actionValuation,
-    weakReduction,
-    actions.GetProperty("maxAddedStrength").GetInt32(),
-    actions.GetProperty("maxInsertedCards").GetInt32(),
-    actions.GetProperty("playerDebuffCooldownTurns").GetInt32(),
-    actions.GetProperty("pureBlockCooldownTurns").GetInt32(),
-    actions.GetProperty("minimumBaseDamagePerHit").GetInt32(),
-    actions.GetProperty("amounts").EnumerateObject().ToDictionary(
-        field => Enum.Parse<EffectKind>(field.Name, ignoreCase: true),
-        field => field.Value.Deserialize<int[]>()!),
-    actions.GetProperty("maxAddedRitual").GetInt32(),
-    actions.GetProperty("cardPlacementValues").Deserialize<StatusPlacementValues>(inputs),
-    actions.GetProperty("maxHardCardLimits").GetInt32(), actions.GetProperty("handBurnDamageChance").GetDouble()));
+var catalog = new ActionCatalog(rules.Actions);
 var history = new ActionHistory();
 bool previousAttack = false;
 int intangibleTurns = ownOpening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
-var turnContext = sample.GetProperty("turnContext").Deserialize<ActionContext>(inputs)!;
+var turnContext = rules.TurnPrior;
 bool hasFallback = sample.TryGetProperty("fallback", out var fallback);
 int fallbackHits = hasFallback && fallback.TryGetProperty("attackHits", out var fallbackCount)
     ? fallbackCount.GetInt32() : (profile.AttackFrequency > 0 ? 1 : 0);
@@ -164,7 +125,7 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
     bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
     var context = turnContext with { Strength = strength, Weakened = weak,
         AlreadyIntangible = turnContext.AlreadyIntangible || intangibleTurns > 0,
-        AllowHardCardLimit = turnContext.AllowHardCardLimit && turn >= actions.GetProperty("hardCardLimitFirstTurn").GetInt32() };
+        AllowHardCardLimit = turnContext.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn };
     var candidates = catalog.Generate(profile, context, history, turn);
     var action = planner.Plan(balances, profile, candidates, actionRandom,
         canRandomize: !skipFromImbalance && !ownOpening.Any(pick => pick.State.Id == "STUN" &&
@@ -191,5 +152,3 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
         $"hits {action.Action?.AttackHits ?? (usedFallback ? fallbackHits : 0)}");
 }
 
-JsonElement ProfileSetting(string name) => entry.TryGetProperty(name, out var value)
-    ? value : defaults.GetProperty(name);

@@ -1,4 +1,17 @@
 {
+  "keepVanilla": [
+    "AXEBOT", "BOWLBUG_EGG", "BOWLBUG_ROCK", "BYGONE_EFFIGY", "CEREMONIAL_BEAST",
+    "CORPSE_SLUG", "CRUSHER", "DECIMILLIPEDE_SEGMENT", "DECIMILLIPEDE_SEGMENT_BACK", "DECIMILLIPEDE_SEGMENT_FRONT",
+    "DECIMILLIPEDE_SEGMENT_MIDDLE", "EXOSKELETON", "EYE_WITH_TEETH", "FABRICATOR", "FAKE_MERCHANT_MONSTER",
+    "FOGMOG", "FROG_KNIGHT", "GAS_BOMB", "INFESTED_PRISM", "KIN_FOLLOWER", "KIN_PRIEST",
+    "KNOWLEDGE_DEMON", "LAGAVULIN_MATRIARCH", "LIVING_FOG", "LIVING_SHIELD", "LOUSE_PROGENITOR",
+    "MYTE", "NIBBIT", "OVICOPTER", "PARAFRIGHT", "PHANTASMAL_GARDENER", "PHROG_PARASITE", "QUEEN",
+    "ROCKET", "SCROLL_OF_BITING", "SEWER_CLAM", "SHRINKER_BEETLE", "SKULKING_COLONY",
+    "SLUMBERING_BEETLE", "SNEAKY_GREMLIN", "SPECTRAL_KNIGHT", "TERROR_EEL", "TEST_SUBJECT",
+    "THE_FORGOTTEN", "THE_INSATIABLE", "THE_LOST", "THE_OBSCURA", "THIEVING_HOPPER",
+    "TORCH_HEAD_AMALGAM", "TOUGH_EGG", "TRACKER_RUBY_RAIDER", "TUNNELER", "TWO_TAILED_RAT",
+    "VANTOM", "WATERFALL_GIANT", "WRIGGLER"
+  ],
   "defaults": {"volatility":0.15,"nonAttackMultiplier":0.45,"survivalTurns":3,"hitWeights":{"1":1},"openingStates":["WEAK","VULNERABLE","DEMISE","DOOM"]},
   "monsters": {
     "AEONGLASS": { "name": "永世沙漏", "hp": 512, "actionValue": 24.4, "deadlyEnemies": 27.4, "attackFrequency": 1, "preferences": {"attack":33.33,"buff":16.67,"defend":33.33,"playerDebuff":16.67}, "hitWeights": {"1":1,"2":1}, "effects": {"Block":1,"Dazed":1,"Burn":2}, "survivalTurns": 8, "stage": "act3", "cards": [{"card":"Burn","pile":"Hand"},{"card":"Burn","pile":"Draw","weight":2},{"card":"Dazed","pile":"Discard"}], "openingStates": ["ARTIFACT","REGEN","WEAK","VULNERABLE","DEMISE","DOOM"] },

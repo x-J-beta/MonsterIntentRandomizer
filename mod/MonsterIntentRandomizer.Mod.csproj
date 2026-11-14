@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>MonsterIntentRandomizer</AssemblyName>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GamePath Condition="'$(GamePath)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\..\common\Slay the Spire 2</GamePath>
+    <GameAssemblyDir>$(GamePath)\data_sts2_windows_x86_64</GameAssemblyDir>
+    <PackageDir>$(MSBuildThisFileDirectory)..\dist\MonsterIntentRandomizer</PackageDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs" />
+    <EmbeddedResource Include="../data/settings.json" LogicalName="settings.json" />
+    <EmbeddedResource Include="../data/monster-profiles.json" LogicalName="monster-profiles.json" />
+    <Reference Include="sts2" HintPath="$(GameAssemblyDir)\sts2.dll" Private="false" />
+    <Reference Include="GodotSharp" HintPath="$(GameAssemblyDir)\GodotSharp.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(GameAssemblyDir)\0Harmony.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="PackageMod" AfterTargets="Build">
+    <MakeDir Directories="$(PackageDir)" />
+    <Copy SourceFiles="$(TargetPath);$(MSBuildProjectDirectory)\MonsterIntentRandomizer.json"
+          DestinationFolder="$(PackageDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
