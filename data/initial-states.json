@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "gameVersion": "v0.113.0",
   "status": "prototype_candidates_and_estimates",
   "defaultEligibility": "excluded_until_reviewed",
@@ -22,11 +22,36 @@
   "valuation": {
     "basis": "signed_pressure_with_candidate_minus_pressure_without_candidate",
     "positiveSignMeans": "more_threatening_to_player",
-    "expectedLifetimeProfileField": "baseExpectedSurvivalTurns",
+    "fallbackExpectedLifetimeProfileField": "baseExpectedSurvivalTurns",
     "expectedLifetimeUnit": "expected_enemy_actions_after_player_turns",
     "futureDiscountPerEnemyTurn": 0.8,
+    "monsterSpecificInputs": {
+      "actionValue": "用于估计额外存活窗口的出招压力，以及限制开场状态的净增减值。",
+      "attackFrequencyAndHitDistribution": "已确定的出招使用实际合规段数，未定回合使用该怪的攻击频次乘期望段数。模板权重影响期望段数。",
+      "defensiveTemplatesAndCurrentHp": "用该怪的主动格挡、回血和当轮掉血推算可兑现的防御与缺血。数字来自初始档位和即时战况。",
+      "targetPriorityAndAllies": "用该怪的位置、威胁、队友和阶段推算挨打、被上减益或带着治疗撑到下轮的几率。"
+    },
+    "survivalForecast": {
+      "maxEnemyWindows": 8,
+      "recentPlayerRoundLimit": 3,
+      "stagePriorWeightInPlayerRounds": 2,
+      "damagePriorSource": "stage_or_encounter_calibration",
+      "scenarios": [
+        { "id": "focus", "weight": 0.4, "singleTargetFocusShare": 0.85, "areaDamageMultiplier": 0.75 },
+        { "id": "balanced", "weight": 0.4, "singleTargetFocusShare": 0.65, "areaDamageMultiplier": 1 },
+        { "id": "area", "weight": 0.2, "singleTargetFocusShare": 0.45, "areaDamageMultiplier": 1.5 }
+      ],
+      "publicInputs": ["current_hp", "max_hp", "current_block_and_expiry", "visible_powers", "targetability", "living_allies", "act_and_encounter_phase", "spawn_timing", "action_eligibility", "recent_player_damage_by_targeting_type"],
+      "recomputeAt": ["opening", "planning_enemy_moves", "spawn", "death", "phase_change"],
+      "results": ["probability_alive_at_each_enemy_window", "probability_alive_at_each_enemy_turn_end", "expected_remaining_enemy_windows", "player_window_target_exposure", "forecast_truncated"],
+      "notes": [
+        "按幕和遭遇阶段提供单体伤害池及每目标群伤先验。用最近完整玩家轮更新，伤害样本口径包含被格挡的有效输出。先验尚未校准，缺少可信场景输入时用画像的基础生存时间。",
+        "按固定玩家策略分配每轮单体伤害，按可受击目标结算群伤。目标死亡后重新分配。进入相同当前阶段的对照组和状态组复用权重和出招策略。",
+        "战斗时点决定当前轮玩家剩余伤害和怪物的行动资格。首领未知下一阶段采用当前血条和阶段边界。超出窗口的存活标记截断，持续成长候选需要充足覆盖。"
+      ]
+    },
     "lifetimeWeighting": {
-      "persistent": "按预期存活的轮次估计可触发量。快速模型对第 t 个敌方行动窗口使用 clamp(预期生存时间 - (t - 1), 0, 1) 作为暴露权重，再乘该窗口的期望效果及 0.8^(t - 1)。有存活曲线后可替代此近似。",
+      "persistent": "按战中预测的 S[t] 乘该窗口的条件期望效果及 0.8^(t - 1)。回退时对第 t 个敌方行动窗口使用 clamp(基础预期生存时间 - (t - 1), 0, 1) 近似 S[t]。",
       "duration": "按原版持续时间以及该状态实际会触发的窗口计价。只保留预计存在的窗口，不额外乘整场寿命。",
       "singleUse": "按首次合格触发在死亡前出现的概率乘单次价值，耗尽即停止。用存活时间估计触发机会及折现。",
       "playerWindow": "第一个玩家行动窗口发生在敌方第一次行动之前，要单独保留。后续玩家窗口用承接的上一敌方行动存活率作快速近似。预期敌方行动少于一次的怪也仍可在首轮被攻击、反伤或受到减益。"
@@ -39,7 +64,7 @@
       "要求绝对差值同时低于两项上限或等于边界。零收益、方向不符或无法可靠估值的候选出池。正负方向指相对怪物的战斗强度。",
       "分别按攻击段数、预计有效格挡和状态持续窗口算真实变化。禁止同一状态重复扣减行动预算；实际伤害仍按现有状态核对遭遇首轮峰值。",
       "按档概率与过滤后的实际出场率、净均值分别记录。正面档比负面档高 10 个百分点。若两档单次平均幅度接近，原型整体压力会略升。",
-      "生存时间以原版开场和目标优先级为基准。若状态会改变存活，用同一情景比较变化前后；单次只使用一种估值途径，避免反复乘生存率或重复收取未来行动收益。"
+      "开场用原版或无额外状态的出招分布做基准，战中用当前生命、队友和阶段重算。若状态会改变存活，用同一情景比较变化前后。单次只使用一种估值途径，避免反复乘生存率或重复收取未来行动收益。"
     ]
   },
   "application": {
@@ -65,8 +90,40 @@
       "amount": 1,
       "maxStacks": 1,
       "valueModel": "persistent",
+      "formula": "sum(discount[t] * survivalAtAction[t] * expectedPoweredHitsIfAlive[t] * marginalDamagePerHit[t])",
       "perWindowBasis": "合规攻击频次 × 平均命中段数 × 每段实际伤害增量",
       "reason": "原版按每段合规攻击增加伤害。首轮起有效，按预计可兑现的受影响段数估价，并检查多段峰值。"
+    },
+    "RITUAL": {
+      "polarity": "positive",
+      "powerId": "RITUAL",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "persistent",
+      "formula": "sum(discount[t] * survivalAtAction[t] * expectedPoweredHitsIfAlive[t] * ritualAmount * effectiveRitualTriggersBeforeAttack[t])",
+      "reason": "按敌方回合末累计的力量估值。开场首击尚无加成。目标版本在敌方行动期间施加时会置跳过标记。用实际力量结算校正多段和其他状态修正。",
+      "conditions": ["forecast_covers_relevant_growth", "passes_per_target_damage_peaks", "no_scripted_ritual_or_equivalent_growth"]
+    },
+    "REGEN": {
+      "polarity": "positive",
+      "powerId": "REGEN",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "duration",
+      "formula": "0.4 * sum(discount[t] * survivalAtTurnEnd[t] * expectedEffectiveHealIfAlive[t])",
+      "perWindowBasis": "有效回血 = min(触发时缺失生命, max(0, 初始层数 - 之前耗掉的层数))",
+      "reason": "持有者参与的回合末存活时治疗并减一层。若跨越续命阈值，以配对预测所得额外行动价值替代直接回血折算。"
+    },
+    "PLATING": {
+      "polarity": "positive",
+      "powerId": "PLATING",
+      "amount": 1,
+      "maxStacks": 1,
+      "valueModel": "duration",
+      "formula": "0.4 * sum(discount[t] * expectedExtraBlockAbsorbedInPlayerWindow[t])",
+      "perWindowBasis": "按首个玩家窗口授予、怪物回合末再授予和原版扣层实际时点求新增挡伤。首轮已有格挡与新增格挡共同受可吸收伤害限制。",
+      "reason": "独立使用时自动获得格挡。熟睡甲虫等宿主对原版甲覆有唤醒联动，避免混入其脚本状态组合。",
+      "conditions": ["not_part_of_an_existing_scripted_bundle", "uses_native_opening_hooks"]
     },
     "STRENGTH_DOWN": {
       "polarity": "negative",
@@ -101,6 +158,7 @@
       "amount": 1,
       "maxStacks": 1,
       "valueModel": "singleUse",
+      "formula": "sum(discount[t] * probabilityFirstEligibleDebuffBlockedAt[t] * expectedValueOfBlockedDebuff[t])",
       "perWindowBasis": "按存活期内首次合格减益的发生概率和价值计价",
       "reason": "抵消持有者收到的减益。需要明确的开场额度和候选设置。"
     },
@@ -110,21 +168,12 @@
       "amount": 1,
       "maxStacks": 1,
       "valueModel": "persistent",
+      "formula": "sum(discount[t] * expectedEffectiveRetaliationTriggers[t] * thornsAmount)",
       "perWindowBasis": "合规受击段数 × 每次反伤的有效价值，从首个玩家窗口开始",
       "reason": "响应通用的攻击事件。仅供允许反伤风格的怪物，并检查玩家多段攻击下的风险。"
     }
   },
   "conditional": {
-    "PLATING": {
-      "polarity": "positive",
-      "powerId": "PLATING",
-      "amount": 1,
-      "maxStacks": 1,
-      "valueModel": "duration",
-      "perWindowBasis": "按原版授予和扣层时点预测有效格挡，计入玩家首轮",
-      "reason": "独立使用时自动获得格挡。需要验证首次授予时点，且要保留熟睡甲虫等宿主对原版甲覆的唤醒联动。",
-      "conditions": ["opening_timing_verified", "not_part_of_an_existing_scripted_bundle", "counts_toward_opening_budget"]
-    },
     "FRAIL": {
       "polarity": "negative",
       "powerId": "FRAIL",
@@ -172,10 +221,16 @@
     "GUARDED": "依赖施加者及其死亡，不能直接按持有者的一次性开场效果估价。",
     "HEIST": "绑定被盗物的所有者并改变奖励。",
     "SANDPIT": "改变玩家和宠物的位置，并在倒数后触发处决与遭遇演出。",
-    "VITAL_SPARK": "虽然挂在怪物身上，但会侵蚀玩家所有技能牌，价值依赖玩家牌组。"
+    "STUN": "开场击晕可能直接跳过原版开场动作，和部分怪物阶段绑定。"
+  },
+  "laterPositiveCandidates": {
+    "PERSONAL_HIVE": "人体蜂房。估计合规受击段数、塞入的晕眩和实际抽到的概率。",
+    "VITAL_SPARK": "活力火花。评估全场技能污染、玩家技能牌比例与状态叠加。",
+    "WITHERING_PRESENCE": "凋萎存在。评估每个玩家出牌阈值和凋萎出现时的手牌压力。",
+    "ENVENOM": "涂毒。评估未被格挡的攻击命中、后续毒伤及多段叠加。",
+    "PAPER_CUTS": "纸伤难愈。涉及最大生命的持久损失，需要单独定义跨战斗估值。"
   },
   "deferredForBalance": {
-    "RITUAL": "永久逐回合加力量，会放大后续多段伤害。",
     "TERRITORIAL": "逐回合加力量，需要独立校准成长曲线和战斗长度。",
     "INTANGIBLE": "会压缩关键爆发窗口，价值受玩家牌组和命中段数显著影响。",
     "VIGOR": "单次增伤可能影响同一招的多段伤害。验证目标版怪物攻击命令的增伤和消耗同步后再纳入。",
@@ -183,7 +238,7 @@
   },
   "mechanicsEvidence": {
     "localGameBuild": "26625880",
-    "inspection": "只读检查本机 v0.113.0 sts2.dll 的方法和 IL，确认 StrengthPower/DexterityPower.AllowNegative、Weak/Vulnerable/Frail 的敌方回合末扣减，以及 Frail 的 PoweredCardOrMonsterMoveBlock 过滤。公开反编译用于交叉核对，开场挂接仍待游戏内验证。"
+    "inspection": "本机 v0.113.0 sts2.dll 的只读 IL 已确认仪式回合末加力量及敌方施加跳过标记，再生回合末治疗并扣层，甲覆首个玩家窗口供给格挡且在原版钩子扣层，荆棘在合规受击前触发。先前还检查了力量与敏捷负层和虚弱、易伤、脆弱时序。开场挂接仍待游戏内验证。"
   },
   "references": [
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/StrengthPower.cs",
@@ -191,6 +246,9 @@
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/VulnerablePower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/FrailPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/PlatingPower.cs",
+    "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/RegenPower.cs",
+    "https://spire-codex.com/powers/ritual",
+    "https://sts2.wanyoupu.com/catalog/power",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ArtifactPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/ThornsPower.cs",
     "https://raw.githubusercontent.com/Hexpion/Slay-the-spire-2/main/Slay%20the%20Spire%202/src/Core/Models/Powers/DexterityPower.cs",
