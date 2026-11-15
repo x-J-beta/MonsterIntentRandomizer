@@ -4,7 +4,6 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Models;
 
 namespace MonsterIntentRandomizer;
 
@@ -14,7 +13,6 @@ public static class ModEntry
     public static void Initialize()
     {
         ModSettings.Load();
-        ModelDb.Inject(typeof(RandomizedPainfulStabsPower));
         new Harmony("MonsterIntentRandomizer").PatchAll(typeof(ModEntry).Assembly);
         Log.Info("[MonsterIntentRandomizer] Loaded.");
     }
