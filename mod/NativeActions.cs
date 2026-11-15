@@ -106,6 +106,15 @@ internal static class NativeActions
                 case EffectKind.Shrink:
                     await PowerCmd.Apply<ShrinkPower>(choice, living.Where(target => !target.HasPower<ShrinkPower>()), -1, self, null);
                     break;
+                case EffectKind.Soulbind:
+                    await PowerCmd.Apply<ChainsOfBindingPower>(choice, living, amount, self, null);
+                    break;
+                case EffectKind.DrawDown:
+                    await PowerCmd.Apply<MindRotPower>(choice, living, amount, self, null);
+                    break;
+                case EffectKind.EnergyDown:
+                    await PowerCmd.Apply<WasteAwayPower>(choice, living, amount, self, null);
+                    break;
                 case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
                     or EffectKind.Envenom or EffectKind.PaperCuts:
                     await ApplyRareBuff(self, new OpeningState(OpeningId(effect.Kind), amount));
@@ -182,6 +191,12 @@ internal static class NativeActions
             active.Add(EffectKind.Tender);
         if (player.HasPower<ShrinkPower>())
             active.Add(EffectKind.Shrink);
+        if (player.HasPower<ChainsOfBindingPower>())
+            active.Add(EffectKind.Soulbind);
+        if (player.HasPower<MindRotPower>())
+            active.Add(EffectKind.DrawDown);
+        if (player.HasPower<WasteAwayPower>())
+            active.Add(EffectKind.EnergyDown);
         return active;
     }
 

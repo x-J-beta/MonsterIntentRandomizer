@@ -5,7 +5,7 @@ public enum EffectKind
     Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled,
     Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon,
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
-    Thorns, TemporaryThorns
+    Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown
 }
 
 public enum EffectTarget { Self, Player }
@@ -19,11 +19,12 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink;
+        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
     public bool IsHardCardLimit => Kind is EffectKind.Ringing or EffectKind.Smoggy;
     public bool IsSpecialDebuff => IsRareDebuff(Kind);
     public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
-        EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown;
+        EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown or
+        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts;
@@ -160,6 +161,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         break;
                     case EffectKind.Frail or EffectKind.Poison when canDebuff:
                     case EffectKind.Shrink when canDebuff && amount == 1:
+                    case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon
@@ -215,7 +217,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 if (attack.Damage <= 0)
                     continue;
 
-                attack = attack with { Value = settings.Valuation.Evaluate(EffectKind.Attack, profile, amount, hits: hit.Key) };
+                attack = attack with { Value = settings.Valuation.Evaluate(EffectKind.Attack, profile, amount, hits: hit.Key, act: context.Act) };
                 yield return attack;
                 foreach (var extra in extras)
                 {
@@ -235,7 +237,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             double effectiveAmount = 0, double draws = 0, double triggers = 0)
         {
             double value = settings.Valuation.Evaluate(kind, profile, amount,
-                effectiveAmount: effectiveAmount, draws: draws, triggers: triggers);
+                effectiveAmount: effectiveAmount, draws: draws, triggers: triggers, act: context.Act);
             if (value > 0 && weight > 0 && profile.IntentWeights.GetValueOrDefault(style) > 0)
             {
                 int doses = settings.Amounts[kind].Where(dose => dose > 0).Distinct().Count();

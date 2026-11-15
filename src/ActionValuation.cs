@@ -1,15 +1,23 @@
 namespace MonsterIntentRandomizer;
 
+public sealed record PlayerTurnValues(double Act1 = 10, double Act2 = 17, double Act3 = 25)
+{
+    public double ForAct(int act) => act switch { <= 1 => Act1, 2 => Act2, _ => Act3 };
+}
+
 public sealed class ActionValuation
 {
-    private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers }
+    private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers, PlayerTurnValue }
 
     private sealed record Term(double Coefficient, Factor[] Factors);
 
     private readonly Dictionary<EffectKind, Term[]> formulas;
+    private readonly PlayerTurnValues playerTurns;
 
-    public ActionValuation(IReadOnlyDictionary<EffectKind, Dictionary<string, double>> coefficients)
+    public ActionValuation(IReadOnlyDictionary<EffectKind, Dictionary<string, double>> coefficients,
+        PlayerTurnValues? playerTurns = null)
     {
+        this.playerTurns = playerTurns ?? new PlayerTurnValues();
         formulas = coefficients.ToDictionary(pair => pair.Key, pair => pair.Value.Select(term =>
         {
             var factors = term.Key.Equals("fixed", StringComparison.OrdinalIgnoreCase) ? Array.Empty<Factor>() :
@@ -19,7 +27,7 @@ public sealed class ActionValuation
     }
 
     public double Evaluate(EffectKind kind, MonsterProfile profile, int amount, int hits = 1,
-        double effectiveAmount = 0, double draws = 0, double triggers = 0)
+        double effectiveAmount = 0, double draws = 0, double triggers = 0, int act = 1)
     {
         if (!formulas.TryGetValue(kind, out var terms))
             return 0;
@@ -40,6 +48,7 @@ public sealed class ActionValuation
                     Factor.Hits => hits,
                     Factor.Draws => draws,
                     Factor.Triggers => triggers,
+                    Factor.PlayerTurnValue => playerTurns.ForAct(act),
                     _ => throw new ArgumentOutOfRangeException(nameof(factor))
                 };
             }

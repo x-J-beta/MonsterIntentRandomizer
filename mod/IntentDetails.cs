@@ -71,10 +71,12 @@ internal static class IntentDetails
             EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
             EffectKind.Weak => ("虚弱", "Weak"), EffectKind.Vulnerable => ("易伤", "Vulnerable"),
             EffectKind.Frail => ("脆弱", "Frail"), EffectKind.Poison => ("中毒", "Poison"),
-            EffectKind.Tangled => ("缠绕", "Tangled"), EffectKind.Ringing => ("响铃", "Ringing"),
+            EffectKind.Tangled => ("缠结", "Tangled"), EffectKind.Ringing => ("响铃", "Ringing"),
             EffectKind.StrengthDown => ("降力量", "Strength Down"), EffectKind.DexterityDown => ("降敏捷", "Dexterity Down"),
             EffectKind.Smoggy => ("烟雾弥漫", "Smoggy"), EffectKind.Tender => ("柔嫩", "Tender"),
             EffectKind.Shrink => ("缩小", "Shrink"),
+            EffectKind.Soulbind => ("魂缚", "Soulbind"), EffectKind.DrawDown => ("抽牌减少", "Draw Down"),
+            EffectKind.EnergyDown => ("能量减少", "Energy Down"),
             EffectKind.PersonalHive => ("人体蜂房", "Personal Hive"), EffectKind.VitalSpark => ("活力火花", "Vital Spark"),
             EffectKind.WitheringPresence => ("凋萎存在", "Withering Presence"), EffectKind.Envenom => ("涂毒", "Envenom"),
             EffectKind.PaperCuts => ("纸伤难愈", "Paper Cuts"), EffectKind.Dazed => ("晕眩", "Dazed"),
@@ -100,6 +102,12 @@ internal static class IntentDetails
                 (en, $"Applies {en} to the player for the rest of combat."),
             EffectKind.Shrink => chinese ? (zh, "对玩家施加缩小，持续到施加者死亡。") :
                 (en, "Applies Shrink to the player until the caster dies."),
+            EffectKind.DrawDown => chinese ? (zh, $"玩家每回合少抽 {n} 张牌。") :
+                (en, $"The player draws {n} fewer cards per turn."),
+            EffectKind.EnergyDown => chinese ? (zh, $"玩家每回合少获得 {n} 点能量。") :
+                (en, $"The player gains {n} less Energy per turn."),
+            EffectKind.Soulbind => chinese ? (zh, $"对玩家施加 {n} 层魂缚锁链。") :
+                (en, $"Applies {n} Chains of Binding to the player."),
             EffectKind.Block or EffectKind.Heal => chinese ? (zh, $"自身{zh} {n} 点。") : (en, $"Self: {n} {en}."),
             EffectKind.StrengthDown or EffectKind.DexterityDown => chinese ? (zh, $"使玩家{zh} {n} 点。") :
                 (en, $"Applies {n} {en} to the player."),

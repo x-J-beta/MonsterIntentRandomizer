@@ -16,9 +16,13 @@ internal sealed class RuleConfiguration
         var actions = settings.GetProperty("actions");
         var opening = settings.GetProperty("opening");
         var weights = opening.GetProperty("weights");
+        var turnValues = actions.TryGetProperty("playerTurnValue", out var playerTurns)
+            ? Read<PlayerTurnValues>(playerTurns) : new PlayerTurnValues();
+        if (turnValues.Act1 <= 0 || turnValues.Act2 <= 0 || turnValues.Act3 <= 0)
+            throw new ArgumentException("各幕的玩家回合价值须为正数。");
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
         Actions = new ActionValuationSettings(
-            new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation"))),
+            new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation")), turnValues),
             actions.GetProperty("weakDamageReduction").GetDouble(),
             actions.GetProperty("maxAddedStrength").GetInt32(),
             actions.GetProperty("maxInsertedCards").GetInt32(),

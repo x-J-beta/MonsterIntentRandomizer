@@ -141,7 +141,8 @@ internal static class PrototypeChecks
             [EffectKind.Block] = [3, 5, 8], [EffectKind.Strength] = [1], [EffectKind.Weak] = [1],
             [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1],
             [EffectKind.Heal] = [3], [EffectKind.Intangible] = [1], [EffectKind.Beckon] = [1],
-            [EffectKind.Tangled] = [1], [EffectKind.StrengthDown] = [1, 2], [EffectKind.DexterityDown] = [1, 2]
+            [EffectKind.Tangled] = [1], [EffectKind.StrengthDown] = [1, 2], [EffectKind.DexterityDown] = [1, 2],
+            [EffectKind.Soulbind] = [1, 2, 3], [EffectKind.DrawDown] = [1], [EffectKind.EnergyDown] = [1]
         };
         var valuation = new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>>
         {
@@ -153,14 +154,18 @@ internal static class PrototypeChecks
             [EffectKind.Weak] = new() { ["amount*actionValue"] = 0.15 },
             [EffectKind.Vulnerable] = new() { ["amount*actionValue"] = 0.3 },
             [EffectKind.Intangible] = new() { ["amount*actionValue"] = 0.9 },
-            [EffectKind.Ringing] = new() { ["amount*actionValue"] = 0.35 },
-            [EffectKind.Tangled] = new() { ["fixed"] = 3 },
+            [EffectKind.Ringing] = new() { ["playerTurnValue"] = 0.7 },
+            [EffectKind.Tangled] = new() { ["amount*playerTurnValue"] = 0.4 },
+            [EffectKind.Smoggy] = new() { ["playerTurnValue"] = 0.85 },
+            [EffectKind.Soulbind] = new() { ["amount*playerTurnValue"] = 0.6, ["playerTurnValue"] = -0.36 },
+            [EffectKind.DrawDown] = new() { ["amount*playerTurnValue"] = 0.2 },
+            [EffectKind.EnergyDown] = new() { ["amount*playerTurnValue"] = 0.33 },
             [EffectKind.StrengthDown] = new() { ["fixed"] = 2, ["amount"] = 0.5 },
             [EffectKind.DexterityDown] = new() { ["fixed"] = 1.5, ["amount"] = 0.4 },
             [EffectKind.Dazed] = new() { ["amount*draws"] = 1.5 },
             [EffectKind.Wound] = new() { ["amount*draws"] = 2.5 },
             [EffectKind.Beckon] = new() { ["amount*draws"] = 2.5, ["amount*triggers"] = 3 }
-        });
+        }, new PlayerTurnValues(10, 20, 30));
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 2, 2, 1, 1, 1, amounts);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
@@ -179,10 +184,17 @@ internal static class PrototypeChecks
         Equal(0.6 * (2.5 + 3), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(0.9, Pure(EffectKind.Dazed).Value, "reduced dazed draw valuation");
         Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
-        Equal(3, Pure(EffectKind.Tangled).Value, "tangled has a fixed cost");
+        Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
+        Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied, 1, act: 3), "smoggy uses the act-specific player turn value");
         var later = catalog.Generate(varied, context, new ActionHistory(), 2).ToArray();
         Equal(3, later.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
         Equal(2.3, later.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
+        var secondAct = catalog.Generate(varied with { ActionValue = 80 }, context with { Act = 2 }, new ActionHistory(), 2).ToArray();
+        Equal(8, secondAct.Single(action => action.Id == "Tangled 1").Value, "tangled ignores monster action value");
+        for (int stacks = 1; stacks <= 3; stacks++)
+            Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
+        Equal(4, secondAct.Single(action => action.Id == "DrawDown 1").Value, "draw reduction uses player turn value");
+        Equal(6.6, secondAct.Single(action => action.Id == "EnergyDown 1").Value, "energy reduction uses player turn value");
         if (generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
             catalog.Generate(varied, context with { SpecialDebuffRoll = 0.2 }, new ActionHistory(), 2)
                 .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||

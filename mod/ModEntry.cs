@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 2;
+    private const int SettingsRevision = 3;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -69,7 +69,19 @@ internal static class ModSettings
 
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        var savedValuations = settings["actions"]!["valuation"]!.AsObject();
+        var defaultValuations = defaults["actions"]!["valuation"]!;
+        foreach (string id in new[] { "Tangled", "Ringing", "Smoggy" })
+        {
+            if (savedValuations[id] is JsonObject old &&
+                !old.Any(term => term.Key.Split('*', StringSplitOptions.TrimEntries)
+                    .Contains("playerTurnValue", StringComparer.OrdinalIgnoreCase)))
+                savedValuations[id] = defaultValuations[id]!.DeepClone();
+        }
         FillMissing(settings.AsObject(), defaults.AsObject());
+        if (stored.Revision == 2)
+            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
+
         var opening = settings["opening"]!;
         if (stored.Revision == 0 && opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
             opening["maxEncounterValueMultiplier"] = 1;

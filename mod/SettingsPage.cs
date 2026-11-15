@@ -108,6 +108,8 @@ internal static class SettingsPage
         AddNumber("力量估值系数", 0, 10, 0.01, "actions", "valuation", "Strength", "amount*attackFrequency");
         AddNumber("仪式估值系数", 0, 10, 0.01, "actions", "valuation", "Ritual", "amount*attackFrequency*survivalTurns");
         AddNumber("晕眩牌每次出现的估值", 0, 10, 0.01, "actions", "valuation", "Dazed", "amount*draws");
+        for (int act = 1; act <= 3; act++)
+            AddNumber($"第 {act} 幕玩家回合价值", 0.01, 100, 0.01, "actions", "playerTurnValue", $"act{act}");
         RefreshNumbers();
         var refreshMonsters = AddMonsterControls(monsters, profiles, message);
 
