@@ -82,7 +82,7 @@ internal static class PrototypeChecks
             "skipped turns only decay");
         var choices = new[]
         {
-            new ActionCandidate("attack", IntentStyle.Attack, true, 6, 6),
+            ActionCandidate.Attack("attack", 1, 6, 0, weak: false, 1),
             new ActionCandidate("defend", IntentStyle.Defend, false, 2, 0, Effects: [new(EffectKind.Block, 5)])
         };
         var amplified = ActionCandidate.Attack("multi", 3, 3, 2, weak: false, 1);
@@ -105,8 +105,14 @@ internal static class PrototypeChecks
             pools = plan.After;
             attacks += plan.Action.AttackHits;
         }
-        if (Math.Abs(attacks / 2000 - profile.AttackFrequency) > 0.06)
+        if (attacks / 2000 is < 0.45 or > 0.65)
             throw new InvalidOperationException($"Unexpected long-run attack frequency: {attacks / 2000:P1}");
+        var fixedDesire = new Pools(0, (3 - profile.AttackFrequency) / 0.9);
+        var attackRolls = new Random(51);
+        double waitRate = Enumerable.Range(0, 2400).Count(_ =>
+            planner.Plan(fixedDesire, profile, choices, attackRolls).Action!.AttackHits == 0) / 2400.0;
+        if (Math.Abs(waitRate - 5.0 / 13) > 0.035 || new RoomWeight(-1, 10).At(20) != 0)
+            throw new InvalidOperationException("Wait probability or explicitly disabled weights were ignored.");
 
         Equal(2, planner.Start(profile, 2).ActionValue, "positive opening charged in full at start");
         Equal(6, planner.Start(profile, -2).ActionValue, "negative opening credited in full at start");
@@ -136,7 +142,7 @@ internal static class PrototypeChecks
             multiPools = plan.After;
             totalHits += plan.Action!.AttackHits;
         }
-        if (Math.Abs(totalHits / 2000 - 1.5) > 0.12)
+        if (totalHits / 2000 is < 1.2 or > 1.65)
             throw new InvalidOperationException($"Unexpected multihit rate: {totalHits / 2000:F3}.");
 
         var amounts = new Dictionary<EffectKind, int[]>
@@ -168,31 +174,33 @@ internal static class PrototypeChecks
             [EffectKind.Dazed] = new() { ["amount*draws"] = 1.5 },
             [EffectKind.Wound] = new() { ["amount*draws"] = 2.5 },
             [EffectKind.Beckon] = new() { ["amount*draws"] = 2.5, ["amount*triggers"] = 3 }
-        }, new PlayerTurnValues(10, 20, 30));
+        });
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
             HitWeights = new Dictionary<int, double> { [1] = 1, [3] = 1 },
+            PlayerActionValue = 10,
             EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
         var context = new ActionContext(6, DazedDraws: 0.6, WoundDraws: 0.8, MissingHp: 3);
         var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
-            action.Effects![0].Kind == kind);
+            action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
         Equal(1.2 * profile.AttackFrequency, Pure(EffectKind.Strength).Value, "strength uses attack frequency");
         Equal(0.9 * profile.ActionValue, Pure(EffectKind.Intangible).Value, "intangible equivalent turns");
         Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
-        Equal(0.6 * (2.5 + 3), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
+        Equal(0.6 * (2.5 + 3 * 0.9), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(0.9, Pure(EffectKind.Dazed).Value, "reduced dazed draw valuation");
-        Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
+        Equal(1.5, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound draw valuation in the discard pile");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
-        Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied, 1, act: 3), "smoggy uses the act-specific player turn value");
+        Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),
+            "smoggy uses the player action value");
         var later = catalog.Generate(varied, context, new ActionHistory(), 2).ToArray();
         Equal(3, later.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
         Equal(2.3, later.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
-        var secondAct = catalog.Generate(varied with { ActionValue = 80 }, context with { Act = 2 }, new ActionHistory(), 2).ToArray();
+        var secondAct = catalog.Generate(varied with { ActionValue = 80, PlayerActionValue = 20 }, context with { Act = 2 }, new ActionHistory(), 2).ToArray();
         Equal(8, secondAct.Single(action => action.Id == "Tangled 1").Value, "tangled ignores monster action value");
         for (int stacks = 1; stacks <= 3; stacks++)
             Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
@@ -236,8 +244,8 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Configured dosages or minimum base damage were ignored.");
         Equal(9, new ActionPlanner(new PoolSettings(0.75, 0.9, 1, 3)).Start(profile, -1).ActionValue,
             "configured starting pool");
-        if (Pure(EffectKind.Dazed).Effects![0].Pile != StatusPile.Draw ||
-            Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard)
+        if (generated.Where(action => action.Effects![0].Kind == EffectKind.Dazed)
+                .Select(action => action.Effects![0].Pile).Distinct().Count() != 3)
             throw new InvalidOperationException("Generated effects or ordering are incomplete.");
         var cardPositions = varied with
         {

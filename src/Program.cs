@@ -8,6 +8,18 @@ if (args.Length > 0 && args[0] == "--check")
     return;
 }
 
+if (args.Length > 0 && args[0] == "--calibrate-effects")
+{
+    string configDir = args.Length > 1 ? args[1] : "data";
+    int seeds = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 320;
+    if (seeds < 1)
+        throw new ArgumentOutOfRangeException(nameof(seeds));
+    using var calibrationSettings = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "settings.json")));
+    using var calibrationProfiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "monster-profiles.json")));
+    EffectCalibration.Run(new RuleConfiguration(calibrationSettings.RootElement, calibrationProfiles.RootElement), seeds);
+    return;
+}
+
 string folder = args.Length > 3 ? args[3] : Path.Combine(Directory.GetCurrentDirectory(), "data");
 var inputs = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 inputs.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
@@ -42,7 +54,8 @@ profile = profile with
 {
     BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
     PlayerActionValue = rules.PlayerAction.At(rooms),
-    CurrentHp = hp
+    CurrentHp = hp,
+    RoomsEntered = rooms + 1
 };
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
@@ -54,7 +67,7 @@ OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, Monster
     return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
             !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath) && rules.OpeningValues[id].MinAct <= act)
-        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner, rooms, rules.PlayerTurns.ForAct(act))).ToArray();
+        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner, rooms)).ToArray();
 }
 var options = Options(enemies[0], rules.OpeningStatesFor(configured), profile);
 foreach (var option in options)

@@ -69,7 +69,7 @@ internal static class IntentDetails
             (string pileZh, string pileEn) = effect.Pile switch
             {
                 StatusPile.Hand => ("手牌", "the hand"), StatusPile.Top => ("抽牌堆顶", "the top of the draw pile"),
-                StatusPile.Draw => ("抽牌堆", "the draw pile"), StatusPile.Bottom => ("抽牌堆底", "the bottom of the draw pile"),
+                StatusPile.Draw => ("抽牌堆（随机位置）", "a random position in the draw pile"), StatusPile.Bottom => ("抽牌堆底", "the bottom of the draw pile"),
                 _ => ("弃牌堆", "the discard pile")
             };
             return chinese ? (zh, $"向玩家的{pileZh}加入 {n} 张{zh}。") : (en, $"Adds {n} {en} to {pileEn}.");
@@ -111,7 +111,7 @@ internal static class IntentDetails
             EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
             EffectKind.Weak => ("虚弱", "Weak"), EffectKind.Vulnerable => ("易伤", "Vulnerable"),
             EffectKind.Frail => ("脆弱", "Frail"), EffectKind.Poison => ("中毒", "Poison"),
-            EffectKind.Tangled => ("缠结", "Tangled"), EffectKind.Ringing => ("响铃", "Ringing"),
+            EffectKind.Tangled => ("缠结", "Tangled"), EffectKind.Ringing => ("昏眩", "Ringing"),
             EffectKind.StrengthDown => ("降力量", "Strength Down"), EffectKind.DexterityDown => ("降敏捷", "Dexterity Down"),
             EffectKind.Smoggy => ("烟雾弥漫", "Smoggy"), EffectKind.Tender => ("柔嫩", "Tender"),
             EffectKind.Shrink => ("缩小", "Shrink"),
@@ -128,6 +128,14 @@ internal static class IntentDetails
             EffectKind.Soot => ("煤灰", "Soot"), EffectKind.Disintegration => ("瓦解", "Disintegration"),
             EffectKind.Debris => ("碎屑", "Debris"), EffectKind.Void => ("虚空", "Void"),
             EffectKind.WasteAway => ("衰朽", "Waste Away"), EffectKind.Slimed => ("黏液", "Slimed"),
+            EffectKind.Artifact => ("人工制品", "Artifact"), EffectKind.Barricade => ("壁垒", "Barricade"),
+            EffectKind.CurlUp => ("蜷缩", "Curl Up"),
             _ => (kind.ToString(), kind.ToString())
         };
+
+    internal static string PlacementName(StatusPile? place) => place switch
+    {
+        StatusPile.Hand => "手牌", StatusPile.Top => "抽牌堆顶", StatusPile.Draw => "洗入抽牌堆",
+        StatusPile.Bottom => "抽牌堆底", _ => "弃牌堆"
+    };
 }

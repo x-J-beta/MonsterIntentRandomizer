@@ -26,9 +26,11 @@ internal static class NativeActions
         EffectKind.Attack => effect.Hits == 1 ? new SingleAttackIntent(effect.Amount) :
             new MultiAttackIntent(effect.Amount, effect.Hits),
         EffectKind.Wait => new UnknownIntent(),
-        EffectKind.Block or EffectKind.Intangible or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill => new DefendIntent(),
+        EffectKind.Block or EffectKind.Intangible or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill
+            or EffectKind.Barricade or EffectKind.CurlUp => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
-        EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns => new BuffIntent(),
+        EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns
+            or EffectKind.Artifact => new BuffIntent(),
         _ when effect.IsStatusCard => new StatusIntent(effect.Amount),
         _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
     });
@@ -45,8 +47,11 @@ internal static class NativeActions
             var living = targets.Where(target => target.IsAlive && target.CombatState == combat).ToArray();
             if (living.Length == 0)
                 return;
+            if (!CombatIntegration.CanUseEffect(combat, self, living[0], effect.Kind))
+                continue;
             if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
                 continue;
+            CombatIntegration.RecordEffect(combat, effect.Kind);
 
             int amount = effect.Amount;
             switch (effect.Kind)
@@ -79,6 +84,9 @@ internal static class NativeActions
                 case EffectKind.HardToKill:
                     await ApplyOpening(self, new OpeningState("HARD_TO_KILL", amount));
                     break;
+                case EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp:
+                    await ApplyOpening(self, new OpeningState(EffectPolicy.Id(effect.Kind), amount));
+                    break;
                 case EffectKind.Thorns:
                     await PowerCmd.Apply<ThornsPower>(choice, self, amount, self, null);
                     break;
@@ -107,10 +115,10 @@ internal static class NativeActions
                     await PowerCmd.Apply<DexterityPower>(choice, living, -amount, self, null);
                     break;
                 case EffectKind.Smoggy:
-                    await PowerCmd.Apply<SmoggyPower>(choice, living.Where(target => !target.HasPower<SmoggyPower>()), 1, self, null);
+                    await PowerCmd.Apply<SmoggyPower>(choice, living, 1, self, null);
                     break;
                 case EffectKind.Tender:
-                    await PowerCmd.Apply<TenderPower>(choice, living.Where(target => !target.HasPower<TenderPower>()), amount, self, null);
+                    await PowerCmd.Apply<TenderPower>(choice, living, amount, self, null);
                     break;
                 case EffectKind.Frail:
                     await PowerCmd.Apply<FrailPower>(choice, living, amount, self, null);
@@ -119,7 +127,7 @@ internal static class NativeActions
                     await PowerCmd.Apply<PoisonPower>(choice, living, amount, self, null);
                     break;
                 case EffectKind.Shrink:
-                    await PowerCmd.Apply<ShrinkPower>(choice, living.Where(target => !target.HasPower<ShrinkPower>()), -1, self, null);
+                    await PowerCmd.Apply<ShrinkPower>(choice, living, -1, self, null);
                     break;
                 case EffectKind.Soulbind:
                     await PowerCmd.Apply<ChainsOfBindingPower>(choice, living, amount, self, null);
@@ -187,6 +195,8 @@ internal static class NativeActions
         "HARD_TO_KILL" => Get<HardToKillPower>,
         "THORNS" or "TEMPORARY_THORNS" => Get<ThornsPower>,
         "ARTIFACT" => Get<ArtifactPower>,
+        "BARRICADE" => Get<BarricadePower>,
+        "CURL_UP" => Get<CurlUpPower>,
         "INTANGIBLE" => Get<IntangiblePower>,
         "WEAK" => Get<WeakPower>,
         "VULNERABLE" => Get<VulnerablePower>,
@@ -214,34 +224,39 @@ internal static class NativeActions
 
     private static string OpeningId(EffectKind kind) => RareBuffs.First(effect => effect.Kind == kind).Id;
 
-    internal static HashSet<EffectKind> ActiveEffects(Creature self, Creature player, IEnumerable<Creature> enemies)
+    internal static bool HasActionEffect(EffectKind kind, Creature target)
     {
-        var active = RareBuffs.Where(effect => HasRareBuff(self, effect.Id, enemies)).Select(effect => effect.Kind).ToHashSet();
-        if (self.HasPower<HardenedShellPower>())
-            active.Add(EffectKind.HardenedShell);
-        if (self.HasPower<HardToKillPower>())
-            active.Add(EffectKind.HardToKill);
-        if (player.HasPower<TenderPower>())
-            active.Add(EffectKind.Tender);
-        if (player.HasPower<ShrinkPower>())
-            active.Add(EffectKind.Shrink);
-        if (player.HasPower<ChainsOfBindingPower>())
-            active.Add(EffectKind.Soulbind);
-        if (player.HasPower<MindRotPower>())
-            active.Add(EffectKind.DrawDown);
-        if (player.HasPower<WasteAwayPower>())
-            active.Add(EffectKind.EnergyDown);
-        return active;
+        if (ActionEffect.IsCard(kind))
+        {
+            string id = EffectPolicy.Id(kind);
+            return target.Player?.PlayerCombatState is { } combat && combat.Hand.Cards.Concat(combat.DrawPile.Cards)
+                .Concat(combat.DiscardPile.Cards).Any(card => card.Id.Entry == id);
+        }
+        return kind switch
+        {
+            EffectKind.Block => target.Block > 0,
+            EffectKind.Tangled => target.HasPower<TangledPower>(),
+            EffectKind.Ringing => target.HasPower<RingingPower>(),
+            EffectKind.Smoggy => target.HasPower<SmoggyPower>(),
+            EffectKind.Tender => target.HasPower<TenderPower>(),
+            EffectKind.Frail => target.HasPower<FrailPower>(),
+            EffectKind.Poison => target.HasPower<PoisonPower>(),
+            EffectKind.Shrink => target.HasPower<ShrinkPower>(),
+            EffectKind.Soulbind => target.HasPower<ChainsOfBindingPower>(),
+            EffectKind.DrawDown => target.HasPower<MindRotPower>(),
+            EffectKind.EnergyDown => target.HasPower<WasteAwayPower>(),
+            EffectKind.DexterityDown => target.HasPower<DexterityPower>(),
+            _ => OpeningPower(EffectPolicy.Id(kind))?.Invoke(target) != null
+        };
     }
 
-    private static bool HasRareBuff(Creature self, string id, IEnumerable<Creature> enemies) =>
-        OpeningValuation.IsEncounterUnique(id)
-            ? enemies.Any(enemy => enemy.IsAlive && OpeningPower(id)!(enemy) != null)
-            : OpeningPower(id)!(self) != null;
+    private static bool HasOpening(Creature target, string id) => id == "STUN"
+        ? target.IsStunned : OpeningPower(id)?.Invoke(target) != null;
 
     internal static bool CanApplyOpening(Creature target, OpeningOption option, IEnumerable<Creature> enemies) =>
         target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
-        (option.State.Id == "STUN" ? !target.IsStunned : !HasRareBuff(target, option.State.Id, enemies));
+        (option.Stackable || !HasOpening(target, option.State.Id)) &&
+        (!option.Unique || !enemies.Any(enemy => enemy.IsAlive && HasOpening(enemy, option.State.Id)));
 
     internal static async Task<int> ApplyOpening(Creature target, OpeningState state)
     {
@@ -255,9 +270,6 @@ internal static class NativeActions
 
         if (RareBuffs.Any(effect => effect.Id == state.Id))
             return await ApplyRareBuff(target, state);
-        if ((state.Id is "HARDENED_SHELL" or "HARD_TO_KILL") && OpeningPower(state.Id)!(target) != null)
-            return 0;
-
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
         {
@@ -270,6 +282,8 @@ internal static class NativeActions
             "THORNS" => await Apply<ThornsPower>(),
             "TEMPORARY_THORNS" => await ApplyTemporaryThorns(target, state.Amount),
             "ARTIFACT" => await Apply<ArtifactPower>(),
+            "BARRICADE" => await Apply<BarricadePower>(),
+            "CURL_UP" => await Apply<CurlUpPower>(),
             "INTANGIBLE" => await Apply<IntangiblePower>(),
             "WEAK" => await Apply<WeakPower>(),
             "VULNERABLE" => await Apply<VulnerablePower>(),
@@ -303,9 +317,10 @@ internal static class NativeActions
 
     private static async Task<int> ApplyRareBuff(Creature owner, OpeningState state)
     {
-        if (owner.CombatState is not { } combat || HasRareBuff(owner, state.Id, combat.Enemies))
+        if (owner.CombatState is not { } combat)
             return 0;
 
+        int before = OpeningPower(state.Id)?.Invoke(owner)?.Amount ?? 0;
         var choice = new ThrowingPlayerChoiceContext();
         var power = state.Id switch
         {
@@ -318,7 +333,7 @@ internal static class NativeActions
         };
         if (power is VitalSparkPower spark)
             await spark.BeforeCombatStart();
-        return power?.Amount ?? 0;
+        return power == null ? 0 : power.Amount - before;
 
         async Task<WitheringPresencePower?> ApplyWithering()
         {

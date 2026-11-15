@@ -9,4 +9,5 @@ obj/
 local-runs/
 dist/
 .scratch/
+data/*.json.bak
 

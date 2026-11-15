@@ -12,10 +12,11 @@
     <ModInstallDir>$(GamePath)\mods\MonsterIntentRandomizer</ModInstallDir>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs" />
+    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs;../src/EffectCalibration.cs" />
     <EmbeddedResource Include="../data/settings.json" LogicalName="settings.json" />
     <EmbeddedResource Include="../data/monster-profiles.json" LogicalName="monster-profiles.json" />
     <EmbeddedResource Include="../data/action-value-calibration.json" LogicalName="action-value-calibration.json" />
+    <EmbeddedResource Include="../data/effect-valuation-tuning.json" LogicalName="effect-valuation-tuning.json" />
     <Reference Include="sts2" HintPath="$(GameAssemblyDir)\sts2.dll" Private="false" />
     <Reference Include="GodotSharp" HintPath="$(GameAssemblyDir)\GodotSharp.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameAssemblyDir)\0Harmony.dll" Private="false" />

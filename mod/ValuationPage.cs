@@ -15,6 +15,8 @@ internal static class ValuationPage
         var group = new ButtonGroup();
         AddCategory(actions, true);
         AddCategory(opening, false);
+        string? selectedAction = null;
+        string? selectedOpening = null;
         return () =>
         {
             var actionList = actions.GetChild<VBoxContainer>(0);
@@ -24,55 +26,131 @@ internal static class ValuationPage
             try
             {
                 var document = JsonNode.Parse(settings.Text)!;
-                actionList.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
-                foreach (var (id, formula) in document["actions"]!["valuation"]!.AsObject())
-                {
-                    string name = Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
-                        ? IntentDetails.Names(kind).Chinese : id;
-                    Heading(actionList, name, id);
-                    AddFormula(actionList, root => root["actions"]!["valuation"]![id]!.AsObject(), formula!.AsObject());
-                    if (id == "Attack")
-                        continue;
-                    var config = document["actions"]!;
-                    var weight = config["weights"]?[id];
-                    AddNumber(actionList, "基础权重", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
-                        (root, number) => SetActionWeight(root, id, "base", number));
-                    AddNumber(actionList, "每房间权重变化", weight?["perRoom"]?.GetValue<double>() ?? 0, 0.001,
-                        (root, number) => SetActionWeight(root, id, "perRoom", number));
-                    AddNumber(actionList, "每次层数下限", config["minAmounts"]?[id]?.GetValue<int>() ?? 1, 1,
-                        (root, number) => root["actions"]!["minAmounts"]![id] = (int)number, minimum: 1);
-                    if (config["hpPerSurvivalTurnCaps"]?[id]?.GetValue<double>() is double cap)
-                        AddNumber(actionList, "动态层数上限系数", cap, 0.01,
-                            (root, number) => root["actions"]!["hpPerSurvivalTurnCaps"]![id] = number, minimum: 0);
-                    else
-                        AddNumber(actionList, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
-                            (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
-                }
-                openingList.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
-                foreach (var (id, state) in document["opening"]!["states"]!.AsObject())
-                {
-                    Heading(openingList, OpeningName(id), id);
-                    AddFormula(openingList, root => root["opening"]!["states"]![id]!["formula"]!.AsObject(),
-                        state!["formula"]!.AsObject(), openingFormula: true);
-                    AddNumber(openingList, "基础权重", state["weight"]?.GetValue<double>() ?? 1, 0.001,
-                        (root, number) => root["opening"]!["states"]![id]!["weight"] = number);
-                    AddNumber(openingList, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
-                        (root, number) => root["opening"]!["states"]![id]!["weightPerRoom"] = number);
-                    AddNumber(openingList, "开场层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
-                        (root, number) => root["opening"]!["states"]![id]!["minAmount"] = (int)number, minimum: 1);
-                    if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
-                        AddNumber(openingList, "动态层数上限系数", cap, 0.01,
-                            (root, number) => root["opening"]!["states"]![id]!["hpPerSurvivalTurnCap"] = number, minimum: 0);
-                    else
-                        AddNumber(openingList, "开场层数上限", state["maxAmount"]?.GetValue<int>() ?? 0, 1,
-                            (root, number) => root["opening"]!["states"]![id]!["maxAmount"] = (int)number);
-                }
+                AddSelector(actionList, document["actions"]!["valuation"]!.AsObject().Select(entry => entry.Key),
+                    ActionName, selectedAction, (detail, id) =>
+                    {
+                        selectedAction = id;
+                        RenderAction(detail, JsonNode.Parse(settings.Text)!["actions"]!, id);
+                    });
+                AddSelector(openingList, document["opening"]!["states"]!.AsObject().Select(entry => entry.Key),
+                    OpeningName, selectedOpening, (detail, id) =>
+                    {
+                        selectedOpening = id;
+                        RenderOpening(detail, JsonNode.Parse(settings.Text)!["opening"]!["states"]![id]!, id);
+                    });
             }
             catch (Exception error)
             {
                 message.Text = $"无法读取估值。{error.Message}";
             }
         };
+
+        static string ActionName(string id) => Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
+            ? IntentDetails.Names(kind).Chinese : id;
+
+        void AddSelector(VBoxContainer content, IEnumerable<string> ids, Func<string, string> title,
+            string? previous, Action<VBoxContainer, string> render)
+        {
+            var entries = ids.ToArray();
+            var selector = new OptionButton { Name = "状态选择", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            foreach (string id in entries)
+                selector.AddItem($"{title(id)}  ·  {id}");
+            content.AddChild(selector);
+            var detail = new VBoxContainer();
+            detail.AddThemeConstantOverride("separation", 6);
+            content.AddChild(detail);
+            if (entries.Length == 0)
+                return;
+            int index = Math.Max(0, Array.IndexOf(entries, previous));
+            selector.Select(index);
+            selector.ItemSelected += selected => Show((int)selected);
+            Show(index);
+
+            void Show(int selected)
+            {
+                Clear(detail);
+                try { render(detail, entries[selected]); }
+                catch (Exception error) { message.Text = $"无法读取估值。{error.Message}"; }
+            }
+        }
+
+        void RenderAction(VBoxContainer content, JsonNode config, string id)
+        {
+            var kind = Enum.Parse<EffectKind>(id, ignoreCase: true);
+            var defaultPolicy = EffectPolicy.Default(kind);
+            var policy = config["policies"]?[id];
+            content.AddChild(new Label
+            {
+                Text = $"目标：{(ActionEffect.TargetFor(kind) == EffectTarget.Self ? "自身" : "玩家")}"
+            });
+            AddFormula(content, root => root["actions"]!["valuation"]![id]!.AsObject(), config["valuation"]![id]!.AsObject());
+            if (id == "Attack")
+                return;
+
+            AddCheck(content, "可叠加", policy?["stackable"]?.GetValue<bool>() ?? defaultPolicy.Stackable,
+                (root, value) => SetPolicy(root, id, "stackable", value));
+            AddCheck(content, "战斗中独特", policy?["unique"]?.GetValue<bool>() ?? defaultPolicy.Unique,
+                (root, value) => SetPolicy(root, id, "unique", value));
+            var weight = config["weights"]?[id];
+            AddNumber(content, "基础权重（-1 停用）", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
+                (root, number) => SetActionWeight(root, id, "base", number));
+            AddNumber(content, "每房间权重变化", weight?["perRoom"]?.GetValue<double>() ?? 0, 0.001,
+                (root, number) => SetActionWeight(root, id, "perRoom", number));
+            AddNumber(content, "每次层数下限", config["minAmounts"]?[id]?.GetValue<int>() ?? 1, 1,
+                (root, number) => root["actions"]!["minAmounts"]![id] = (int)number, minimum: 1);
+            if (config["hpPerSurvivalTurnCaps"]?[id]?.GetValue<double>() is double cap)
+                AddNumber(content, "动态层数上限系数", cap, 0.01,
+                    (root, number) => root["actions"]!["hpPerSurvivalTurnCaps"]![id] = number, minimum: 0);
+            else
+                AddNumber(content, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
+                    (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
+        }
+
+        void RenderOpening(VBoxContainer content, JsonNode state, string id)
+        {
+            JsonNode At(JsonNode root) => root["opening"]!["states"]![id]!;
+            content.AddChild(new Label { Text = "目标：自身" });
+            AddFormula(content, root => At(root)["formula"]!.AsObject(), state["formula"]!.AsObject(), openingFormula: true);
+            AddCheck(content, "可叠加", state["stackable"]?.GetValue<bool>() ?? false,
+                (root, value) => At(root)["stackable"] = value);
+            AddCheck(content, "战斗中独特", state["unique"]?.GetValue<bool>() ?? false,
+                (root, value) => At(root)["unique"] = value);
+            AddNumber(content, "基础权重（-1 停用）", state["weight"]?.GetValue<double>() ?? 1, 0.001,
+                (root, number) => At(root)["weight"] = number);
+            AddNumber(content, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
+                (root, number) => At(root)["weightPerRoom"] = number);
+            AddNumber(content, "开场层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
+                (root, number) => At(root)["minAmount"] = (int)number, minimum: 1);
+            if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
+                AddNumber(content, "动态层数上限系数", cap, 0.01,
+                    (root, number) => At(root)["hpPerSurvivalTurnCap"] = number, minimum: 0);
+            else
+                AddNumber(content, "开场层数上限", state["maxAmount"]?.GetValue<int>() ?? 0, 1,
+                    (root, number) => At(root)["maxAmount"] = (int)number);
+        }
+
+        void AddCheck(VBoxContainer content, string label, bool current, Action<JsonNode, bool> update)
+        {
+            var button = new CheckButton { Text = label, ButtonPressed = current };
+            content.AddChild(button);
+            button.Toggled += value => Edit(root => update(root, value));
+        }
+
+        static void SetPolicy(JsonNode root, string id, string key, bool value)
+        {
+            var config = root["actions"]!.AsObject();
+            config["policies"] ??= new JsonObject();
+            if (config["policies"]![id] == null)
+            {
+                var defaults = EffectPolicy.Default(Enum.Parse<EffectKind>(id, ignoreCase: true));
+                config["policies"]![id] = new JsonObject
+                {
+                    ["stackable"] = defaults.Stackable, ["unique"] = defaults.Unique,
+                    ["target"] = defaults.Target!.Value.ToString().ToLowerInvariant()
+                };
+            }
+            config["policies"]![id]![key] = value;
+        }
 
         ScrollContainer AddScroll(string name)
         {
@@ -130,8 +208,8 @@ internal static class ValuationPage
             var terms = new VBoxContainer();
             content.AddChild(terms);
             var factors = ActionValuation.FactorNames.Where(name => !openingFormula ||
-                name is "Amount" or "ActionValue" or "AttackFrequency" or "SurvivalTurns" or "PlayerTurnValue"
-                    or "PlayerActionValue" or "HpPerSurvivalTurn" or "InverseAmount").ToArray();
+                name is "Amount" or "ActionValue" or "AttackFrequency" or "SurvivalTurns"
+                    or "PlayerActionValue" or "HpPerSurvivalTurn" or "InverseAmount" or "RoomsEntered").ToArray();
             foreach (var (term, value) in initial)
                 AddTerm(terms, getFormula, factors, term, value!.GetValue<double>());
             var add = new Button { Text = "新增估值项", SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin };
@@ -250,14 +328,6 @@ internal static class ValuationPage
         }
     }
 
-    private static void Heading(VBoxContainer content, string name, string id)
-    {
-        content.AddChild(new HSeparator());
-        var title = new Label { Text = $"{name}  ·  {id}" };
-        title.AddThemeFontSizeOverride("font_size", 19);
-        content.AddChild(title);
-    }
-
     private static SpinBox Coefficient(VBoxContainer content, string caption, double value)
     {
         var input = SettingsPage.NumberRow(content, caption, -100, 100, 0.0001);
@@ -272,7 +342,7 @@ internal static class ValuationPage
             "fixed" => "固定值", "amount" => "层数／数量", "actionvalue" => "基础行动力",
             "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
             "hits" => "攻击段数", "draws" => "预计抽到次数", "triggers" => "预计触发次数",
-            "playerturnvalue" => "玩家回合价值", "playeractionvalue" => "玩家行动力",
+            "playeractionvalue" => "玩家行动力", "roomsentered" => "进入房间数",
             "hppersurvivalturn" => "当前血量／预期生存回合", "inverseamount" => "1／层数", _ => factor
         }));
 

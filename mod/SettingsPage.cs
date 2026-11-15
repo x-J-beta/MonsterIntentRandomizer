@@ -39,8 +39,8 @@ internal static class SettingsPage
 
         var dialog = new Window
         {
-            Name = WindowName, Title = "怪物意图随机 · 设置", Size = new Vector2I(900, 670),
-            MinSize = new Vector2I(600, 430), Transient = true, Exclusive = true, Visible = false
+            Name = WindowName, Title = "怪物意图随机 · 设置", Size = new Vector2I(1280, 870),
+            MinSize = new Vector2I(720, 500), Transient = true, Exclusive = true, Visible = false
         };
         screen.AddChild(dialog);
         dialog.CloseRequested += dialog.QueueFree;
@@ -123,8 +123,8 @@ internal static class SettingsPage
         AddNumber("开场无变化权重", 0, 100, 1, "opening", "weights", "none");
         AddNumber("开场正面权重", 0, 100, 1, "opening", "weights", "positive");
         AddNumber("开场负面权重", 0, 100, 1, "opening", "weights", "negative");
-        for (int act = 1; act <= 3; act++)
-            AddNumber($"第 {act} 幕玩家回合价值", 0.01, 100, 0.01, "actions", "playerTurnValue", $"act{act}");
+        foreach (var (id, label) in new[] { ("top", "置顶"), ("draw", "洗入抽牌堆"), ("discard", "弃牌堆") })
+            AddNumber($"状态牌{label}估值倍率", 0, 5, 0.01, "actions", "cardPlacementValues", id);
         RefreshNumbers();
         var refreshMonsters = AddMonsterControls(monsters, profiles, message);
         var refreshValuations = ValuationPage.Create(valuations, settings, message);
@@ -172,7 +172,7 @@ internal static class SettingsPage
                 message.Text = $"保存失败。{error.Message}";
             }
         };
-        dialog.PopupCenteredClamped(dialog.Size, 0.88f);
+        dialog.PopupCenteredClamped(dialog.Size, 0.96f);
 
         void AddNumber(string label, double min, double max, double step, params string[] path)
         {
@@ -243,6 +243,8 @@ internal static class SettingsPage
             (Group: "", Key: "actionValue", Label: "基础行动力"),
             (Group: "", Key: "attackFrequency", Label: "每回合目标攻击段数"),
             (Group: "", Key: "attackSpend", Label: "攻击花费比例"),
+            (Group: "", Key: "singleHitPreference", Label: "单段攻击偏好倍率"),
+            (Group: "", Key: "desireHitPreference", Label: "欲望段数偏好倍率"),
             (Group: "", Key: "volatility", Label: "行动力波动"),
             (Group: "preferences", Key: "attack", Label: "纯攻击权重"),
             (Group: "preferences", Key: "buff", Label: "强化权重"),
@@ -318,6 +320,8 @@ internal static class SettingsPage
             {
                 var (group, key, _) = values[i];
                 var value = group.Length == 0 ? monster?[key] ?? document["defaults"]?[key] : monster?[group]?[key];
+                if (value == null && key is "singleHitPreference" or "desireHitPreference")
+                    value = JsonValue.Create(1.0);
                 if (key == "attackSpend" && value == null && monster != null)
                     value = JsonValue.Create(RuleConfiguration.ReadMonster(JsonSerializer.SerializeToElement(monster),
                         JsonSerializer.SerializeToElement(document["defaults"])).Profile.BudgetedAttackShare);

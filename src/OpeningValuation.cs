@@ -1,7 +1,7 @@
 namespace MonsterIntentRandomizer;
 
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
-    IReadOnlyList<OpeningOption>? Doses = null);
+    IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
 public sealed record OpeningDraws(double None, double Positive, double Negative, int Attempts,
     int MaxPerMonster, double MaxEncounterValueMultiplier);
@@ -10,7 +10,7 @@ public enum OpeningBasis { ActionValue, Flat, SurvivalTurns, AttackFrequency, At
 public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amounts = null, double Weight = 1,
     int MinAct = 1, OpeningBasis Basis = OpeningBasis.ActionValue, int? MaxAmount = null,
     double WeightPerRoom = 0, Dictionary<string, double>? Formula = null, int MinAmount = 1,
-    double? HpPerSurvivalTurnCap = null, bool Common = false)
+    double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false)
 {
     internal ActionValuation? CompiledFormula { get; } = Formula == null ? null :
         new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>> { [EffectKind.Attack] = Formula });
@@ -26,10 +26,8 @@ public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amount
 
 public static class OpeningValuation
 {
-    public static bool IsEncounterUnique(string id) => id is "VITAL_SPARK" or "WITHERING_PRESENCE";
-
-    public static double Evaluate(StatusValue state, MonsterProfile profile, int amount, double? playerTurnValue = null) =>
-        amount == 0 ? 0 : state.CompiledFormula?.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), playerTurnValue: playerTurnValue) ??
+    public static double Evaluate(StatusValue state, MonsterProfile profile, int amount) =>
+        amount == 0 ? 0 : state.CompiledFormula?.Evaluate(EffectKind.Attack, profile, Math.Abs(amount)) ??
         Math.Abs((double)amount) * state.Turns * (state.Basis switch
         {
             OpeningBasis.Flat => 1,
@@ -39,14 +37,14 @@ public static class OpeningValuation
             _ => profile.ActionValue
         });
 
-    public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
-        double? playerTurnValue = null)
+    public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0)
     {
         var doses = state.Doses(profile).Select(amount =>
-            new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount, playerTurnValue))).ToArray();
+            new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount))).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);
-        return representative with { Weight = new RoomWeight(state.Weight, state.WeightPerRoom).At(rooms), Doses = doses };
+        return representative with { Weight = new RoomWeight(state.Weight, state.WeightPerRoom).At(rooms), Doses = doses,
+            Stackable = state.Stackable, Unique = state.Unique };
     }
 
     public static IReadOnlyList<OpeningPick> Draw(
@@ -74,8 +72,8 @@ public static class OpeningValuation
                     var options = pair.Value.Where(option => previous.Length < settings.MaxPerMonster && option.Weight > 0 &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
                             (positive ? option.Value > 0 : option.Value < 0)) &&
-                        previous.All(pick => !Conflicts(pick.State.Id, option.State.Id)) &&
-                        (!IsEncounterUnique(option.State.Id) || selected.All(pick => pick.State.Id != option.State.Id))).ToArray();
+                        previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable)) &&
+                        (!option.Unique || selected.All(pick => pick.State.Id != option.State.Id))).ToArray();
                     return (pair.Key, Options: options);
                 }).Where(pair => pair.Options.Length > 0).ToArray();
             if (available.Length == 0)
@@ -113,8 +111,8 @@ public static class OpeningValuation
         return selected;
     }
 
-    private static bool Conflicts(string existing, string added) =>
-        existing == added ||
+    private static bool Conflicts(string existing, string added, bool stackable) =>
+        existing == added ? !stackable :
         ((existing is "THORNS" or "TEMPORARY_THORNS") && (added is "THORNS" or "TEMPORARY_THORNS")) ||
         ((existing is "STRENGTH" or "STRENGTH_DOWN") && (added is "STRENGTH" or "STRENGTH_DOWN"));
 }

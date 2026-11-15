@@ -135,12 +135,12 @@ internal static class SimulationPage
         {
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
             PlayerActionValue = rules.PlayerAction.At(rooms),
-            CurrentHp = hp
+            CurrentHp = hp,
+            RoomsEntered = rooms + 1
         };
         var candidates = rules.OpeningStatesFor(monster).Where(key => rules.OpeningValues[key].MinAct <= act &&
             (key != "STUN" || !monster.FixedOpening))
-            .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms,
-                rules.PlayerTurns.ForAct(act))).ToArray();
+            .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms)).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
@@ -182,5 +182,6 @@ internal static class SimulationPage
         string.Join(" ＋ ", action.Effects.Select(effect =>
         effect.Kind == EffectKind.Attack
             ? $"攻击 {action.Damage / effect.Hits:0} × {effect.Hits}"
-            : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}"));
+            : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}" +
+                (effect.IsStatusCard ? $"（{IntentDetails.PlacementName(effect.Pile)}）" : "")));
 }

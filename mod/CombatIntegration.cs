@@ -31,6 +31,8 @@ internal static class CombatIntegration
         public ActionCatalog Catalog { get; } = new(rules.Actions);
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
+        public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
+        public Dictionary<EffectKind, (Creature Owner, int Round)> UniquePlans { get; } = new();
         public Creature? SpecialDebuffOwner { get; set; }
         public int SpecialDebuffRound { get; set; }
         public bool SpecialDebuffSpent { get; set; }
@@ -90,7 +92,7 @@ internal static class CombatIntegration
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
                 candidates[id] = rules.OpeningStatesFor(state.Rules)
                     .Where(key => (key != "STUN" || !state.Rules.FixedOpening) && rules.OpeningValues[key].MinAct <= Act(combat))
-                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms, rules.PlayerTurns.ForAct(Act(combat))))
+                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -103,12 +105,14 @@ internal static class CombatIntegration
                     return;
                 Creature target = byId[pick.MonsterId];
                 int applied = await NativeActions.ApplyOpening(target, pick.State);
+                if (applied != 0)
+                    encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
                 var state = encounter.Enemies[target];
                 var price = rules.OpeningValues[pick.State.Id];
                 state.Balance = state.Balance with
                 {
                     ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price,
-                        WithSurvival(state.Profile, target, combat, encounter), applied, rules.PlayerTurns.ForAct(Act(combat)))
+                        WithSurvival(state.Profile, target, combat, encounter), applied)
                 };
             }
             encounter.Ready = true;
@@ -147,6 +151,9 @@ internal static class CombatIntegration
                     buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
                 enemy.PlannedRound = round;
+                foreach (var effect in enemy.Plan.Action?.Effects ?? [])
+                    if (encounter.Rules.UniqueAction(effect.Kind))
+                        encounter.UniquePlans[effect.Kind] = (creature, round);
                 if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialDebuff) == true)
                 {
                     encounter.SpecialDebuffOwner = creature;
@@ -216,6 +223,26 @@ internal static class CombatIntegration
         return true;
     }
 
+    internal static bool CanUseEffect(ICombatState combat, Creature self, Creature player, EffectKind kind)
+    {
+        if (!Encounters.TryGetValue(combat, out var encounter))
+            return true;
+        var targetKind = ActionEffect.TargetFor(kind);
+        var target = targetKind == EffectTarget.Self ? self : player;
+        if (!encounter.Rules.Actions.PolicyFor(kind).Stackable && NativeActions.HasActionEffect(kind, target))
+            return false;
+        return !encounter.Rules.UniqueAction(kind) ||
+            (!encounter.UsedEffects.Contains((targetKind, EffectPolicy.Id(kind))) &&
+                !(targetKind == EffectTarget.Self ? combat.Enemies : combat.PlayerCreatures)
+                    .Any(creature => creature.IsAlive && NativeActions.HasActionEffect(kind, creature)));
+    }
+
+    internal static void RecordEffect(ICombatState combat, EffectKind kind)
+    {
+        if (Encounters.TryGetValue(combat, out var encounter))
+            encounter.UsedEffects.Add((ActionEffect.TargetFor(kind), EffectPolicy.Id(kind)));
+    }
+
     private static async Task ExpireTemporaryThorns(Task original, EncounterRules encounter)
     {
         await original;
@@ -280,12 +307,14 @@ internal static class CombatIntegration
             MissingHp = self.MaxHp - self.CurrentHp,
             Strength = self.GetPower<StrengthPower>()?.Amount ?? 0,
             Weakened = self.HasPower<WeakPower>(),
-            AlreadyIntangible = self.HasPower<IntangiblePower>(),
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
             AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
             Act = Act(combat),
-            ActiveEffects = NativeActions.ActiveEffects(self, player, combat.Enemies),
+            ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
+                !CanUseEffect(combat, self, player, kind) ||
+                (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
+                    reserved.Owner != self && reserved.Owner.IsAlive)).ToHashSet(),
             RareBuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0xA4CB124Bu, combat.RoundNumber).NextDouble(),
             SpecialDebuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0x0BC16431u, combat.RoundNumber).NextDouble(),
             SpecialDebuffAvailable = !encounter.SpecialDebuffSpent &&
@@ -299,7 +328,8 @@ internal static class CombatIntegration
             BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp,
                 combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp), encounter.Rooms),
             PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms),
-            CurrentHp = self.CurrentHp
+            CurrentHp = self.CurrentHp,
+            RoomsEntered = encounter.Rooms + 1
         };
 
     private static int Act(ICombatState combat) => Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3);

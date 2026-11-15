@@ -37,6 +37,8 @@ public sealed record PoolSettings(
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
     IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null)
 {
+    internal double WeightPower => 1 - Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
+
     private static readonly IReadOnlyDictionary<IntentStyle, double> DefaultChaosWeights =
         new Dictionary<IntentStyle, double>
         {
@@ -50,7 +52,7 @@ public sealed record PoolSettings(
             ActionValue = profile.ActionValue * ActionValueMultiplier,
             Volatility = profile.Volatility * ChaosMultiplier
         };
-        double mix = Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
+        double mix = 1 - WeightPower;
         if (mix == 0)
             return adjusted;
 
@@ -75,7 +77,7 @@ public sealed record MonsterProfile(
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
     IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
     IReadOnlyList<StatusPlacement>? CardPlacements = null, double? AttackSpend = null, double PlayerActionValue = 0,
-    double CurrentHp = 0)
+    double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1)
 {
     public double HpPerSurvivalTurn => BaseExpectedSurvivalTurns > 0 ? CurrentHp / BaseExpectedSurvivalTurns : 0;
 
@@ -87,7 +89,9 @@ public sealed record MonsterProfile(
         new Dictionary<int, double> { [1] = 1 };
 
     internal IEnumerable<KeyValuePair<int, double>> AttackHitWeights =>
-        (HitWeights ?? DefaultHitWeights).Where(pair => pair.Key > 0 && pair.Value > 0);
+        (HitWeights ?? DefaultHitWeights).Where(pair => pair.Key > 0 && pair.Value > 0)
+            .Select(pair => KeyValuePair.Create(pair.Key, pair.Value * (pair.Key == 1 ? SingleHitPreference : DesireHitPreference)))
+            .Where(pair => pair.Value > 0);
 
     public double ExpectedHitsPerAttack
     {
@@ -143,7 +147,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         double attackFraction = profile.BudgetedAttackShare;
         double attackTarget = Jitter(target * attackFraction, profile.Volatility, random);
         var eligible = candidates.Where(candidate => candidate.Value > 0 && candidate.Weight > 0).ToArray();
-        int hits = DrawHits(profile, granted.AttackDesire, attackFraction, attackTarget, random);
+        int hits = DrawHits(profile, granted.AttackDesire, attackFraction, random);
         var attack = hits > 0 ? (buildAttack != null ? buildAttack(hits, attackTarget) :
             Pick(eligible.Where(candidate => candidate.AttackHits == hits), profile, attackTarget, random)) : null;
         double allocatedOthers = target * (1 - attackFraction +
@@ -176,9 +180,9 @@ public sealed class ActionPlanner(PoolSettings settings)
     public Pools Settle(Pools granted, double value, int attackHits) =>
         new(granted.ActionValue - value, granted.AttackDesire - attackHits);
 
-    private static int DrawHits(MonsterProfile profile, double desire, double attackFraction, double target, Random random)
+    private int DrawHits(MonsterProfile profile, double desire, double attackFraction, Random random)
     {
-        if (desire <= 0 || attackFraction <= 0 || profile.AttackFrequency <= 0 ||
+        if (attackFraction <= 0 || profile.AttackFrequency <= 0 ||
             profile.IntentWeights.GetValueOrDefault(IntentStyle.Attack) <= 0)
             return 0;
         var allowed = profile.AttackHitWeights.OrderBy(pair => pair.Key).ToArray();
@@ -188,12 +192,10 @@ public sealed class ActionPlanner(PoolSettings settings)
         if (choices.Length == 0)
             return 0;
 
-        double budgetSignal = target / (target + profile.ActionValue);
-        double bias = 1 + 0.2 * (budgetSignal - 0.5);
-        double chance = Math.Min(1, desire / choices[0].Key * bias);
-        if (random.NextDouble() >= chance)
+        double waitChance = 5 / Math.Max(5, desire + 10);
+        if (random.NextDouble() < waitChance)
             return 0;
-        return Draw(choices.Select(pair => (pair.Key, pair.Value / (1 + Math.Pow(pair.Key - desire, 2)))), 0, random);
+        return Draw(choices.Select(pair => (pair.Key, Math.Pow(pair.Value, settings.WeightPower))), 0, random);
     }
 
     private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&
@@ -242,9 +244,13 @@ public sealed class ActionPlanner(PoolSettings settings)
             .Where(group => profile.IntentWeights.GetValueOrDefault(group.Key) > 0)
             .SelectMany(group =>
             {
-                double categoryWeight = profile.IntentWeights[group.Key] / group.Sum(candidate => candidate.Weight);
-                return group.Select(candidate => (Candidate: candidate,
-                    Weight: candidate.Weight * categoryWeight * MatchingWeight(candidate.Value, target, scale)));
+                var families = group.GroupBy(candidate => candidate.Effects?[0].Kind ?? EffectKind.Attack)
+                    .Select(family => (Members: family, Raw: family.Sum(candidate => candidate.Weight))).ToArray();
+                double exponent = settings.WeightPower;
+                double categoryWeight = profile.IntentWeights[group.Key] / families.Sum(family => Math.Pow(family.Raw, exponent));
+                return families.SelectMany(family => family.Members.Select(candidate => (Candidate: candidate,
+                    Weight: candidate.Weight / family.Raw * Math.Pow(family.Raw, exponent) * categoryWeight *
+                        MatchingWeight(candidate.Value, target, scale))));
             }).ToArray();
         if (candidates.Length == 0)
             return null;

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 7;
+    private const int SettingsRevision = 10;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -86,6 +86,8 @@ internal static class ModSettings
         defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
         UpgradeDefenseAmounts(settings, defaults);
+        UpgradeProgressValuation(settings);
+        ApplyEffectCalibration(settings);
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
@@ -265,6 +267,74 @@ internal static class ModSettings
         }
     }
 
+    private static void UpgradeProgressValuation(JsonNode settings)
+    {
+        var actions = settings["actions"]!.AsObject();
+        actions.Remove("playerTurnValue");
+        foreach (var (_, formula) in actions["valuation"]!.AsObject())
+            ReplaceLegacyFactor(formula!.AsObject());
+        foreach (var (_, state) in settings["opening"]!["states"]!.AsObject())
+            if (state?["formula"] is JsonObject formula)
+                ReplaceLegacyFactor(formula);
+
+        var placement = actions["cardPlacementValues"]!.AsObject();
+        if (placement["top"]?.GetValue<double>() == 1.4)
+            placement["top"] = 1.33;
+        if (placement["discard"]?.GetValue<double>() == 0.6)
+            placement["discard"] = 0.75;
+        foreach (var (id, slope) in new[] { ("StrengthDown", 0.1), ("DexterityDown", 0.08) })
+        {
+            var formula = actions["valuation"]![id]!.AsObject();
+            if (!formula.Any(term => term.Key.Contains("roomsEntered", StringComparison.OrdinalIgnoreCase)))
+                formula["amount*roomsEntered"] = slope;
+        }
+
+        static void ReplaceLegacyFactor(JsonObject formula)
+        {
+            foreach (var (key, value) in formula.Where(term => term.Key.Split('*', StringSplitOptions.TrimEntries)
+                         .Contains("playerTurnValue", StringComparer.OrdinalIgnoreCase)).ToArray())
+            {
+                string next = string.Join("*", key.Split('*', StringSplitOptions.TrimEntries)
+                    .Select(factor => factor.Equals("playerTurnValue", StringComparison.OrdinalIgnoreCase) ? "playerActionValue" : factor));
+                var factors = next.Split('*').Order(StringComparer.OrdinalIgnoreCase);
+                string? existing = formula.Select(term => term.Key).FirstOrDefault(candidate =>
+                    candidate.Split('*', StringSplitOptions.TrimEntries).Order(StringComparer.OrdinalIgnoreCase)
+                        .SequenceEqual(factors, StringComparer.OrdinalIgnoreCase));
+                double coefficient = value!.GetValue<double>() + (existing == null ? 0 : formula[existing]!.GetValue<double>());
+                formula.Remove(key);
+                formula[existing ?? next] = coefficient;
+            }
+        }
+    }
+
+    private static void ApplyEffectCalibration(JsonNode settings)
+    {
+        var changes = ReadResource("effect-valuation-tuning.json").GetProperty("changes");
+        foreach (var change in changes.EnumerateArray())
+        {
+            string id = change.GetProperty("id").GetString()!;
+            bool action = change.GetProperty("scope").GetString() == "action";
+            var owner = (action ? settings["actions"]!["valuation"] : settings["opening"]!["states"]![id])!.AsObject();
+            string key = action ? id : "formula";
+            if (owner[key] is not JsonObject current)
+                continue;
+            var previous = change.GetProperty("before").EnumerateObject().ToArray();
+            if (previous.Length == current.Count && previous.All(term => current.Any(entry =>
+                    Normalize(entry.Key) == Normalize(term.Name) &&
+                    Math.Abs(entry.Value!.GetValue<double>() - term.Value.GetDouble()) < 1e-9)))
+                owner[key] = JsonNode.Parse(change.GetProperty("after").GetRawText());
+        }
+
+        var context = settings["simulation"]!["turnContext"]!;
+        foreach (var (key, previous, next) in new[] { ("dazedDraws", 0.6, 0.8), ("woundDraws", 0.8, 0.95),
+                     ("burnDraws", 0.6, 0.95), ("beckonDraws", 0.6, 0.94), ("otherStatusDraws", 0.6, 0.9) })
+            if (context[key]?.GetValue<double>() == previous)
+                context[key] = next;
+
+        static string Normalize(string term) => string.Join("*", term.ToLowerInvariant()
+            .Split('*', StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal));
+    }
+
     private static readonly Dictionary<string, double> OldOpeningCoefficients = new()
     {
         ["STRENGTH"] = 0.2, ["RITUAL"] = 0.4, ["STRENGTH_DOWN"] = -0.2,
@@ -309,6 +379,7 @@ internal static class ModSettings
         {
             if (monster.Profile.ActionValue <= 0 || monster.DeadlyEnemies is <= 0 ||
                 monster.Profile.AttackFrequency < 0 || monster.Profile.AttackSpend is < 0 or > 1 ||
+                monster.Profile.SingleHitPreference < 0 || monster.Profile.DesireHitPreference < 0 ||
                 monster.Profile.Volatility < 0 || monster.Profile.NonAttackMultiplier < 0)
                 throw new ArgumentException($"{id} 的行动力须为正数，其余怪物参数须为非负数。");
             foreach (string state in monster.OpeningStates)

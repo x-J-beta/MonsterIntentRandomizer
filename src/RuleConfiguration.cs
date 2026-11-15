@@ -16,10 +16,6 @@ internal sealed class RuleConfiguration
         var actions = settings.GetProperty("actions");
         var opening = settings.GetProperty("opening");
         var weights = opening.GetProperty("weights");
-        PlayerTurns = actions.TryGetProperty("playerTurnValue", out var playerTurns)
-            ? Read<PlayerTurnValues>(playerTurns) : new PlayerTurnValues();
-        if (PlayerTurns.Act1 <= 0 || PlayerTurns.Act2 <= 0 || PlayerTurns.Act3 <= 0)
-            throw new ArgumentException("各幕的玩家回合价值须为正数。");
         PlayerAction = settings.TryGetProperty("playerAction", out var curve) ? Read<PlayerActionCurve>(curve) : new();
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
@@ -44,8 +40,12 @@ internal sealed class RuleConfiguration
             (hpCaps?.Values.Any(cap => cap < 0) ?? false) ||
             (minimums?.Any(entry => maximums.TryGetValue(entry.Key, out int max) && max > 0 && max < entry.Value) ?? false))
             throw new ArgumentException("出招状态的层数下限或上限无效。");
+        var policies = actions.TryGetProperty("policies", out var policyConfig)
+            ? Read<Dictionary<EffectKind, EffectPolicy>>(policyConfig) : null;
+        if (policies?.Any(entry => entry.Value.Target is EffectTarget target && ActionEffect.TargetFor(entry.Key) != target) == true)
+            throw new ArgumentException("出招目标由原版效果决定。");
         Actions = new ActionValuationSettings(
-            new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation")), PlayerTurns),
+            new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation"))),
             actions.GetProperty("weakDamageReduction").GetDouble(),
             actions.GetProperty("minimumBaseDamagePerHit").GetInt32(),
             maximums.ToDictionary(entry => entry.Key, entry => Enumerable.Range(1, entry.Value).ToArray()),
@@ -55,11 +55,21 @@ internal sealed class RuleConfiguration
             actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, hpCaps);
+            minimums, hpCaps, policies,
+            actions.TryGetProperty("playableStatusRetention", out var retention) ? retention.GetDouble() : 0.9);
+        if (Actions.PlayableStatusRetention is < 0 or > 1)
+            throw new ArgumentException("可打出状态牌留到回合结束的概率须在 0 到 1 之间。");
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
+        foreach (var kind in Enum.GetValues<EffectKind>().Where(kind => ActionEffect.TargetFor(kind) == EffectTarget.Self &&
+                     Actions.PolicyFor(kind).Unique))
+        {
+            string id = EffectPolicy.Id(kind);
+            if (OpeningValues.TryGetValue(id, out var state))
+                OpeningValues[id] = state with { Unique = true };
+        }
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
         TurnPrior = Read<ActionContext>(settings.GetProperty("simulation").GetProperty("turnContext"));
         var defaults = profiles.GetProperty("defaults");
@@ -70,7 +80,6 @@ internal sealed class RuleConfiguration
 
     public PoolSettings PoolSettings { get; }
     public PlayerActionCurve PlayerAction { get; }
-    public PlayerTurnValues PlayerTurns { get; }
     public ActionValuationSettings Actions { get; }
     public OpeningDraws Draws { get; }
     public Dictionary<string, StatusValue> OpeningValues { get; }
@@ -80,6 +89,10 @@ internal sealed class RuleConfiguration
     public int HardCardLimitFirstTurn { get; }
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key)).Distinct();
+
+    internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique ||
+        (ActionEffect.TargetFor(kind) == EffectTarget.Self &&
+            OpeningValues.TryGetValue(EffectPolicy.Id(kind), out var opening) && opening.Unique);
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
     {
         JsonElement Setting(string name) => entry.TryGetProperty(name, out var value) ? value : defaults.GetProperty(name);
@@ -91,7 +104,9 @@ internal sealed class RuleConfiguration
             Read<Dictionary<int, double>>(Setting("hitWeights")),
             entry.TryGetProperty("effects", out var effects) ? Read<Dictionary<EffectKind, double>>(effects) : null,
             entry.TryGetProperty("cards", out var cards) ? Read<StatusPlacement[]>(cards) : null,
-            entry.TryGetProperty("attackSpend", out var spend) ? spend.GetDouble() : null);
+            entry.TryGetProperty("attackSpend", out var spend) ? spend.GetDouble() : null,
+            SingleHitPreference: entry.TryGetProperty("singleHitPreference", out var single) ? single.GetDouble() : 1,
+            DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1);
         return new MonsterRules(profile,
             entry.TryGetProperty("deadlyEnemies", out var higher) ? higher.GetDouble() : null,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),

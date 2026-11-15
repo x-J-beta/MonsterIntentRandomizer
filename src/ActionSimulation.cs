@@ -17,14 +17,15 @@ internal static class ActionSimulation
         var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
-        var activeEffects = Enum.GetValues<EffectKind>().Where(kind =>
-            (ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind)) &&
-            opening.Any(pick => pick.State.Id.Replace("_", "").Equals(kind.ToString(), StringComparison.OrdinalIgnoreCase)))
-            .ToHashSet();
-        var prior = rules.TurnPrior with { Act = act, Rooms = rooms, ActiveEffects = activeEffects,
+        var activeEffects = new Dictionary<EffectKind, int>();
+        var usedEffects = new HashSet<EffectKind>();
+        foreach (var pick in opening)
+            if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
+                ActionEffect.TargetFor(kind) == EffectTarget.Self)
+                RecordEffect(kind, pick.State.Amount, 0);
+        var prior = rules.TurnPrior with { Act = act, Rooms = rooms,
             ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
-        int intangibleTurns = opening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
         bool previousAttack = false;
         bool specialDebuffSpent = false;
         bool imbalanced = opening.Any(pick => pick.State.Id == "IMBALANCED");
@@ -46,7 +47,8 @@ internal static class ActionSimulation
                 RareBuffRoll = rareBuffRandom.NextDouble(),
                 SpecialDebuffAvailable = !specialDebuffSpent,
                 SpecialDebuffRoll = specialDebuffRandom.NextDouble(),
-                AlreadyIntangible = prior.AlreadyIntangible || intangibleTurns > 0,
+                ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
+                    .Concat(usedEffects.Where(rules.UniqueAction)).ToHashSet(),
                 AllowHardCardLimit = prior.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn
             };
             bool canRandomize = phaseAllowsRandomization && !(fixedOpening && turn == 1) &&
@@ -63,16 +65,30 @@ internal static class ActionSimulation
             if (plan.Action is { } action)
             {
                 history = history.Record(action);
-                activeEffects.UnionWith(action.Effects!.Select(effect => effect.Kind)
-                    .Where(kind => ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind)));
+                foreach (var effect in action.Effects!)
+                    RecordEffect(effect.Kind, effect.Amount, turn);
                 specialDebuffSpent |= action.Effects!.Any(effect => effect.IsSpecialDebuff);
             }
             else
                 history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
             previousAttack = hits > 0;
-            intangibleTurns = Math.Max(0, intangibleTurns - 1) +
-                (plan.Action?.Effects?.Where(effect => effect.Kind == EffectKind.Intangible).Sum(effect => effect.Amount) ?? 0);
         }
         return turns;
+
+        void RecordEffect(EffectKind kind, int amount, int round)
+        {
+            usedEffects.Add(kind);
+            if (rules.Actions.PolicyFor(kind).Stackable)
+                return;
+            if (kind is EffectKind.Block or EffectKind.Heal or EffectKind.Attack)
+                return;
+            activeEffects[kind] = kind switch
+            {
+                EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Weak or
+                    EffectKind.Vulnerable or EffectKind.Frail => round + amount,
+                EffectKind.CurlUp or EffectKind.Tangled or EffectKind.Ringing or EffectKind.TemporaryThorns => round + 1,
+                _ => int.MaxValue
+            };
+        }
     }
 }
