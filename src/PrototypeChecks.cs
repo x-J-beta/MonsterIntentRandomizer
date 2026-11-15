@@ -215,7 +215,7 @@ internal static class PrototypeChecks
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
         var context = new ActionContext(6, MissingHp: 3);
-        var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
+        var generated = catalog.Generate(varied, context, new ActionHistory()).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
         Equal(1.2 * profile.AttackFrequency, Pure(EffectKind.Strength).Value, "strength uses attack frequency");
@@ -223,28 +223,25 @@ internal static class PrototypeChecks
         Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
         Equal(6.5, Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(1.5, Pure(EffectKind.Dazed).Value, "flat dazed value");
-        var highPlayerAction = catalog.Generate(varied with { PlayerActionValue = 40 }, context, new ActionHistory(), 1);
+        var highPlayerAction = catalog.Generate(varied with { PlayerActionValue = 40 }, context, new ActionHistory());
         Equal(3 * 1.33, highPlayerAction.Single(action => action.Id == "Dazed 1 @Top").Value,
             "player action value replaces a portion of starting card value before pile placement");
         Equal(2.5 * 0.75, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound value in the discard pile");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
         Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),
             "smoggy uses the player action value");
-        var later = catalog.Generate(varied, context, new ActionHistory(), 2).ToArray();
-        Equal(3, later.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
-        Equal(2.3, later.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
-        var secondAct = catalog.Generate(varied with { ActionValue = 80, PlayerActionValue = 20 }, context, new ActionHistory(), 2).ToArray();
+        Equal(3, generated.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
+        Equal(2.3, generated.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
+        var secondAct = catalog.Generate(varied with { ActionValue = 80, PlayerActionValue = 20 }, context, new ActionHistory()).ToArray();
         Equal(8, secondAct.Single(action => action.Id == "Tangled 1").Value, "tangled ignores monster action value");
         for (int stacks = 1; stacks <= 3; stacks++)
             Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
         Equal(4, secondAct.Single(action => action.Id == "DrawDown 1").Value, "draw reduction uses player turn value");
         Equal(6.6, secondAct.Single(action => action.Id == "EnergyDown 1").Value, "energy reduction uses player turn value");
-        if (generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
-            catalog.Generate(varied, context with { SpecialDebuffRoll = 0.2 }, new ActionHistory(), 2)
-                .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
-            catalog.Generate(varied, context with { SpecialDebuffAvailable = false }, new ActionHistory(), 2)
+        if (!generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
+            catalog.Generate(varied, context with { SpecialDebuffAvailable = false }, new ActionHistory())
                 .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)))
-            throw new InvalidOperationException("Special debuffs bypassed the first-turn, chance or encounter restriction.");
+            throw new InvalidOperationException("Special debuffs should be available until the encounter limit is reached.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixedProfile = varied with
@@ -265,7 +262,7 @@ internal static class PrototypeChecks
         {
             EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 2, [EffectKind.Vulnerable] = 1 }
         };
-        var preferred = catalog.Generate(preferences, context, new ActionHistory(), 1)
+        var preferred = catalog.Generate(preferences, context, new ActionHistory())
             .Where(action => !action.IsAttack).ToDictionary(action => action.Id);
         Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "per-effect preference weights");
         var favorites = preferences with
@@ -273,7 +270,7 @@ internal static class PrototypeChecks
             AttackFrequency = 0,
             Favorites = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 5 }
         };
-        var favored = catalog.Generate(favorites, context, new ActionHistory(), 1).ToArray();
+        var favored = catalog.Generate(favorites, context, new ActionHistory()).ToArray();
         Equal(preferred["Weak 1"].Weight, favored.Single(action => action.Id == "Weak 1").Weight,
             "favorites preserve directional weights");
         Equal(5, favored.Where(action => action.Effects![0].Kind == EffectKind.Weak).Sum(action => action.SharedWeightBonus),
@@ -290,7 +287,7 @@ internal static class PrototypeChecks
         };
         var tunedCatalog = new ActionCatalog(catalogSettings with { Amounts = customAmounts, MinimumBaseDamagePerHit = 2,
             Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Strength] = buffs[EffectKind.Strength] with { MaxAmount = 2 } } });
-        var tuned = tunedCatalog.Generate(varied, context with { Weakened = true }, new ActionHistory(AddedStrength: 1), 1)
+        var tuned = tunedCatalog.Generate(varied, context with { Weakened = true }, new ActionHistory(AddedStrength: 1))
             .ToArray();
         Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
         Equal(2 * 0.15 * profile.ActionValue, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
@@ -312,7 +309,7 @@ internal static class PrototypeChecks
             CardPlacements = Enum.GetValues<StatusPile>().Select(pile => new StatusPlacement(EffectKind.Dazed, pile))
                 .Append(new StatusPlacement(EffectKind.Wound, StatusPile.Bottom)).ToArray()
         };
-        var placed = catalog.Generate(cardPositions, context, new ActionHistory(), 1).ToArray();
+        var placed = catalog.Generate(cardPositions, context, new ActionHistory()).ToArray();
         var dazedPiles = placed.SelectMany(action => action.Effects!).Where(effect => effect.Kind == EffectKind.Dazed)
             .Select(effect => effect.Pile).ToHashSet();
         if (!dazedPiles.SetEquals([StatusPile.Top, StatusPile.Draw, StatusPile.Discard]) ||
@@ -321,11 +318,11 @@ internal static class PrototypeChecks
         if (catalog.BuildAttack(varied, context, 1, 0)?.Effects is not [{ Amount: 1, Hits: 1 }])
             throw new InvalidOperationException("The catalog omitted the lowest positive base damage.");
         var exhausted = new ActionHistory(AddedStrength: 5, HardCardLimits: 1);
-        var limited = catalog.Generate(varied, context, exhausted, 2).ToArray();
+        var limited = catalog.Generate(varied, context, exhausted).ToArray();
         if (!limited.Any(action => action.Id == "Strength 1") || !limited.Any(action => action.Id == "Dazed 1 @Draw"))
             throw new InvalidOperationException("Repeatable actions were removed from future turns.");
 
-        var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory(), 1);
+        var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory());
         if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.IsPlayerDebuff)))
             throw new InvalidOperationException("The catalog offered a debuff blocked by known Artifact.");
 
@@ -340,14 +337,11 @@ internal static class PrototypeChecks
             Amounts = new Dictionary<EffectKind, int[]>(amounts) { [EffectKind.Ringing] = [1] },
             Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Ritual] = Status("amount*attackFrequency*survivalTurns", 0.8) }
         });
-        var specializedActions = expanded.Generate(specialized, context, new ActionHistory(), 2).ToArray();
+        var specializedActions = expanded.Generate(specialized, context, new ActionHistory()).ToArray();
         var preferredSpecial = specialized with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.Ringing] = 5 } };
-        var missedSpecialRoll = context with { SpecialDebuffRoll = 0.9 };
-        bool OffersRinging(ActionContext turnContext, int turn) => expanded.Generate(preferredSpecial, turnContext,
-            new ActionHistory(), turn).Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
-        if (!OffersRinging(missedSpecialRoll, 2) || OffersRinging(missedSpecialRoll, 1) ||
-            OffersRinging(missedSpecialRoll with { SpecialDebuffAvailable = false }, 2))
-            throw new InvalidOperationException("Favored special debuffs should bypass only the random gate.");
+        if (expanded.Generate(preferredSpecial, context with { AllowHardCardLimit = false }, new ActionHistory())
+            .Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]))
+            throw new InvalidOperationException("Favorites should still respect the card limit timing.");
         var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
         Equal(0.8 * specialized.AttackFrequency * specialized.BaseExpectedSurvivalTurns, ritual.Value,
             "ritual uses attack frequency and expected survival");

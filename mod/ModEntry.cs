@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 20;
+    private const int SettingsRevision = 21;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -67,6 +67,14 @@ internal static class ModSettings
         if (stored.Revision >= SettingsRevision)
             return stored;
 
+        var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
+        var actions = settings["actions"]!.AsObject();
+        var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        actions.Remove("specialDebuffChance");
+        UpgradeActionWeightsAndCardRatios(actions, defaultSettings["actions"]!);
+        if (stored.Revision >= 20)
+            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
+
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         if (profiles["keepVanilla"] is JsonArray keepVanilla)
         {
@@ -75,17 +83,13 @@ internal static class ModSettings
                 keepVanilla.Remove(entry);
         }
         if (stored.Revision >= 19)
-            return stored with { Profiles = JsonSerializer.SerializeToElement(profiles), Revision = SettingsRevision };
+            return Updated();
 
-        var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
-        var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var pools = settings["pools"]!.AsObject();
         pools["favoriteDirectBaseShare"] ??= defaultSettings["pools"]!["favoriteDirectBaseShare"]!.DeepClone();
         pools["favoriteDirectStrengthMultiplier"] ??= defaultSettings["pools"]!["favoriteDirectStrengthMultiplier"]!.DeepClone();
         pools.Remove("highAscensionActionValueBonus");
         pools["highAscensionActionValueMultiplier"] ??= defaultSettings["pools"]!["highAscensionActionValueMultiplier"]!.DeepClone();
-        var actions = settings["actions"]!;
-        actions["statusCardPlayerActionValueRatios"] ??= defaultSettings["actions"]!["statusCardPlayerActionValueRatios"]!.DeepClone();
         foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
             RemoveSteamAction(actions[section]);
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
@@ -196,6 +200,32 @@ internal static class ModSettings
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
         }
+    }
+
+    private static void UpgradeActionWeightsAndCardRatios(JsonObject actions, JsonNode defaults)
+    {
+        var weights = (actions["weights"] ??= new JsonObject()).AsObject();
+        foreach (var (id, defaultWeight) in defaults["weights"]!.AsObject())
+        {
+            if (!ActionEffect.IsRareDebuff(Enum.Parse<EffectKind>(id)))
+                continue;
+            if (weights[id] is not JsonObject weight)
+            {
+                weights[id] = defaultWeight!.DeepClone();
+                continue;
+            }
+
+            double baseWeight = weight["base"]?.GetValue<double>() ?? 1;
+            if (baseWeight == -1)
+                continue;
+            weight["base"] = baseWeight * 0.2;
+            if (weight["perRoom"]?.GetValue<double>() is double perRoom)
+                weight["perRoom"] = perRoom * 0.2;
+        }
+
+        var ratios = (actions["statusCardPlayerActionValueRatios"] ??= new JsonObject()).AsObject();
+        foreach (var (id, ratio) in defaults["statusCardPlayerActionValueRatios"]!.AsObject())
+            ratios[id] ??= ratio!.DeepClone();
     }
 
     private static void UpgradeBuffPrices(JsonNode settings, JsonNode defaults)

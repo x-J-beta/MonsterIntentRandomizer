@@ -40,7 +40,6 @@ internal static class ActionSimulation
         var planner = new ActionPlanner(rules.PoolSettings);
         var catalog = new ActionCatalog(rules.Actions);
         var actionRandom = new Random(seed ^ 0x649AAB81);
-        var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
         var activeEffects = new Dictionary<EffectKind, int>();
@@ -73,7 +72,6 @@ internal static class ActionSimulation
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
                 SpecialDebuffAvailable = !specialDebuffSpent,
-                SpecialDebuffRoll = specialDebuffRandom.NextDouble(),
                 ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
                     .Concat(usedEffects.Where(rules.UniqueAction)).ToHashSet(),
                 AllowHardCardLimit = prior.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn
@@ -83,7 +81,7 @@ internal static class ActionSimulation
             var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
             bool canRandomize = phaseAllowsRandomization && hasMove && !(monster.FixedOpening && turn == 1) &&
                 (originalMove == null || monster.AllowsMove(originalMove.Id));
-            var plan = planner.Plan(balances, profile, catalog.Generate(profile, context, history, turn),
+            var plan = planner.Plan(balances, profile, catalog.Generate(profile, context, history),
                 actionRandom, canRandomize, (hits, target) => catalog.BuildAttack(profile, context, hits, target));
             bool fallback = plan.CanRandomize && plan.Action is null && fallbackValue.HasValue;
             double cost = plan.Action?.Value ?? (fallback ? fallbackValue!.Value : 0);

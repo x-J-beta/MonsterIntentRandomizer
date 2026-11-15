@@ -147,7 +147,7 @@ internal static class CombatIntegration
                 var context = Snapshot(creature, combat, encounter);
                 var profile = WithSurvival(enemy.Profile, creature, combat, encounter);
                 enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
-                    encounter.Catalog.Generate(profile, context, enemy.History, round),
+                    encounter.Catalog.Generate(profile, context, enemy.History),
                     RandomFor(combat, creature.CombatId ?? 0, round),
                     buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
@@ -328,7 +328,6 @@ internal static class CombatIntegration
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
                     reserved.Owner != self && reserved.Owner.IsAlive)).ToHashSet(),
-            SpecialDebuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0x0BC16431u, combat.RoundNumber).NextDouble(),
             SpecialDebuffAvailable = !encounter.SpecialDebuffSpent &&
                 (encounter.SpecialDebuffRound != combat.RoundNumber || encounter.SpecialDebuffOwner == self)
         };

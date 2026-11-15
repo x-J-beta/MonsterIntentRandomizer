@@ -72,14 +72,14 @@ public sealed record ActionContext(
     bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
-    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0, int Rooms = 0);
+    bool SpecialDebuffAvailable = true, int Rooms = 0);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
     IReadOnlyDictionary<EffectKind, int[]> Amounts,
     StatusPlacementValues? PlacementValues = null,
     int MaxHardCardLimits = 1,
-    double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
+    IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
     IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
@@ -112,7 +112,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         kind is not (EffectKind.Attack or EffectKind.Wait);
 
     public IEnumerable<ActionCandidate> Generate(
-        MonsterProfile profile, ActionContext context, ActionHistory history, int turn)
+        MonsterProfile profile, ActionContext context, ActionHistory history)
     {
         double cardBaseline = settings.CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         bool canDebuff = !context.PlayerHasArtifact;
@@ -139,9 +139,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             var (weight, bonus) = Weights(kind, IsCommon(kind), settings.Weights?.GetValueOrDefault(kind));
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
-            if (ActionEffect.IsRareDebuff(kind) && (!context.SpecialDebuffAvailable || turn <= 1 ||
-                settings.SpecialDebuffChance <= 0 ||
-                (bonus <= 0 && context.SpecialDebuffRoll >= settings.SpecialDebuffChance)))
+            if (ActionEffect.IsRareDebuff(kind) && !context.SpecialDebuffAvailable)
                 continue;
 
             int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;

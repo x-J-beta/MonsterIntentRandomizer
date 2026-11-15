@@ -44,7 +44,6 @@
     "hardCardLimitFirstTurn": 2,
     "cardPlacementValues": { "hand": 0.35, "top": 1.6, "draw": 1.05, "bottom": 0.45, "discard": 0.75 },
     "minimumBaseDamagePerHit": 1,
-    "specialDebuffChance": 0.2,
     "maxAmounts": {
       "Weak": 1,
       "Vulnerable": 1,
@@ -96,7 +95,15 @@
       "Void": { "base": 0.45, "perRoom": 0 },
       "WasteAway": { "base": -1, "perRoom": 0 },
       "Slimed": { "base": 0.6, "perRoom": 0 },
-      "Soulbind": { "base": 0, "perRoom": 0.010000000000005116 }
+      "Ringing": { "base": 0.2 },
+      "Smoggy": { "base": 0.2 },
+      "Tender": { "base": 0.2 },
+      "Shrink": { "base": 0.2 },
+      "StrengthDown": { "base": 0.2 },
+      "DexterityDown": { "base": 0.2 },
+      "Soulbind": { "base": 0, "perRoom": 0.002 },
+      "DrawDown": { "base": 0.2 },
+      "EnergyDown": { "base": 0.2 }
     },
     "minAmounts": { "Dazed": 2 },
     "statusCardValues": {
@@ -104,7 +111,11 @@
       "Toxic": 4.4, "Soot": 1.5, "Debris": 1.3, "Void": 4, "Slimed": 1.25, "Amnesia": 4.5,
       "MindRot": 5, "Sadness": 3.5, "Sloth": 8, "Disintegration": 6, "WasteAway": 9
     },
-    "statusCardPlayerActionValueRatios": { "Dazed": 0.05 },
+    "statusCardPlayerActionValueRatios": {
+      "Dazed": 0.05, "Wound": 0.075, "Burn": 0.06, "Beckon": 0.08, "Wither": 0.07, "Infection": 0.07,
+      "Toxic": 0.09, "Soot": 0.075, "Debris": 0.07, "Void": 0.15, "Slimed": 0.065, "Amnesia": 0.18,
+      "MindRot": 0.20, "Sadness": 0.10, "Sloth": 0.24, "Disintegration": 0.075, "WasteAway": 0.28
+    },
     "policies": {
       "Attack": { "target": "player" },
       "Block": { "target": "self" },
