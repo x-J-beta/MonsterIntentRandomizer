@@ -46,9 +46,9 @@ int rooms = args.Length > 5 ? int.Parse(args[5], CultureInfo.InvariantCulture) :
     sample.TryGetProperty("rooms", out var roomCount) ? roomCount.GetInt32() : 0;
 double hp = entry.GetProperty("hp").GetDouble();
 var allyInputs = sample.GetProperty("allies").EnumerateArray().ToArray();
-var enemies = new[] { new EnemySnapshot(monsterId, hp, hp, 0, 0,
+var enemies = new[] { new SimulationEnemy(monsterId, hp,
     FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32(), FixedOpening: configured.FixedOpening) }
-    .Concat(allyInputs.Select(ally => ally.Deserialize<EnemySnapshot>(inputs)!)).ToArray();
+    .Concat(allyInputs.Select(ally => ally.Deserialize<SimulationEnemy>(inputs)!)).ToArray();
 double allyHp = enemies.Skip(1).Sum(enemy => enemy.Hp);
 profile = profile with
 {
@@ -61,7 +61,7 @@ string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
 Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
-OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, MonsterProfile owner)
+OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
@@ -102,29 +102,24 @@ Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", "
 var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
-bool hasFallback = sample.TryGetProperty("fallback", out var fallback);
-int fallbackHits = hasFallback && fallback.TryGetProperty("attackHits", out var fallbackCount)
-    ? fallbackCount.GetInt32() : (profile.AttackFrequency > 0 ? 1 : 0);
-double fallbackActionValue = hasFallback && fallback.TryGetProperty("actionValue", out var fallbackValue)
-    ? fallbackValue.GetDouble() : profile.ActionValue;
-string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out var resolvedFallback)
-    ? resolvedFallback.GetDouble().ToString("F1") : "n/a";
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpening, seed,
     sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
-    fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
+    rooms: rooms, enemyCount: enemies.Length))
 {
     var action = turn.Plan;
-    string moveName = action.Action?.Id ?? (turn.UsedFallback ? "vanilla fallback" : turn.Imbalanced ? "imbalanced" : "skipped");
+    string moveName = action.Action?.Id ?? (turn.Imbalanced ? "imbalanced" : "skipped");
     if (turn.OriginalMove is { } original)
         moveName = action.Action == null ? $"{original.Id} (vanilla)" : $"{original.Id} -> {moveName}";
-    string actualScore = turn.UsedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
     Console.WriteLine(
-        $"{turn.Round,2} {moveName,-16} panel {action.Action?.Damage.ToString("F0") ?? (turn.UsedFallback ? "n/a" : "0"),3}  " +
-        $"actual score {actualScore,4}  " +
+        $"{turn.Round,2} {moveName,-16} panel {action.Action?.Damage ?? 0,3:F0}  " +
+        $"actual score {action.Action?.ActualScore ?? 0,4:F1}  " +
         $"action cost {turn.Cost:F2}  " +
-        $"pool {action.Granted.ActionValue:F2} -> {turn.After.ActionValue:F2}, " +
-        $"desire {action.Granted.AttackDesire:F2} -> {turn.After.AttackDesire:F2}, " +
+        $"pool {action.Granted.ActionValue:F2} -> {action.After.ActionValue:F2}, " +
+        $"desire {action.Granted.AttackDesire:F2} -> {action.After.AttackDesire:F2}, " +
         $"hits {turn.Hits}");
 }
+
+internal sealed record SimulationEnemy(string Id, double Hp, int FirstEnemyAction = 1,
+    bool FixedOpening = false, bool ScriptedDeath = false);
 

@@ -1,7 +1,10 @@
 namespace MonsterIntentRandomizer;
 
-internal sealed record SimulatedTurn(int Round, ActionPlan Plan, Pools After, bool Imbalanced,
-    bool UsedFallback, double Cost, int Hits, SimulationMove? OriginalMove);
+internal sealed record SimulatedTurn(int Round, ActionPlan Plan, bool Imbalanced, SimulationMove? OriginalMove)
+{
+    public double Cost => Plan.Action?.Value ?? 0;
+    public int Hits => Plan.Action?.AttackHits ?? 0;
+}
 
 internal sealed record SimulationMove(string Id, string Name);
 
@@ -33,7 +36,7 @@ internal static class ActionSimulation
     internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, string monsterId, MonsterProfile profile,
         IReadOnlyList<OpeningPick> opening, int seed, int rounds,
         bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
-        double? fallbackValue = null, int? fallbackHits = null, int rooms = 0, int enemyCount = 1)
+        int rooms = 0, int enemyCount = 1)
     {
         var monster = rules.Monsters[monsterId];
         var sequence = SimulationMoveSequence.For(monsterId);
@@ -83,16 +86,12 @@ internal static class ActionSimulation
             var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
             bool canRandomize = phaseAllowsRandomization && hasMove && !(monster.FixedOpening && turn == 1) &&
                 (originalMove == null || monster.AllowsMove(originalMove.Id));
-            var plan = planner.Plan(balances, profile, catalog.Generate(profile, context, history),
+            var plan = planner.Plan(balances, profile, catalog.Generate(profile, context),
                 actionRandom, canRandomize, (hits, target) => catalog.BuildAttack(profile, context, hits, target));
-            bool fallback = plan.CanRandomize && plan.Action is null && fallbackValue.HasValue;
-            double cost = plan.Action?.Value ?? (fallback ? fallbackValue!.Value : 0);
-            int hits = plan.Action?.AttackHits ?? (fallback ? fallbackHits.GetValueOrDefault() : 0);
-            balances = fallback ? planner.Settle(plan.Granted, cost, hits) : plan.After;
-            turns.Add(new SimulatedTurn(turn, plan, balances, skipFromImbalance, plan.CanRandomize && plan.Action is null, cost, hits,
-                originalMove));
+            balances = plan.After;
+            turns.Add(new SimulatedTurn(turn, plan, skipFromImbalance, originalMove));
 
-            previousAttack = hits > 0;
+            previousAttack = plan.Action?.IsAttack == true;
             if (previousAttack)
             {
                 vigor = 0;

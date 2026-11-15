@@ -176,18 +176,11 @@
     "defaultActionValueTier": "standard",
     "defaultStage": "act1",
     "traceTurns": 10,
-    "targetPriority": 0,
-    "targetBlock": 0,
-    "targetFirstPlayerWindow": 1,
     "targetFirstEnemyAction": 1,
-    "firstPlayerWindowFraction": 1,
     "allies": [
       {
         "id": "rear",
         "hp": 23,
-        "maxHp": 23,
-        "block": 0,
-        "priority": 1,
         "actionValue": 7,
         "openingStates": [
           "PLATING",
@@ -196,8 +189,7 @@
         ]
       }
     ],
-    "recentPlayerDamage": [],
-    "turnContext": { "expectedDamageAgainstMonster": 8, "missingHp": 6 },
+    "turnContext": { "missingHp": 6 },
     "rooms": 0
   },
   "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },

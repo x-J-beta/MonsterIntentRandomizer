@@ -46,7 +46,6 @@ internal static class CombatIntegration
         public MonsterRules Rules { get; } = rules;
         public MonsterProfile Profile { get; } = profile;
         public Pools Balance { get; set; }
-        public ActionHistory History { get; set; } = new();
         public int PlannedRound { get; set; }
         public int SettledRound { get; set; }
         public double ActualThresholdCost { get; set; }
@@ -154,7 +153,7 @@ internal static class CombatIntegration
                 var context = Snapshot(creature, combat, encounter);
                 var profile = WithSurvival(enemy.Profile, creature, combat, encounter);
                 enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
-                    encounter.Catalog.Generate(profile, context, enemy.History),
+                    encounter.Catalog.Generate(profile, context),
                     RandomFor(combat, creature.CombatId ?? 0, round),
                     buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
@@ -190,7 +189,6 @@ internal static class CombatIntegration
             return;
 
         state.SettledRound = __0.RoundNumber;
-        state.History = state.History.Record(action);
         double plannedThresholdCost = action.Effects?.Sum(effect => effect.Threshold?.Planned ?? 0) ?? 0;
         state.Balance = plan.After with
         {

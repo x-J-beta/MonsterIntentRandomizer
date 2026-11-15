@@ -12,8 +12,8 @@ public sealed record EffectPolicy(bool Stackable = true, bool Unique = false, Ef
         Enum.TryParse<EffectKind>(id.Replace("_", ""), true, out var kind) && ActionEffect.UsesThreshold(kind);
 
     public static EffectPolicy Default(EffectKind kind) => new(
-        Stackable: !(ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind) ||
-            kind is EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Tender or
+        Stackable: !(ActionEffect.IsRareBuff(kind) ||
+            kind is EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Tender or EffectKind.Slippery or
                 EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
                 EffectKind.Barricade),
         Unique: kind is EffectKind.VitalSpark or EffectKind.WitheringPresence,

@@ -1,5 +1,6 @@
 namespace MonsterIntentRandomizer;
 
+public sealed record OpeningState(string Id, int Amount);
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
     IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
     int? PreviousThreshold = null, double PreviousValue = 0);
@@ -81,7 +82,7 @@ public static class OpeningValuation
             if (available.Length == 0)
                 continue;
             var (id, optionsForMonster) = available[random.Next(available.Length)];
-            double weightRoll = random.NextDouble() * Math.Max(1, optionsForMonster.Sum(option => option.Weight));
+            double weightRoll = random.NextDouble() * optionsForMonster.Sum(option => option.Weight);
             var chosen = optionsForMonster.FirstOrDefault(option => (weightRoll -= option.Weight) < 0);
             if (chosen == null)
                 continue;

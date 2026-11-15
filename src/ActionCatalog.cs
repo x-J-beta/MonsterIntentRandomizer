@@ -27,18 +27,16 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public bool IsStatusCard => IsCard(Kind);
     public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
         kind is not (EffectKind.Block or EffectKind.Heal);
-    public static bool IsDefensiveBuff(EffectKind kind) => IsNonStackingDefense(kind) ||
-        kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade;
+    public static bool IsDefensiveBuff(EffectKind kind) => UsesThreshold(kind) ||
+        kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade or EffectKind.Slippery;
     public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
         EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
-    public static bool IsNonStackingDefense(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Slippery;
     public static bool UsesThreshold(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
-    public bool IsHardCardLimit => Kind is EffectKind.Ringing or EffectKind.Smoggy;
     public bool IsSpecialDebuff => IsRareDebuff(Kind);
     public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
         EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown or
@@ -91,9 +89,7 @@ public sealed record ActionValuationSettings(
         : Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
 }
 
-public sealed record ActionHistory(
-    int AddedStrength = 0, int AddedRitual = 0, int RitualStrength = 0,
-    int HardCardLimits = 0)
+public sealed record ActionHistory(int AddedStrength = 0, int AddedRitual = 0, int RitualStrength = 0)
 {
     // Record only actions which the caller actually executed.
     public ActionHistory Record(ActionCandidate action)
@@ -102,8 +98,7 @@ public sealed record ActionHistory(
         int addedRitual = effects.Where(effect => effect.Kind == EffectKind.Ritual).Sum(effect => effect.Amount);
         return new ActionHistory(
             AddedStrength + effects.Where(effect => effect.Kind == EffectKind.Strength).Sum(effect => effect.Amount),
-            AddedRitual + addedRitual, RitualStrength + AddedRitual,
-            HardCardLimits + effects.Count(effect => effect.IsHardCardLimit));
+            AddedRitual + addedRitual, RitualStrength + AddedRitual);
     }
 }
 
@@ -112,8 +107,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     internal static bool CanFavor(EffectKind kind) => Enum.IsDefined(kind) &&
         kind is not (EffectKind.Attack or EffectKind.Wait);
 
-    public IEnumerable<ActionCandidate> Generate(
-        MonsterProfile profile, ActionContext context, ActionHistory history)
+    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context)
     {
         double cardBaseline = settings.CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         bool canDebuff = !context.PlayerHasArtifact;
@@ -173,7 +167,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Ringing or EffectKind.Smoggy when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
-                        context.AllowHardCardLimit && history.HardCardLimits < settings.MaxHardCardLimits:
+                        context.AllowHardCardLimit && settings.MaxHardCardLimits > 0:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Tender when amount == 1 && canDebuff:

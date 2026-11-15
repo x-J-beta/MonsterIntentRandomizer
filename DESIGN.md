@@ -14,7 +14,7 @@
 
 在项目目录运行 `dotnet run -- 42 TOADPOLE` 或 `dotnet run -- 42 FLYCONID`，可查看两个画像的生存预测、开场状态估值及 10 轮出招轨迹。可增加第三个参数 `deadlyEnemies` 使用高进阶行动价值。`dotnet run -- --check` 运行固定种子校验。原型使用 .NET SDK 和 .NET 8 运行时，无额外包。游戏版共享估值和选招算法，并从原版战斗读取当前生命和能力。
 
-输出中的 `panel` 是状态结算后、玩家格挡前的攻击面板总伤害。`actual score` 是该伤害加上格挡、强化、减益、塞牌等附带效果的估值。`action cost` 记录从行动力池扣除的基础估值。原版回退的完整估值未知时显示 `n/a`，样例可用 `simulation.fallback.actualScore` 提供。
+输出中的 `panel` 是状态结算后、玩家格挡前的攻击面板总伤害。`actual score` 是该伤害加上格挡、强化、减益、塞牌等附带效果的估值。`action cost` 记录从行动力池扣除的基础估值。
 
 ### 运行配置
 

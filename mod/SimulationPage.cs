@@ -182,12 +182,12 @@ internal static class SimulationPage
         {
             string name = turn.Plan.Action is { } action
                 ? (turn.OriginalMove is { } original ? $"{original.Name} → {FormatAction(action)}" : FormatAction(action)) :
-                turn.Imbalanced ? "失衡" : turn.UsedFallback ? "回退原版" :
+                turn.Imbalanced ? "失衡" :
                 turn.OriginalMove is { } kept ? $"{kept.Name}（原版保留）" :
                 !phaseAllowsRandomization || monster.FixedOpening && turn.Round == 1 ? "原版回合" : "跳过";
             string cost = turn.Plan.Action == null ? "" : $"　消耗 {turn.Cost:0.##}";
-            result.AppendLine($"第 {turn.Round,2} 回合　{name}{cost}　　行动力 {turn.Plan.Granted.ActionValue:0.##} → {turn.After.ActionValue:0.##}　" +
-                $"攻击欲望 {turn.Plan.Granted.AttackDesire:0.##} → {turn.After.AttackDesire:0.##}");
+            result.AppendLine($"第 {turn.Round,2} 回合　{name}{cost}　　行动力 {turn.Plan.Granted.ActionValue:0.##} → {turn.Plan.After.ActionValue:0.##}　" +
+                $"攻击欲望 {turn.Plan.Granted.AttackDesire:0.##} → {turn.Plan.After.AttackDesire:0.##}");
         }
         return result.ToString();
     }

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 22;
+    private const int SettingsRevision = 23;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -75,9 +75,21 @@ internal static class ModSettings
             actions.Remove("specialDebuffChance");
             UpgradeActionWeightsAndCardRatios(actions, defaultSettings["actions"]!);
         }
-        foreach (var kind in Enum.GetValues<EffectKind>().Where(ActionEffect.UsesThreshold))
-            if (settings["buffs"]?[kind.ToString()] is JsonObject rule)
-                rule["stackable"] = true;
+        if (stored.Revision < 22)
+            foreach (var kind in Enum.GetValues<EffectKind>().Where(ActionEffect.UsesThreshold))
+                if (settings["buffs"]?[kind.ToString()] is JsonObject rule)
+                    rule["stackable"] = true;
+        if (settings["simulation"] is JsonObject simulation)
+        {
+            foreach (string key in new[] { "fallback", "targetPriority", "targetBlock", "targetFirstPlayerWindow",
+                "firstPlayerWindowFraction", "recentPlayerDamage" })
+                simulation.Remove(key);
+            (simulation["turnContext"] as JsonObject)?.Remove("expectedDamageAgainstMonster");
+            if (simulation["allies"] is JsonArray allies)
+                foreach (var ally in allies.OfType<JsonObject>())
+                    foreach (string key in new[] { "maxHp", "block", "priority", "firstPlayerWindow", "targetable" })
+                        ally.Remove(key);
+        }
         if (stored.Revision >= 20)
             return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
 

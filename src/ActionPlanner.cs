@@ -101,7 +101,7 @@ public sealed record MonsterProfile(
 
 public readonly record struct Pools(double ActionValue, double AttackDesire);
 
-public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools After, bool CanRandomize);
+public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools After);
 
 public sealed class ActionPlanner(PoolSettings settings)
 {
@@ -112,7 +112,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         Random random, bool canRandomize = true, Func<int, double, ActionCandidate?>? buildAttack = null)
     {
         if (!canRandomize)
-            return new ActionPlan(null, previous, previous, false);
+            return new ActionPlan(null, previous, previous);
 
         double retainedAction = previous.ActionValue * settings.ActionValueRetention;
         double retainedDesire = previous.AttackDesire * settings.AttackDesireRetention;
@@ -138,8 +138,8 @@ public sealed class ActionPlanner(PoolSettings settings)
         if (attack != null)
             parts.Add(attack);
 
-        var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is { Count: 1 } &&
-            (attack == null || CanAttach(candidate.Effects[0]))), profile, otherTarget, overdraft, attack == null, random);
+        var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is { Count: 1 }),
+            profile, otherTarget, overdraft, attack == null, random);
         while (parts.Count < 2 && otherTarget > 0 && extras.Count > 0)
         {
             var extra = Pick(extras.Where(candidate => candidate.Value <= otherTarget + overdraft), profile, otherTarget,
@@ -154,7 +154,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         }
 
         var action = Compose(parts);
-        return new ActionPlan(action, granted, Settle(granted, action.Value, action.AttackHits), true);
+        return new ActionPlan(action, granted, Settle(granted, action.Value, action.AttackHits));
     }
 
     public Pools Settle(Pools granted, double value, int attackHits) =>
@@ -162,8 +162,7 @@ public sealed class ActionPlanner(PoolSettings settings)
 
     private int DrawHits(MonsterProfile profile, double desire, double attackFraction, HashSet<int>? fixedHits, Random random)
     {
-        if (desire < 0 || attackFraction <= 0 || profile.AttackFrequency <= 0 ||
-            profile.IntentWeights.GetValueOrDefault(IntentStyle.Attack) <= 0)
+        if (desire < 0 || attackFraction <= 0)
             return 0;
         int desireHits = (int)Math.Clamp(Math.Floor(desire), 1, int.MaxValue);
         int large = fixedHits?.Where(hits => hits <= desireHits).DefaultIfEmpty(1).Max() ?? desireHits;
@@ -177,9 +176,6 @@ public sealed class ActionPlanner(PoolSettings settings)
             return 0;
         return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, 1 - settings.ChaosProgress))), 0, random);
     }
-
-    private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&
-        !ActionEffect.IsRareBuff(effect.Kind);
 
     private List<ActionCandidate> Shortlist(IEnumerable<ActionCandidate> options, MonsterProfile profile, double budget,
         double overdraft, bool twoSlots, Random random)
