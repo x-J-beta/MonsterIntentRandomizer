@@ -31,7 +31,15 @@ internal static class CombatMath
 
 public sealed record PoolSettings(
     double ActionValueRetention, double AttackDesireRetention, double InitialActionValueShare = 0.5,
-    double InitialAttackDesire = 0, double BalanceTargetWeight = 0.5, double MinimumSelectionSpread = 0.5);
+    double InitialAttackDesire = 0, double BalanceTargetWeight = 0.5, double MinimumSelectionSpread = 0.5,
+    double ActionValueMultiplier = 1, double ChaosMultiplier = 1)
+{
+    public MonsterProfile Adjust(MonsterProfile profile) => profile with
+    {
+        ActionValue = profile.ActionValue * ActionValueMultiplier,
+        Volatility = profile.Volatility * ChaosMultiplier
+    };
+}
 
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
@@ -119,7 +127,8 @@ public sealed class ActionPlanner(PoolSettings settings)
     {
         double tierValue = profile.ActionValue * (isAttack ? 1 : profile.NonAttackMultiplier);
         double target = Math.Max(0, tierValue + (available - tierValue) * settings.BalanceTargetWeight);
-        double scale = Math.Max(settings.MinimumSelectionSpread, tierValue * profile.Volatility);
+        double scale = Math.Max(1e-6, Math.Max(settings.MinimumSelectionSpread * settings.ChaosMultiplier,
+            tierValue * profile.Volatility));
         var weighted = eligible.Where(candidate => candidate.IsAttack == isAttack).Select(candidate =>
         {
             double distance = Math.Abs(candidate.Value - target);

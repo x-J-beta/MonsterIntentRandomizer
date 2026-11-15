@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 3;
+    private const int SettingsRevision = 4;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -71,7 +71,7 @@ internal static class ModSettings
         var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var savedValuations = settings["actions"]!["valuation"]!.AsObject();
         var defaultValuations = defaults["actions"]!["valuation"]!;
-        foreach (string id in new[] { "Tangled", "Ringing", "Smoggy" })
+        foreach (string id in new[] { "Tangled", "Ringing", "Smoggy" }.Where(_ => stored.Revision < 3))
         {
             if (savedValuations[id] is JsonObject old &&
                 !old.Any(term => term.Key.Split('*', StringSplitOptions.TrimEntries)
@@ -79,7 +79,7 @@ internal static class ModSettings
                 savedValuations[id] = defaultValuations[id]!.DeepClone();
         }
         FillMissing(settings.AsObject(), defaults.AsObject());
-        if (stored.Revision == 2)
+        if (stored.Revision >= 2)
             return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
 
         var opening = settings["opening"]!;
@@ -178,7 +178,7 @@ internal static class ModSettings
         }
     }
 
-    private static RuleConfiguration Parse(StoredSettings stored)
+    internal static RuleConfiguration Parse(StoredSettings stored)
     {
         var rules = new RuleConfiguration(stored.Settings, stored.Profiles);
         if (rules.Draws.Attempts < 0 || rules.Draws.MaxPerMonster < 0 || rules.Draws.MaxEncounterValueMultiplier < 0 ||

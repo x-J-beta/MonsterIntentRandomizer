@@ -1,5 +1,7 @@
 {
   "pools": {
+    "actionValueMultiplier": 1,
+    "chaosMultiplier": 1,
     "actionValueRetention": 0.75,
     "attackDesireRetention": 0.9,
     "initialActionValueShare": 0.5,

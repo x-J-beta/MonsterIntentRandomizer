@@ -77,7 +77,12 @@ internal static class SettingsPage
         var monsters = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         monsters.AddThemeConstantOverride("separation", 8);
         monsterScroll.AddChild(monsters);
-        var settings = AddEditor(tabs, "全局参数", ModSettings.Current.Settings);
+        var valuations = new TabContainer { Name = "状态估值" };
+        tabs.AddChild(valuations);
+        var simulation = new VBoxContainer { Name = "模拟" };
+        simulation.AddThemeConstantOverride("separation", 8);
+        tabs.AddChild(simulation);
+        var settings = AddEditor(tabs, "配置 JSON", ModSettings.Current.Settings);
         var profiles = AddEditor(tabs, "画像 JSON", ModSettings.Current.Profiles);
 
         var message = new Label
@@ -96,6 +101,8 @@ internal static class SettingsPage
         buttons.AddChild(save);
 
         var quickInputs = new List<(string[] Path, SpinBox Input)>();
+        AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", "actionValueMultiplier");
+        AddNumber("混沌程度倍率", 0, 5, 0.01, "pools", "chaosMultiplier");
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
@@ -105,13 +112,12 @@ internal static class SettingsPage
         AddNumber("开场无变化权重", 0, 100, 1, "opening", "weights", "none");
         AddNumber("开场正面权重", 0, 100, 1, "opening", "weights", "positive");
         AddNumber("开场负面权重", 0, 100, 1, "opening", "weights", "negative");
-        AddNumber("力量估值系数", 0, 10, 0.01, "actions", "valuation", "Strength", "amount*attackFrequency");
-        AddNumber("仪式估值系数", 0, 10, 0.01, "actions", "valuation", "Ritual", "amount*attackFrequency*survivalTurns");
-        AddNumber("晕眩牌每次出现的估值", 0, 10, 0.01, "actions", "valuation", "Dazed", "amount*draws");
         for (int act = 1; act <= 3; act++)
             AddNumber($"第 {act} 幕玩家回合价值", 0.01, 100, 0.01, "actions", "playerTurnValue", $"act{act}");
         RefreshNumbers();
         var refreshMonsters = AddMonsterControls(monsters, profiles, message);
+        var refreshValuations = ValuationPage.Create(valuations, settings, message);
+        var refreshSimulation = SimulationPage.Create(simulation, settings, profiles);
 
         tabs.TabChanged += index =>
         {
@@ -119,6 +125,10 @@ internal static class SettingsPage
                 RefreshNumbers();
             if (index == 1)
                 refreshMonsters();
+            if (index == 2)
+                refreshValuations();
+            if (index == 3)
+                refreshSimulation();
         };
         defaults.Pressed += () =>
         {
@@ -128,6 +138,8 @@ internal static class SettingsPage
             profiles.Text = ModSettings.Format(ModSettings.Defaults.Profiles);
             RefreshNumbers();
             refreshMonsters();
+            refreshValuations();
+            refreshSimulation();
             message.Text = "已载入默认值。点击保存后生效。";
         };
         cancel.Pressed += dialog.QueueFree;
@@ -199,7 +211,7 @@ internal static class SettingsPage
             {
                 foreach (var (_, input) in quickInputs)
                     input.Editable = false;
-                message.Text = "请先修复全局参数页中的 JSON。";
+                message.Text = "请先修复配置 JSON。";
             }
         }
     }
@@ -319,7 +331,7 @@ internal static class SettingsPage
         }
     }
 
-    private static SpinBox NumberRow(BoxContainer container, string label, double min, double max, double step)
+    internal static SpinBox NumberRow(BoxContainer container, string label, double min, double max, double step)
     {
         var row = new HBoxContainer();
         var caption = new Label { Text = label, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };

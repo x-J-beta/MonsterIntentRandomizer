@@ -21,6 +21,8 @@ internal sealed class RuleConfiguration
         if (turnValues.Act1 <= 0 || turnValues.Act2 <= 0 || turnValues.Act3 <= 0)
             throw new ArgumentException("各幕的玩家回合价值须为正数。");
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
+        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0)
+            throw new ArgumentException("全局行动力倍率须为正数，混沌程度倍率须为非负数。");
         Actions = new ActionValuationSettings(
             new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation")), turnValues),
             actions.GetProperty("weakDamageReduction").GetDouble(),
@@ -77,14 +79,15 @@ internal sealed class RuleConfiguration
             entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),
             Read<string[]>(Setting("openingStates")),
             entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
-            entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null);
+            entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null,
+            entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
 internal sealed record MonsterRules(MonsterProfile Profile, double? DeadlyEnemies, bool Enabled,
-    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower)
+    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance)
 {
     public MonsterProfile AtAscension(bool deadly) =>
         deadly && DeadlyEnemies is double higher ? Profile with { ActionValue = higher } : Profile;

@@ -72,6 +72,10 @@ internal static class PrototypeChecks
         var planner = new ActionPlanner(new PoolSettings(0.75, 0.9));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
+        var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, ChaosMultiplier: 0).Adjust(profile);
+        Equal(16, adjusted.ActionValue, "global action value multiplier");
+        Equal(0, adjusted.Volatility, "zero chaos removes grant jitter");
+        Equal(profile.AttackFrequency, adjusted.AttackFrequency, "multipliers preserve the configured attack cadence");
         var random = new Random(2026);
         Equal(3, planner.Plan(new Pools(4, 1), profile, [], random, canRandomize: false).After.ActionValue,
             "skipped turns only decay");

@@ -23,7 +23,7 @@ var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
 var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
     throw new ArgumentException($"Unknown action value tier: {ascension}.");
-var profile = configured.AtAscension(ascension == "deadlyEnemies");
+var profile = rules.PoolSettings.Adjust(configured.AtAscension(ascension == "deadlyEnemies"));
 if (!configured.Enabled)
 {
     Console.WriteLine($"{monsterId}: original actions retained (enabled is false).");
@@ -59,7 +59,6 @@ var baseline = SurvivalForecast.Predict(enemies, monsterId, damage, scenarios, h
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
 Console.WriteLine($"player damage prior after blending: {damage.SingleTarget:F1} single, {damage.AreaPerTarget:F1} area per target");
 Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
-double fullBlockChance = entry.TryGetProperty("fullBlockChance", out var blockChance) ? blockChance.GetDouble() : 0;
 int act = int.Parse(stage.AsSpan(3), CultureInfo.InvariantCulture);
 OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, MonsterProfile owner)
 {
@@ -74,16 +73,12 @@ foreach (var option in options)
         $"{dose.State.Amount}: {dose.Value:+0.00;-0.00;0.00}")));
 
 var openingRandom = new Random(seed);
-var actionRandom = new Random(seed ^ 0x649AAB81);
-var rareBuffRandom = new Random(seed ^ 0x13C96303);
-var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
-var imbalanceRandom = new Random(seed ^ 0x4B82C097);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
 var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
 foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue", out _)))
 {
     string id = ally.GetProperty("id").GetString()!;
-    actionValues[id] = ally.GetProperty("actionValue").GetDouble();
+    actionValues[id] = ally.GetProperty("actionValue").GetDouble() * rules.PoolSettings.ActionValueMultiplier;
     if (ally.TryGetProperty("openingStates", out var allyStates))
         choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), RuleConfiguration.Read<string[]>(allyStates),
             profile with
@@ -104,15 +99,6 @@ Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", "
 var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
-var catalog = new ActionCatalog(rules.Actions);
-var history = new ActionHistory();
-bool previousAttack = false;
-int intangibleTurns = ownOpening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
-var activeEffects = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsRareBuff(kind) &&
-    ownOpening.Any(pick => pick.State.Id.Replace("_", "").Equals(kind.ToString(), StringComparison.OrdinalIgnoreCase)))
-    .ToHashSet();
-var turnContext = rules.TurnPrior with { Act = act, ActiveEffects = activeEffects };
-bool specialDebuffSpent = false;
 bool hasFallback = sample.TryGetProperty("fallback", out var fallback);
 int fallbackHits = hasFallback && fallback.TryGetProperty("attackHits", out var fallbackCount)
     ? fallbackCount.GetInt32() : (profile.AttackFrequency > 0 ? 1 : 0);
@@ -121,49 +107,19 @@ double fallbackActionValue = hasFallback && fallback.TryGetProperty("actionValue
 string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out var resolvedFallback)
     ? resolvedFallback.GetDouble().ToString("F1") : "n/a";
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
+foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, act, seed,
+    sample.GetProperty("traceTurns").GetInt32(), configured.FullBlockChance,
+    firstEnemyAction: enemies[0].FirstEnemyAction, fallbackValue: fallbackActionValue, fallbackHits: fallbackHits))
 {
-    int strength = turnContext.Strength + history.AddedStrength + history.RitualStrength + ownOpening.Sum(pick =>
-        pick.State.Id switch
-        {
-            "STRENGTH" or "STRENGTH_DOWN" => pick.State.Amount,
-            "RITUAL" => (turn - 1) * pick.State.Amount,
-            _ => 0
-        });
-    bool weak = turnContext.Weakened || ownOpening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount);
-    bool imbalanced = ownOpening.Any(pick => pick.State.Id == "IMBALANCED");
-    bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
-    var context = turnContext with { Strength = strength, Weakened = weak, RareBuffRoll = rareBuffRandom.NextDouble(),
-        SpecialDebuffAvailable = !specialDebuffSpent, SpecialDebuffRoll = specialDebuffRandom.NextDouble(),
-        AlreadyIntangible = turnContext.AlreadyIntangible || intangibleTurns > 0,
-        AllowHardCardLimit = turnContext.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn };
-    var candidates = catalog.Generate(profile, context, history, turn);
-    var action = planner.Plan(balances, profile, candidates, actionRandom,
-        canRandomize: !skipFromImbalance && !ownOpening.Any(pick => pick.State.Id == "STUN" &&
-            turn >= enemies[0].FirstEnemyAction && turn < enemies[0].FirstEnemyAction + pick.State.Amount));
-    bool usedFallback = action.CanRandomize && action.Action is null;
-    balances = usedFallback
-        ? planner.Settle(action.Granted, fallbackActionValue, fallbackHits)
-        : action.After;
-    if (action.Action is not null)
-    {
-        history = history.Record(action.Action, turn);
-        activeEffects.UnionWith(action.Action.Effects!.Select(effect => effect.Kind).Where(ActionEffect.IsRareBuff));
-        specialDebuffSpent |= action.Action.Effects!.Any(effect => effect.IsSpecialDebuff);
-    }
-    else
-        history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
-    previousAttack = action.Action?.IsAttack ?? (usedFallback && fallbackHits > 0);
-    intangibleTurns = Math.Max(0, intangibleTurns - 1) +
-        (action.Action?.Effects?.Where(effect => effect.Kind == EffectKind.Intangible).Sum(effect => effect.Amount) ?? 0);
-    string moveName = action.Action?.Id ?? (usedFallback ? "vanilla fallback" : skipFromImbalance ? "imbalanced" : "skipped");
-    string actualScore = usedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
+    var action = turn.Plan;
+    string moveName = action.Action?.Id ?? (turn.UsedFallback ? "vanilla fallback" : turn.Imbalanced ? "imbalanced" : "skipped");
+    string actualScore = turn.UsedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
     Console.WriteLine(
-        $"{turn,2} {moveName,-16} panel {action.Action?.Damage.ToString("F0") ?? (usedFallback ? "n/a" : "0"),3}  " +
+        $"{turn.Round,2} {moveName,-16} panel {action.Action?.Damage.ToString("F0") ?? (turn.UsedFallback ? "n/a" : "0"),3}  " +
         $"actual score {actualScore,4}  " +
-        $"action cost {(action.Action?.Value ?? (usedFallback ? fallbackActionValue : 0)):F2}  " +
-        $"pool {action.Granted.ActionValue:F2} -> {balances.ActionValue:F2}, " +
-        $"desire {action.Granted.AttackDesire:F2} -> {balances.AttackDesire:F2}, " +
-        $"hits {action.Action?.AttackHits ?? (usedFallback ? fallbackHits : 0)}");
+        $"action cost {turn.Cost:F2}  " +
+        $"pool {action.Granted.ActionValue:F2} -> {turn.After.ActionValue:F2}, " +
+        $"desire {action.Granted.AttackDesire:F2} -> {turn.After.AttackDesire:F2}, " +
+        $"hits {turn.Hits}");
 }
 

@@ -265,7 +265,7 @@ internal static class CombatIntegration
     private static (MonsterRules Rules, MonsterProfile Profile)? FindProfile(RuleConfiguration rules, MonsterModel monster) =>
         monster.GetType().Assembly == typeof(MonsterModel).Assembly &&
         rules.Monsters.TryGetValue(monster.Id.Entry, out var entry)
-            ? (entry, entry.AtAscension(RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies)))
+            ? (entry, rules.PoolSettings.Adjust(entry.AtAscension(RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies))))
             : null;
 
     private static bool IsOrdinaryMove(MoveState move) => move.Intents.Count > 0 &&

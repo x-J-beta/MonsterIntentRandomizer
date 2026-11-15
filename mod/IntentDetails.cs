@@ -63,26 +63,7 @@ internal static class IntentDetails
     {
         bool chinese = LocManager.Instance.Language == "zhs";
         int n = effect.Amount;
-        (string zh, string en) = effect.Kind switch
-        {
-            EffectKind.Block => ("格挡", "Block"), EffectKind.Heal => ("回复", "Heal"),
-            EffectKind.Strength => ("力量", "Strength"), EffectKind.Ritual => ("仪式", "Ritual"),
-            EffectKind.Intangible => ("无实体", "Intangible"), EffectKind.Thorns => ("荆棘", "Thorns"),
-            EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
-            EffectKind.Weak => ("虚弱", "Weak"), EffectKind.Vulnerable => ("易伤", "Vulnerable"),
-            EffectKind.Frail => ("脆弱", "Frail"), EffectKind.Poison => ("中毒", "Poison"),
-            EffectKind.Tangled => ("缠结", "Tangled"), EffectKind.Ringing => ("响铃", "Ringing"),
-            EffectKind.StrengthDown => ("降力量", "Strength Down"), EffectKind.DexterityDown => ("降敏捷", "Dexterity Down"),
-            EffectKind.Smoggy => ("烟雾弥漫", "Smoggy"), EffectKind.Tender => ("柔嫩", "Tender"),
-            EffectKind.Shrink => ("缩小", "Shrink"),
-            EffectKind.Soulbind => ("魂缚", "Soulbind"), EffectKind.DrawDown => ("抽牌减少", "Draw Down"),
-            EffectKind.EnergyDown => ("能量减少", "Energy Down"),
-            EffectKind.PersonalHive => ("人体蜂房", "Personal Hive"), EffectKind.VitalSpark => ("活力火花", "Vital Spark"),
-            EffectKind.WitheringPresence => ("凋萎存在", "Withering Presence"), EffectKind.Envenom => ("涂毒", "Envenom"),
-            EffectKind.PaperCuts => ("纸伤难愈", "Paper Cuts"), EffectKind.Dazed => ("晕眩", "Dazed"),
-            EffectKind.Wound => ("伤口", "Wound"), EffectKind.Burn => ("灼伤", "Burn"),
-            EffectKind.Beckon => ("呼唤", "Beckon"), _ => (effect.Kind.ToString(), effect.Kind.ToString())
-        };
+        var (zh, en) = Names(effect.Kind);
         if (effect.IsStatusCard)
         {
             (string pileZh, string pileEn) = effect.Pile switch
@@ -116,4 +97,25 @@ internal static class IntentDetails
             _ => chinese ? (zh, $"获得 {n} 层{zh}。") : (en, $"Gains {n} {en}.")
         };
     }
+
+    internal static (string Chinese, string English) Names(EffectKind kind) => kind switch
+        {
+            EffectKind.Attack => ("攻击", "Attack"), EffectKind.Block => ("格挡", "Block"), EffectKind.Heal => ("回复", "Heal"),
+            EffectKind.Strength => ("力量", "Strength"), EffectKind.Ritual => ("仪式", "Ritual"),
+            EffectKind.Intangible => ("无实体", "Intangible"), EffectKind.Thorns => ("荆棘", "Thorns"),
+            EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
+            EffectKind.Weak => ("虚弱", "Weak"), EffectKind.Vulnerable => ("易伤", "Vulnerable"),
+            EffectKind.Frail => ("脆弱", "Frail"), EffectKind.Poison => ("中毒", "Poison"),
+            EffectKind.Tangled => ("缠结", "Tangled"), EffectKind.Ringing => ("响铃", "Ringing"),
+            EffectKind.StrengthDown => ("降力量", "Strength Down"), EffectKind.DexterityDown => ("降敏捷", "Dexterity Down"),
+            EffectKind.Smoggy => ("烟雾弥漫", "Smoggy"), EffectKind.Tender => ("柔嫩", "Tender"),
+            EffectKind.Shrink => ("缩小", "Shrink"),
+            EffectKind.Soulbind => ("魂缚", "Soulbind"), EffectKind.DrawDown => ("抽牌减少", "Draw Down"),
+            EffectKind.EnergyDown => ("能量减少", "Energy Down"),
+            EffectKind.PersonalHive => ("人体蜂房", "Personal Hive"), EffectKind.VitalSpark => ("活力火花", "Vital Spark"),
+            EffectKind.WitheringPresence => ("凋萎存在", "Withering Presence"), EffectKind.Envenom => ("涂毒", "Envenom"),
+            EffectKind.PaperCuts => ("纸伤难愈", "Paper Cuts"), EffectKind.Dazed => ("晕眩", "Dazed"),
+            EffectKind.Wound => ("伤口", "Wound"), EffectKind.Burn => ("灼伤", "Burn"),
+            EffectKind.Beckon => ("呼唤", "Beckon"), _ => (kind.ToString(), kind.ToString())
+        };
 }
