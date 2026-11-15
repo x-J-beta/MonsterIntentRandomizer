@@ -76,7 +76,7 @@
 
 画像偏好由原版招式的四类估值合计归一化为 100。复合招的攻击和附带效果分别计价。内容相同的编号重复招式只计一次。带 `randomMoves` 的怪物只从白名单取样。运行 `node tools/calibrate-monster-preferences.mjs --apply` 可重算画像。 [取样记录](data/monster-preference-values.json)
 
-非攻击抽取的直占比例为 `clamp(favoriteDirectBaseShare + 偏好条目的权重之和 × favoriteDirectStrengthMultiplier, 0, 1)`。默认基础值为 0.10，系数为 0.02。直占部分按可用偏好招式的房间权重调整后分配，剩余部分走意图类别与共享抽取。没有可用偏好时，全部权重走原有抽取。行动预算仍参与候选筛选和匹配。
+非攻击抽取的直占比例为 `clamp(favoriteDirectBaseShare + 偏好条目的权重之和 × favoriteDirectStrengthMultiplier, 0, 1)`。默认基础值为 0.10，系数为 0.02。先按预算筛选招式，再在直占部分、普通部分各自应用价格匹配。普通部分包含意图类别、共享权重和跳过行动的机会。有可用偏好时，两部分按直占比例合并。显式偏好的特殊减益从第二回合起参与抽取，仍遵循房间权重和全战一次限制。特殊减益概率设为 0 时会关闭此类行动。
 
 ## 行动力如何标定
 

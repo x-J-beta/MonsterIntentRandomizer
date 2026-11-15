@@ -247,13 +247,20 @@ public sealed class ActionPlanner(PoolSettings settings)
             {
                 double regular = (1 - shared) * directional * candidate.Weight +
                     shared * (candidate.Weight + candidate.SharedWeightBonus) / totalSharedWeight;
-                double priority = direct > 0 ? direct * candidate.SharedWeightBonus / totalBonus : 0;
-                return (Candidate: candidate, Weight: ((1 - direct) * regular + priority) *
-                    MatchingWeight(candidate.Value, target, scale));
+                double match = MatchingWeight(candidate.Value, target, scale);
+                return (Candidate: candidate, Regular: regular * match, Preferred: candidate.SharedWeightBonus * match);
             });
-        }).Where(candidate => candidate.Weight > 0).ToArray();
-        double skip = maySkip ? candidates.Sum(x => x.Weight) * candidates.Min(x => x.Candidate.Value) / target : 0;
-        return Draw(candidates, skip, random);
+        }).ToArray();
+        double regularTotal = candidates.Sum(candidate => candidate.Regular);
+        double skip = maySkip ? regularTotal * candidates.Min(candidate => candidate.Candidate.Value) / target : 0;
+        if (direct == 0)
+            return Draw(candidates.Select(candidate => (candidate.Candidate, candidate.Regular)), skip, random);
+
+        double regularScale = (1 - direct) / (regularTotal + skip);
+        double preferredScale = direct / candidates.Sum(candidate => candidate.Preferred);
+        return Draw(candidates.Select(candidate =>
+            (candidate.Candidate, candidate.Regular * regularScale + candidate.Preferred * preferredScale)),
+            skip * regularScale, random);
     }
 
     private static ActionCandidate Compose(List<ActionCandidate> parts)

@@ -341,6 +341,13 @@ internal static class PrototypeChecks
             Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Ritual] = Status("amount*attackFrequency*survivalTurns", 0.8) }
         });
         var specializedActions = expanded.Generate(specialized, context, new ActionHistory(), 2).ToArray();
+        var preferredSpecial = specialized with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.Ringing] = 5 } };
+        var missedSpecialRoll = context with { SpecialDebuffRoll = 0.9 };
+        bool OffersRinging(ActionContext turnContext, int turn) => expanded.Generate(preferredSpecial, turnContext,
+            new ActionHistory(), turn).Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
+        if (!OffersRinging(missedSpecialRoll, 2) || OffersRinging(missedSpecialRoll, 1) ||
+            OffersRinging(missedSpecialRoll with { SpecialDebuffAvailable = false }, 2))
+            throw new InvalidOperationException("Favored special debuffs should bypass only the random gate.");
         var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
         Equal(0.8 * specialized.AttackFrequency * specialized.BaseExpectedSurvivalTurns, ritual.Value,
             "ritual uses attack frequency and expected survival");

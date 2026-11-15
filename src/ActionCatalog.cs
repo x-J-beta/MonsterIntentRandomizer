@@ -140,7 +140,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             if (ActionEffect.IsRareDebuff(kind) && (!context.SpecialDebuffAvailable || turn <= 1 ||
-                context.SpecialDebuffRoll >= settings.SpecialDebuffChance))
+                settings.SpecialDebuffChance <= 0 ||
+                (bonus <= 0 && context.SpecialDebuffRoll >= settings.SpecialDebuffChance)))
                 continue;
 
             int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;
