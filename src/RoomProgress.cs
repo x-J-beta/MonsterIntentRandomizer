@@ -11,9 +11,9 @@ public sealed record RoomWeight(double Base = 1, double PerRoom = 0)
 {
     public double At(int rooms, double chaosProgress = 0)
     {
-        double weight = Base + Math.Max(0, rooms) * PerRoom;
-        if (Base == -1 || weight <= 0)
+        if (Base == -1)
             return 0;
-        return Base <= 0 ? weight : Math.Max(double.Epsilon, weight + (1 - Base) * chaosProgress);
+        double baseWeight = (1 - chaosProgress) * Base + chaosProgress;
+        return Math.Max(0, baseWeight + Math.Max(0, rooms) * PerRoom);
     }
 }

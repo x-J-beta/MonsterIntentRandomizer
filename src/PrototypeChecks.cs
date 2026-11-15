@@ -65,7 +65,12 @@ internal static class PrototypeChecks
         Equal(6, OpeningValuation.Option("REGEN", regen, estimate, strength: maxChaos.OpeningStrength)
             .Doses!.Max(dose => dose.State.Amount), "chaos raises the opening layer cap");
         Equal(3, new RoomWeight(4, 0.1).At(5, 0.5), "chaos attenuates base weight linearly");
-        Equal(0, new RoomWeight(-0.3, 0.02).At(10, 1), "chaos preserves room unlocks");
+        var lateWeight = new RoomWeight(-0.3, 0.02);
+        Equal(0, lateWeight.At(7), "normal chaos keeps the late effect locked");
+        Equal(0, lateWeight.At(6, 0.125), "moderate chaos still needs room progression");
+        Equal(0.0025, lateWeight.At(7, 0.125), "chaos unlocks negative base weights earlier");
+        Equal(1, lateWeight.At(0, 1), "full chaos can unlock a late effect at the start");
+        Equal(0, new RoomWeight(-1, 0.02).At(90, 1), "explicitly disabled weights stay disabled");
         if (OpeningValuation.Draw(openingOptions, openingActionValues,
                 draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25, Strength = maxChaos.OpeningStrength },
                 new Random(11)).Count != 1)
