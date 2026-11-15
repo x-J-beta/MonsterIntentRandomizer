@@ -61,13 +61,12 @@ string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
 Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
-int act = int.Parse(stage.AsSpan(3), CultureInfo.InvariantCulture);
 OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
-            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath) && rules.OpeningValues[id].MinAct <= act)
-        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner, rooms)).ToArray();
+            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
+        .Select(id => rules.OpeningOption(id, owner, rooms)).ToArray();
 }
 var options = Options(enemies[0], rules.OpeningStatesFor(configured), profile);
 foreach (var option in options)
@@ -98,7 +97,7 @@ double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
     $"{pick.MonsterId}:{pick.State.Id} {pick.State.Amount} ({pick.Value:+0.00;-0.00;0.00})"))) +
     $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, " +
-    $"net limit {actionValues.Values.Sum() * rules.Draws.MaxEncounterValueMultiplier:F2}");
+    $"net limit {actionValues.Values.Sum() * rules.Draws.MaxEncounterValueMultiplier * rules.Draws.Strength:F2}");
 
 var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
@@ -111,7 +110,7 @@ double fallbackActionValue = hasFallback && fallback.TryGetProperty("actionValue
 string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out var resolvedFallback)
     ? resolvedFallback.GetDouble().ToString("F1") : "n/a";
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, act, seed,
+foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, seed,
     sample.GetProperty("traceTurns").GetInt32(), configured.FullBlockChance,
     firstEnemyAction: enemies[0].FirstEnemyAction, fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
 {

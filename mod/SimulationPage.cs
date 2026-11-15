@@ -10,14 +10,10 @@ internal static class SimulationPage
     internal static Action Create(VBoxContainer panel, TextEdit settings, TextEdit profiles)
     {
         var monster = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        var act = new OptionButton();
-        for (int number = 1; number <= 3; number++)
-            act.AddItem($"第 {number} 幕");
         var highAscension = new CheckButton { Text = "高进阶" };
         var choices = new HBoxContainer();
         panel.AddChild(choices);
         choices.AddChild(monster);
-        choices.AddChild(act);
         choices.AddChild(highAscension);
 
         var seed = SettingsPage.NumberRow(panel, "随机种子", int.MinValue, int.MaxValue, 1);
@@ -64,7 +60,7 @@ internal static class SimulationPage
                 using var profilesJson = JsonDocument.Parse(profiles.Text);
                 var rules = ModSettings.Parse(new StoredSettings(true, settingsJson.RootElement, profilesJson.RootElement));
                 string id = ids[monster.Selected];
-                output.Text = Run(rules, id, act.Selected + 1, highAscension.ButtonPressed,
+                output.Text = Run(rules, id, highAscension.ButtonPressed,
                     (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed, (int)rooms.Value, hp.Value, allyHp.Value);
             }
             catch (Exception error)
@@ -109,10 +105,6 @@ internal static class SimulationPage
         {
             var entry = profilesDocument.GetProperty("monsters").GetProperty(ids[monster.Selected]);
             hp.SetValueNoSignal(entry.GetProperty("hp").GetDouble());
-            act.Select(entry.TryGetProperty("stage", out var stage) ? stage.GetString() switch
-            {
-                "act2" => 1, "act3" => 2, _ => 0
-            } : 0);
             UpdatePhaseLabel(entry);
             output.Text = "点击模拟生成该怪物的出招轨迹。";
         }
@@ -125,7 +117,7 @@ internal static class SimulationPage
         }
     }
 
-    private static string Run(RuleConfiguration rules, string id, int act, bool highAscension, int seed, int rounds,
+    private static string Run(RuleConfiguration rules, string id, bool highAscension, int seed, int rounds,
         bool allowPhase, int rooms, double hp, double allyHp)
     {
         var monster = rules.Monsters[id];
@@ -138,17 +130,17 @@ internal static class SimulationPage
             CurrentHp = hp,
             RoomsEntered = rooms + 1
         };
-        var candidates = rules.OpeningStatesFor(monster).Where(key => rules.OpeningValues[key].MinAct <= act)
-            .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms)).ToArray();
+        var candidates = rules.OpeningStatesFor(monster)
+            .Select(key => rules.OpeningOption(key, profile, rooms)).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
         bool phaseAllowsRandomization = string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase;
-        var turns = ActionSimulation.Trace(rules, profile, opening, act, seed, rounds, monster.FullBlockChance,
+        var turns = ActionSimulation.Trace(rules, profile, opening, seed, rounds, monster.FullBlockChance,
             monster.FixedOpening, phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();
-        result.AppendLine($"{id}　　第 {act} 幕　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
+        result.AppendLine($"{id}　　已经历 {rooms} 个房间　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
@@ -157,7 +149,7 @@ internal static class SimulationPage
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");
-        result.AppendLine($"开场净估值 {opening.Sum(pick => pick.Value):0.##}　净值上限 {profile.ActionValue * rules.Draws.MaxEncounterValueMultiplier:0.##}");
+        result.AppendLine($"开场净估值 {opening.Sum(pick => pick.Value):0.##}　净值上限 {profile.ActionValue * rules.Draws.MaxEncounterValueMultiplier * rules.Draws.Strength:0.##}");
         result.AppendLine($"随机招式 {randomized.Length}／{rounds} 回合");
         if (randomized.Length > 0)
         {

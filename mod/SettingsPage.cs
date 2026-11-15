@@ -120,6 +120,7 @@ internal static class SettingsPage
         AddNumber("开场抽取次数", 0, 20, 1, "opening", "attempts");
         AddNumber("单怪开场状态数量", 0, 10, 1, "opening", "maxPerMonster");
         AddNumber("开场净值上限倍率", 0, 3, 0.01, "opening", "maxEncounterValueMultiplier");
+        AddNumber("混沌 5 的开场强度倍率", 1, 3, 0.01, "pools", "openingStrengthAtMax");
         AddNumber("开场无变化权重", 0, 100, 1, "opening", "weights", "none");
         AddNumber("开场正面权重", 0, 100, 1, "opening", "weights", "positive");
         AddNumber("开场负面权重", 0, 100, 1, "opening", "weights", "negative");

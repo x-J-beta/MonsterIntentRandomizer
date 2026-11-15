@@ -33,7 +33,7 @@ internal static class EffectCalibration
         new("HardenedShell", EffectKind.HardenedShell, -1), new("HardToKill", EffectKind.HardToKill, -1),
         new("HardenedShell-half", EffectKind.HardenedShell, -2), new("HardToKill-half", EffectKind.HardToKill, -2),
         new("Intangible", EffectKind.Intangible, 1), new("Artifact", EffectKind.Artifact, 1),
-        new("Barricade", EffectKind.Barricade, 1), new("CurlUp", EffectKind.CurlUp, 8),
+        new("Barricade", EffectKind.Barricade, 1),
         new("Thorns", EffectKind.Thorns, 2), new("TemporaryThorns", EffectKind.TemporaryThorns, 3),
         new("Weak", EffectKind.Weak, 1), new("Vulnerable", EffectKind.Vulnerable, 1), new("Frail", EffectKind.Frail, 2),
         new("StrengthDown", EffectKind.StrengthDown, 2), new("DexterityDown", EffectKind.DexterityDown, 2),
@@ -56,7 +56,7 @@ internal static class EffectCalibration
                 EffectKind.Regen or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill or
                 EffectKind.Artifact or EffectKind.Thorns or EffectKind.TemporaryThorns or EffectKind.Intangible or
                 EffectKind.VitalSpark or EffectKind.WitheringPresence or
-                EffectKind.PersonalHive or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.Barricade or EffectKind.CurlUp)
+                EffectKind.PersonalHive or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.Barricade)
                 .Select(probe => probe with { Id = "Open/" + probe.Id, Opening = true }))
             .Concat(new Probe[]
             {
@@ -127,7 +127,7 @@ internal static class EffectCalibration
         int mainHp = scenario.Hp, allyHp = scenario.AllyHp, playerHp = 78;
         int enemyBlock = 0, playerBlock = 0, enemyStrength = 0, playerStrengthLoss = 0, dexterityLoss = 0;
         int regen = 0, plating = 0, ritual = 0, shell = 0, hardToKill = 0, thorns = 0, temporaryThorns = 0;
-        int enemyWeak = 0, enemyVulnerable = 0, intangible = 0, artifact = 0, curlUp = 0, stun = 0;
+        int enemyWeak = 0, enemyVulnerable = 0, intangible = 0, artifact = 0, stun = 0;
         int playerWeak = 0, playerVulnerable = 0, frail = 0, tangled = 0, ringing = 0, poison = 0;
         int soulbind = 0, drawDown = 0, energyDown = 0, hive = 0, sparks = 0, withering = 0, envenom = 0, paperCuts = 0;
         int demise = 0, doom = 0, appliedRound = 0, drawn = 0, triggered = 0, totalPlayed = 0, round = 0;
@@ -211,7 +211,6 @@ internal static class EffectCalibration
 
                 playerBlock += DefenseAmount(chosen);
                 int perHit = AttackAmount(chosen);
-                bool wasHit = false;
                 for (int strike = 0; strike < chosen.Hits && perHit > 0 && playerHp > 0; strike++)
                 {
                     if (mainHp <= 0)
@@ -228,16 +227,10 @@ internal static class EffectCalibration
                         healthLoss = Math.Min(healthLoss, Math.Max(0, shell - lostThisRound));
                     mainHp = Math.Max(0, mainHp - healthLoss);
                     lostThisRound += healthLoss;
-                    wasHit |= healthLoss > 0;
                     if (hive > 0)
                         Put(new Card(Status: EffectKind.Dazed), StatusPile.Draw);
                     if (thorns + temporaryThorns > 0)
                         DamagePlayer(thorns + temporaryThorns);
-                }
-                if (wasHit && curlUp > 0 && mainHp > 0)
-                {
-                    enemyBlock += curlUp;
-                    curlUp = 0;
                 }
                 totalPlayed++;
                 played++;
@@ -403,7 +396,6 @@ internal static class EffectCalibration
                 case EffectKind.Intangible: intangible = amount; break;
                 case EffectKind.Artifact: artifact += amount; break;
                 case EffectKind.Barricade: barricade = true; break;
-                case EffectKind.CurlUp: curlUp = amount; break;
                 case EffectKind.Thorns: thorns += amount; break;
                 case EffectKind.TemporaryThorns: temporaryThorns += amount; break;
                 case EffectKind.Weak when effect.Opening: enemyWeak += amount; break;

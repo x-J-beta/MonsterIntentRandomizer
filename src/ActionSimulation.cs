@@ -6,14 +6,13 @@ internal sealed record SimulatedTurn(int Round, ActionPlan Plan, Pools After, bo
 internal static class ActionSimulation
 {
     internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, MonsterProfile profile,
-        IReadOnlyList<OpeningPick> opening, int act, int seed, int rounds, double fullBlockChance,
+        IReadOnlyList<OpeningPick> opening, int seed, int rounds, double fullBlockChance,
         bool fixedOpening = false, bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
         double? fallbackValue = null, int? fallbackHits = null, int rooms = 0, int enemyCount = 1)
     {
         var planner = new ActionPlanner(rules.PoolSettings);
         var catalog = new ActionCatalog(rules.Actions);
         var actionRandom = new Random(seed ^ 0x649AAB81);
-        var rareBuffRandom = new Random(seed ^ 0x13C96303);
         var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
@@ -24,7 +23,7 @@ internal static class ActionSimulation
             if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
                 RecordEffect(kind, pick.State.Amount, 0);
-        var prior = rules.TurnPrior with { Act = act, Rooms = rooms,
+        var prior = rules.TurnPrior with { Rooms = rooms,
             ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
         bool previousAttack = false;
@@ -45,7 +44,6 @@ internal static class ActionSimulation
             {
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
-                RareBuffRoll = rareBuffRandom.NextDouble(),
                 SpecialDebuffAvailable = !specialDebuffSpent,
                 SpecialDebuffRoll = specialDebuffRandom.NextDouble(),
                 ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
@@ -94,7 +92,7 @@ internal static class ActionSimulation
             {
                 EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Weak or
                     EffectKind.Vulnerable or EffectKind.Frail => round + amount,
-                EffectKind.CurlUp or EffectKind.Tangled or EffectKind.Ringing or EffectKind.TemporaryThorns => round + 1,
+                EffectKind.Tangled or EffectKind.Ringing or EffectKind.TemporaryThorns => round + 1,
                 _ => int.MaxValue
             };
         }

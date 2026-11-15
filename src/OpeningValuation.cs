@@ -4,23 +4,21 @@ public sealed record OpeningOption(OpeningState State, double Value, double Weig
     IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
 public sealed record OpeningDraws(double None, double Positive, double Negative, int Attempts,
-    int MaxPerMonster, double MaxEncounterValueMultiplier);
-public enum OpeningBasis { ActionValue, Flat, SurvivalTurns, AttackFrequency, AttacksOverLifetime }
-
-public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amounts = null, double Weight = 1,
-    int MinAct = 1, OpeningBasis Basis = OpeningBasis.ActionValue, int? MaxAmount = null,
-    double WeightPerRoom = 0, Dictionary<string, double>? Formula = null, int MinAmount = 1,
+    int MaxPerMonster, double MaxEncounterValueMultiplier, double Strength = 1);
+public sealed record StatusValue(Dictionary<string, double> Formula, int Amount = 1, double Weight = 1,
+    int? MaxAmount = null, double WeightPerRoom = 0, int MinAmount = 1,
     double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false)
 {
-    internal ActionValuation? CompiledFormula { get; } = Formula == null ? null :
-        new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>> { [EffectKind.Attack] = Formula });
+    internal ActionValuation CompiledFormula { get; } = new(new Dictionary<EffectKind, Dictionary<string, double>>
+        { [EffectKind.Attack] = Formula ?? throw new ArgumentException("开场状态和共用强化须配置估值公式。") });
     internal RoomWeight RoomWeight => new(Weight, WeightPerRoom);
 
-    internal IEnumerable<int> Doses(MonsterProfile profile)
+    internal IEnumerable<int> Doses(MonsterProfile profile, double strength = 1)
     {
-        int configured = MaxAmount ?? (HpPerSurvivalTurnCap.HasValue ? int.MaxValue :
-            Amounts?.Select(Math.Abs).DefaultIfEmpty(0).Max() ?? Math.Abs(Amount));
+        int configured = MaxAmount ?? (HpPerSurvivalTurnCap.HasValue ? int.MaxValue : Math.Abs(Amount));
         int maximum = profile.CapAmount(configured, HpPerSurvivalTurnCap);
+        if (maximum > 1)
+            maximum = (int)Math.Min(int.MaxValue, Math.Floor(maximum * strength));
         return Enumerable.Range(MinAmount, Math.Max(0, maximum - MinAmount + 1)).Select(level => level * Math.Sign(Amount));
     }
 }
@@ -28,23 +26,16 @@ public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amount
 public static class OpeningValuation
 {
     public static double Evaluate(StatusValue state, MonsterProfile profile, int amount) =>
-        amount == 0 ? 0 : state.CompiledFormula?.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), effectiveAmount: Math.Abs(amount)) ??
-        Math.Abs((double)amount) * state.Turns * (state.Basis switch
-        {
-            OpeningBasis.Flat => 1,
-            OpeningBasis.SurvivalTurns => profile.BaseExpectedSurvivalTurns,
-            OpeningBasis.AttackFrequency => profile.AttackFrequency,
-            OpeningBasis.AttacksOverLifetime => profile.AttackFrequency * profile.BaseExpectedSurvivalTurns,
-            _ => profile.ActionValue
-        });
+        amount == 0 ? 0 : state.CompiledFormula.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), effectiveAmount: Math.Abs(amount));
 
-    public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0)
+    public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
+        double strength = 1, double chaosProgress = 0)
     {
-        var doses = state.Doses(profile).Select(amount =>
+        var doses = state.Doses(profile, strength).Select(amount =>
             new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount))).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);
-        return representative with { Weight = state.RoomWeight.At(rooms), Doses = doses,
+        return representative with { Weight = state.RoomWeight.At(rooms, chaosProgress), Doses = doses,
             Stackable = state.Stackable, Unique = state.Unique };
     }
 
@@ -56,7 +47,7 @@ public static class OpeningValuation
         if (totalWeight <= 0)
             return [];
 
-        double limit = actionValues.Values.Sum() * settings.MaxEncounterValueMultiplier;
+        double limit = actionValues.Values.Sum() * settings.MaxEncounterValueMultiplier * settings.Strength;
         var selected = new List<OpeningPick>();
         double total = 0;
         for (int attempt = 0; attempt < settings.Attempts; attempt++)
@@ -86,9 +77,10 @@ public static class OpeningValuation
                 continue;
             if (chosen.Doses is { } doses)
             {
-                double budget = Math.Max(0, actionValues.GetValueOrDefault(id));
+                double baseBudget = Math.Max(0, actionValues.GetValueOrDefault(id));
+                double budget = baseBudget * settings.Strength;
                 var ranked = doses.Where(dose => positive ? dose.Value > 0 : dose.Value < 0)
-                    .Select(dose => (Dose: dose, Weight: ActionPlanner.MatchingWeight(Math.Abs(dose.Value), budget, Math.Max(1, budget))))
+                    .Select(dose => (Dose: dose, Weight: ActionPlanner.MatchingWeight(Math.Abs(dose.Value), budget, Math.Max(1, baseBudget))))
                     .ToArray();
                 double doseRoll = random.NextDouble() * ranked.Sum(dose => dose.Weight);
                 foreach (var dose in ranked)

@@ -16,9 +16,8 @@ internal sealed class RuleConfiguration
         var actions = settings.GetProperty("actions");
         var opening = settings.GetProperty("opening");
         var weights = opening.GetProperty("weights");
-        var buffs = settings.TryGetProperty("buffs", out var buffConfig)
-            ? Read<Dictionary<EffectKind, StatusValue>>(buffConfig) : [];
-        if (buffs.Any(entry => !ActionEffect.IsMonsterBuff(entry.Key) || entry.Value.Formula == null || entry.Value.Amount != 1))
+        var buffs = Read<Dictionary<EffectKind, StatusValue>>(settings.GetProperty("buffs"));
+        if (buffs.Any(entry => !ActionEffect.IsMonsterBuff(entry.Key) || entry.Value.Amount != 1))
             throw new ArgumentException("共用强化须为怪物自身的正面状态，并配置估值公式。");
         PlayerAction = settings.TryGetProperty("playerAction", out var curve) ? Read<PlayerActionCurve>(curve) : new();
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
@@ -28,20 +27,14 @@ internal sealed class RuleConfiguration
             throw new ArgumentException("全局行动力倍率须为正数，混沌程度倍率须为非负数。");
         if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
             PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
-            PoolSettings.FullChaosBudgetAt <= 1 ||
+            PoolSettings.FullChaosBudgetAt <= 1 || PoolSettings.OpeningStrengthAtMax < 1 ||
             PoolSettings.ChaosBudgetWeights is { } chaosWeights &&
             (chaosWeights.Any(entry => !Enum.IsDefined(entry.Key) || entry.Value < 0) || chaosWeights.Values.Sum() <= 0))
             throw new ArgumentException("抽取预算、候选数量或混沌分配参数无效。");
-        var maximums = actions.TryGetProperty("maxAmounts", out var maxAmounts)
-            ? Read<Dictionary<EffectKind, int>>(maxAmounts)
-            : Read<Dictionary<EffectKind, int[]>>(actions.GetProperty("amounts"))
-                .ToDictionary(entry => entry.Key, entry => entry.Value.DefaultIfEmpty(0).Max());
+        var maximums = Read<Dictionary<EffectKind, int>>(actions.GetProperty("maxAmounts"));
         var minimums = actions.TryGetProperty("minAmounts", out var minAmounts)
             ? Read<Dictionary<EffectKind, int>>(minAmounts) : null;
-        var hpCaps = actions.TryGetProperty("hpPerSurvivalTurnCaps", out var caps)
-            ? Read<Dictionary<EffectKind, double>>(caps) : null;
         if (maximums.Values.Any(max => max < 0) || (minimums?.Values.Any(min => min < 1) ?? false) ||
-            (hpCaps?.Values.Any(cap => cap < 0) ?? false) ||
             (minimums?.Any(entry => maximums.TryGetValue(entry.Key, out int max) && max > 0 && max < entry.Value) ?? false))
             throw new ArgumentException("出招状态的层数下限或上限无效。");
         var policies = actions.TryGetProperty("policies", out var policyConfig)
@@ -65,21 +58,14 @@ internal sealed class RuleConfiguration
             maximums.ToDictionary(entry => entry.Key, entry => Enumerable.Range(1, entry.Value).ToArray()),
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
-            actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, hpCaps, policies, buffs);
+            minimums, policies, buffs, PoolSettings.ChaosProgress);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
-            opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
+            opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),
+            PoolSettings.OpeningStrength);
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
-        foreach (var kind in Enum.GetValues<EffectKind>().Where(kind => ActionEffect.TargetFor(kind) == EffectTarget.Self &&
-                     Actions.PolicyFor(kind).Unique))
-        {
-            string id = EffectPolicy.Id(kind);
-            if (OpeningValues.TryGetValue(id, out var state))
-                OpeningValues[id] = state with { Unique = true };
-        }
         foreach (var (kind, buff) in buffs)
             OpeningValues[EffectPolicy.Id(kind)] = buff;
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
@@ -99,15 +85,15 @@ internal sealed class RuleConfiguration
     public HashSet<string> KeepVanilla { get; }
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
+    internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms) =>
+        OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress);
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
             .Concat((Actions.Buffs?.Keys ?? []).Where(kind => monster.Profile.EffectWeights?.GetValueOrDefault(kind) > 0)
                 .Select(EffectPolicy.Id))
             .Distinct().Where(id => id != "STUN" || !monster.FixedOpening);
 
-    internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique ||
-        (ActionEffect.TargetFor(kind) == EffectTarget.Self &&
-            OpeningValues.TryGetValue(EffectPolicy.Id(kind), out var opening) && opening.Unique);
+    internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique;
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
     {
         JsonElement Setting(string name) => entry.TryGetProperty(name, out var value) ? value : defaults.GetProperty(name);

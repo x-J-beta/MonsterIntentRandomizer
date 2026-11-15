@@ -9,5 +9,11 @@ public sealed record PlayerActionCurve(double Base = 8, double RoomsPerStep = 3,
 
 public sealed record RoomWeight(double Base = 1, double PerRoom = 0)
 {
-    public double At(int rooms) => Base == -1 ? 0 : Math.Max(0, Base + Math.Max(0, rooms) * PerRoom);
+    public double At(int rooms, double chaosProgress = 0)
+    {
+        double weight = Base + Math.Max(0, rooms) * PerRoom;
+        if (Base == -1 || weight <= 0)
+            return 0;
+        return Base <= 0 ? weight : Math.Max(double.Epsilon, weight + (1 - Base) * chaosProgress);
+    }
 }

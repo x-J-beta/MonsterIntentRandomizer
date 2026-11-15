@@ -13,6 +13,7 @@
     "nonAttackCandidates": 5,
     "unusedAttackBudgetShare": 0.5,
     "fullChaosBudgetAt": 5,
+    "openingStrengthAtMax": 1.5,
     "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 }
   },
   "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },
@@ -150,7 +151,6 @@
     "Thorns": { "common": true, "maxAmount": 4, "formula": { "amount*survivalTurns": 0.85 }, "weight": 1, "stackable": true },
     "TemporaryThorns": { "common": true, "maxAmount": 5, "formula": { "amount": 1.9 }, "weight": 1, "stackable": true },
     "Barricade": { "common": true, "maxAmount": 1, "formula": { "actionValue*survivalTurns": 0.12 }, "weight": -0.0675, "weightPerRoom": 0.0075, "stackable": false },
-    "CurlUp": { "common": true, "maxAmount": 12, "formula": { "effectiveAmount": 0.31 }, "weight": -0.18, "weightPerRoom": 0.02, "stackable": false, "unique": true },
     "Slippery": { "common": true, "maxAmount": 2, "formula": { "amount*playerActionValue": 0.18 }, "weight": -0.18, "weightPerRoom": 0.01, "stackable": false },
     "Vigor": { "common": true, "maxAmount": 5, "formula": { "amount*attackFrequency": 1.8 }, "weight": 0.32, "stackable": false },
     "Enrage": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.35 }, "weight": -0.072, "weightPerRoom": 0.008, "stackable": false },

@@ -115,12 +115,8 @@ internal static class ValuationPage
                 (root, number) => SetActionWeight(root, id, "perRoom", number));
             AddNumber(content, "每次层数下限", config["minAmounts"]?[id]?.GetValue<int>() ?? 1, 1,
                 (root, number) => root["actions"]!["minAmounts"]![id] = (int)number, minimum: 1);
-            if (config["hpPerSurvivalTurnCaps"]?[id]?.GetValue<double>() is double cap)
-                AddNumber(content, "动态层数上限系数", cap, 0.01,
-                    (root, number) => root["actions"]!["hpPerSurvivalTurnCaps"]![id] = number, minimum: 0);
-            else
-                AddNumber(content, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
-                    (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
+            AddNumber(content, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
+                (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
         }
 
         void RenderState(VBoxContainer content, Func<JsonNode, JsonNode> At, bool shared)

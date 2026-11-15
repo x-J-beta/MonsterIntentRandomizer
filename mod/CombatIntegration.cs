@@ -91,10 +91,9 @@ internal static class CombatIntegration
 
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
                 candidates[id] = rules.OpeningStatesFor(state.Rules)
-                    .Where(key => rules.OpeningValues[key].MinAct <= Act(combat) &&
-                        (key != "STUN" || (creature.Monster?.NextMove is { } first &&
-                            CanReplaceMove(creature, state, first, 1))))
-                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms))
+                    .Where(key => key != "STUN" || (creature.Monster?.NextMove is { } first &&
+                        CanReplaceMove(creature, state, first, 1)))
+                    .Select(key => rules.OpeningOption(key, profile, rooms))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -323,12 +322,10 @@ internal static class CombatIntegration
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
             AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
-            Act = Act(combat),
             ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
                     reserved.Owner != self && reserved.Owner.IsAlive)).ToHashSet(),
-            RareBuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0xA4CB124Bu, combat.RoundNumber).NextDouble(),
             SpecialDebuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0x0BC16431u, combat.RoundNumber).NextDouble(),
             SpecialDebuffAvailable = !encounter.SpecialDebuffSpent &&
                 (encounter.SpecialDebuffRound != combat.RoundNumber || encounter.SpecialDebuffOwner == self)
@@ -345,7 +342,6 @@ internal static class CombatIntegration
             RoomsEntered = encounter.Rooms + 1
         };
 
-    private static int Act(ICombatState combat) => Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3);
 
     private static bool IsCurrentCombat(ICombatState combat) =>
         CombatManager.Instance.IsInProgress && ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), combat);

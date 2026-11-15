@@ -35,9 +35,12 @@ public sealed record PoolSettings(
     double ActionValueMultiplier = 1, double ChaosMultiplier = 1,
     double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
-    IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null)
+    IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5)
 {
-    internal double WeightPower => 1 - Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
+    internal double ChaosProgress => Math.Clamp((ChaosMultiplier - 1) / 4, 0, 1);
+    internal double SharedNonAttackWeight => 0.25 + 0.75 * ChaosProgress;
+    internal double OpeningStrength => 1 + (OpeningStrengthAtMax - 1) * ChaosProgress;
+    private double BudgetChaos => Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
 
     private static readonly IReadOnlyDictionary<IntentStyle, double> DefaultChaosWeights =
         new Dictionary<IntentStyle, double>
@@ -52,7 +55,7 @@ public sealed record PoolSettings(
             ActionValue = profile.ActionValue * ActionValueMultiplier,
             Volatility = profile.Volatility * ChaosMultiplier
         };
-        double mix = 1 - WeightPower;
+        double mix = BudgetChaos;
         if (mix == 0)
             return adjusted;
 
@@ -176,7 +179,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         double waitChance = 5 / (desire + 10);
         if (choices.Count == 0 || random.NextDouble() < waitChance)
             return 0;
-        return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, settings.WeightPower))), 0, random);
+        return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, 1 - settings.ChaosProgress))), 0, random);
     }
 
     private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&
@@ -221,20 +224,21 @@ public sealed class ActionPlanner(PoolSettings settings)
     {
         double scale = Math.Max(1e-6, Math.Max(settings.MinimumSelectionSpread * settings.ChaosMultiplier,
             target * profile.Volatility));
-        var candidates = eligible.GroupBy(candidate => candidate.Style)
-            .Where(group => profile.IntentWeights.GetValueOrDefault(group.Key) > 0)
-            .SelectMany(group =>
-            {
-                var families = group.GroupBy(candidate => candidate.Effects?[0].Kind ?? EffectKind.Attack)
-                    .Select(family => (Members: family, Raw: family.Sum(candidate => candidate.Weight))).ToArray();
-                double exponent = settings.WeightPower;
-                double categoryWeight = profile.IntentWeights[group.Key] / families.Sum(family => Math.Pow(family.Raw, exponent));
-                return families.SelectMany(family => family.Members.Select(candidate => (Candidate: candidate,
-                    Weight: candidate.Weight / family.Raw * Math.Pow(family.Raw, exponent) * categoryWeight *
-                        MatchingWeight(candidate.Value, target, scale))));
-            }).ToArray();
-        if (candidates.Length == 0)
+        var groups = eligible.GroupBy(candidate => candidate.Style).Select(group =>
+            (Members: group, Weight: group.Sum(candidate => candidate.Weight),
+             IntentWeight: Math.Max(0, profile.IntentWeights.GetValueOrDefault(group.Key)))).ToArray();
+        if (groups.Length == 0)
             return null;
+        double totalWeight = groups.Sum(group => group.Weight);
+        double totalIntentWeight = groups.Sum(group => group.IntentWeight);
+        double shared = totalIntentWeight > 0 ? settings.SharedNonAttackWeight : 1;
+        var candidates = groups.SelectMany(group =>
+        {
+            double directional = totalIntentWeight > 0 ? group.IntentWeight / (totalIntentWeight * group.Weight) : 0;
+            double factor = (1 - shared) * directional + shared / totalWeight;
+            return group.Members.Select(candidate => (Candidate: candidate,
+                Weight: candidate.Weight * factor * MatchingWeight(candidate.Value, target, scale)));
+        }).ToArray();
         double skip = maySkip ? candidates.Sum(x => x.Weight) * candidates.Min(x => x.Candidate.Value) / target : 0;
         return Draw(candidates, skip, random);
     }

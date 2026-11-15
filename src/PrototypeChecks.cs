@@ -18,14 +18,14 @@ internal static class PrototypeChecks
         Equal(1, late[1].AliveAtAction, "late spawn survives next window");
 
         var estimate = new MonsterProfile(10, 0.15, 1.5, 0.35, 4, new Dictionary<IntentStyle, double>());
-        Equal(-3, OpeningValuation.Evaluate(new StatusValue(1, -0.3), estimate, 1), "opening vulnerable");
-        Equal(9, OpeningValuation.Evaluate(new StatusValue(1, 0.9), estimate, 1), "opening intangible");
-        Equal(-3.6, OpeningValuation.Evaluate(new StatusValue(-2, -1.2, Basis: OpeningBasis.AttackFrequency), estimate, -2),
+        Equal(-3, OpeningValuation.Evaluate(Status("amount*actionValue", -0.3), estimate, 1), "opening vulnerable");
+        Equal(9, OpeningValuation.Evaluate(Status("amount*actionValue", 0.9), estimate, 1), "opening intangible");
+        Equal(-3.6, OpeningValuation.Evaluate(Status("amount*attackFrequency", -1.2) with { Amount = -1 }, estimate, -2),
             "negative strength uses hit frequency");
-        Equal(-2, OpeningValuation.Evaluate(new StatusValue(5, -0.4, Basis: OpeningBasis.Flat), estimate, 5), "flat doom");
-        Equal(2.7, OpeningValuation.Evaluate(new StatusValue(3, 0.225, Basis: OpeningBasis.SurvivalTurns), estimate, 3),
+        Equal(-2, OpeningValuation.Evaluate(Status("amount", -0.4), estimate, 5), "flat doom");
+        Equal(2.7, OpeningValuation.Evaluate(Status("amount*survivalTurns", 0.225), estimate, 3),
             "regen uses lifetime");
-        Equal(3.2, OpeningValuation.Evaluate(new StatusValue(4, 0.2, Basis: OpeningBasis.SurvivalTurns),
+        Equal(3.2, OpeningValuation.Evaluate(Status("amount*survivalTurns", 0.2),
             estimate with { ActionValue = 100 }, 4), "plating ignores action value");
         Equal(1.5, SurvivalForecast.FromExpectedSurvival(1.5, 4).Sum(window => window.AliveAtAction),
             "profile survival fallback");
@@ -55,8 +55,21 @@ internal static class PrototypeChecks
         if (OpeningValuation.Draw(openingOptions, openingActionValues,
                 draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25 }, new Random(11)).Count != 0)
             throw new InvalidOperationException("An unbalanced opening exceeded the encounter multiplier.");
-        var variable = OpeningValuation.Option("REGEN",
-            new StatusValue(1, 0.225, [1, 2, 3, 4], Basis: OpeningBasis.SurvivalTurns), estimate);
+        var regen = Status("amount*survivalTurns", 0.225, 4);
+        var variable = OpeningValuation.Option("REGEN", regen, estimate);
+        var normalChaos = new PoolSettings(0.75, 0.9);
+        var maxChaos = normalChaos with { ChaosMultiplier = 5 };
+        Equal(0.25, normalChaos.SharedNonAttackWeight, "normal chaos shares a quarter of non-attack weight");
+        Equal(1, maxChaos.SharedNonAttackWeight, "full chaos shares all non-attack weight");
+        Equal(1.5, maxChaos.OpeningStrength, "full chaos opening strength");
+        Equal(6, OpeningValuation.Option("REGEN", regen, estimate, strength: maxChaos.OpeningStrength)
+            .Doses!.Max(dose => dose.State.Amount), "chaos raises the opening layer cap");
+        Equal(3, new RoomWeight(4, 0.1).At(5, 0.5), "chaos attenuates base weight linearly");
+        Equal(0, new RoomWeight(-0.3, 0.02).At(10, 1), "chaos preserves room unlocks");
+        if (OpeningValuation.Draw(openingOptions, openingActionValues,
+                draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25, Strength = maxChaos.OpeningStrength },
+                new Random(11)).Count != 1)
+            throw new InvalidOperationException("Chaos did not raise the opening encounter cap.");
         var rolledDoses = new HashSet<int>();
         var doseRandom = new Random(123);
         for (int i = 0; i < 50; i++)
@@ -155,9 +168,9 @@ internal static class PrototypeChecks
 
         var amounts = new Dictionary<EffectKind, int[]>
         {
-            [EffectKind.Block] = [3, 5, 8], [EffectKind.Strength] = [1], [EffectKind.Weak] = [1],
+            [EffectKind.Block] = [3, 5, 8], [EffectKind.Weak] = [1],
             [EffectKind.Vulnerable] = [1], [EffectKind.Dazed] = [1], [EffectKind.Wound] = [1],
-            [EffectKind.Heal] = [3], [EffectKind.Intangible] = [1], [EffectKind.Beckon] = [1],
+            [EffectKind.Heal] = [3], [EffectKind.Beckon] = [1],
             [EffectKind.Tangled] = [1], [EffectKind.StrengthDown] = [1, 2], [EffectKind.DexterityDown] = [1, 2],
             [EffectKind.Soulbind] = [1, 2, 3], [EffectKind.DrawDown] = [1], [EffectKind.EnergyDown] = [1]
         };
@@ -166,24 +179,26 @@ internal static class PrototypeChecks
             [EffectKind.Attack] = new() { ["amount*hits"] = 1 },
             [EffectKind.Block] = new() { ["effectiveAmount"] = 0.4 },
             [EffectKind.Heal] = new() { ["effectiveAmount"] = 0.45 },
-            [EffectKind.Strength] = new() { ["amount*attackFrequency"] = 1.2 },
-            [EffectKind.Ritual] = new() { ["amount*attackFrequency*survivalTurns"] = 0.8 },
             [EffectKind.Weak] = new() { ["amount*actionValue"] = 0.15 },
             [EffectKind.Vulnerable] = new() { ["amount*actionValue"] = 0.3 },
-            [EffectKind.Intangible] = new() { ["amount*actionValue"] = 0.9 },
-            [EffectKind.Ringing] = new() { ["playerTurnValue"] = 0.7 },
-            [EffectKind.Tangled] = new() { ["amount*playerTurnValue"] = 0.4 },
-            [EffectKind.Smoggy] = new() { ["playerTurnValue"] = 0.85 },
-            [EffectKind.Soulbind] = new() { ["amount*playerTurnValue"] = 0.6, ["playerTurnValue"] = -0.36 },
-            [EffectKind.DrawDown] = new() { ["amount*playerTurnValue"] = 0.2 },
-            [EffectKind.EnergyDown] = new() { ["amount*playerTurnValue"] = 0.33 },
+            [EffectKind.Ringing] = new() { ["playerActionValue"] = 0.7 },
+            [EffectKind.Tangled] = new() { ["amount*playerActionValue"] = 0.4 },
+            [EffectKind.Smoggy] = new() { ["playerActionValue"] = 0.85 },
+            [EffectKind.Soulbind] = new() { ["amount*playerActionValue"] = 0.6, ["playerActionValue"] = -0.36 },
+            [EffectKind.DrawDown] = new() { ["amount*playerActionValue"] = 0.2 },
+            [EffectKind.EnergyDown] = new() { ["amount*playerActionValue"] = 0.33 },
             [EffectKind.StrengthDown] = new() { ["fixed"] = 2, ["amount"] = 0.5 },
             [EffectKind.DexterityDown] = new() { ["fixed"] = 1.5, ["amount"] = 0.4 },
             [EffectKind.Dazed] = new() { ["amount"] = 1.5 },
             [EffectKind.Wound] = new() { ["amount"] = 2.5 },
             [EffectKind.Beckon] = new() { ["amount"] = 6.5 }
         });
-        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts);
+        var buffs = new Dictionary<EffectKind, StatusValue>
+        {
+            [EffectKind.Strength] = Status("amount*attackFrequency", 1.2),
+            [EffectKind.Intangible] = Status("amount*actionValue", 0.9)
+        };
+        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
@@ -207,7 +222,7 @@ internal static class PrototypeChecks
         var later = catalog.Generate(varied, context, new ActionHistory(), 2).ToArray();
         Equal(3, later.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
         Equal(2.3, later.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
-        var secondAct = catalog.Generate(varied with { ActionValue = 80, PlayerActionValue = 20 }, context with { Act = 2 }, new ActionHistory(), 2).ToArray();
+        var secondAct = catalog.Generate(varied with { ActionValue = 80, PlayerActionValue = 20 }, context, new ActionHistory(), 2).ToArray();
         Equal(8, secondAct.Single(action => action.Id == "Tangled 1").Value, "tangled ignores monster action value");
         for (int stacks = 1; stacks <= 3; stacks++)
             Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
@@ -238,9 +253,10 @@ internal static class PrototypeChecks
         Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "per-effect preference weights");
         var customAmounts = new Dictionary<EffectKind, int[]>(amounts)
         {
-            [EffectKind.Block] = [4], [EffectKind.Strength] = [1, 2], [EffectKind.Weak] = [2]
+            [EffectKind.Block] = [4], [EffectKind.Weak] = [2]
         };
-        var tunedCatalog = new ActionCatalog(catalogSettings with { Amounts = customAmounts, MinimumBaseDamagePerHit = 2 });
+        var tunedCatalog = new ActionCatalog(catalogSettings with { Amounts = customAmounts, MinimumBaseDamagePerHit = 2,
+            Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Strength] = buffs[EffectKind.Strength] with { MaxAmount = 2 } } });
         var tuned = tunedCatalog.Generate(varied, context with { Weakened = true }, new ActionHistory(AddedStrength: 1), 1)
             .ToArray();
         Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
@@ -283,7 +299,8 @@ internal static class PrototypeChecks
         };
         var expanded = new ActionCatalog(catalogSettings with
         {
-            Amounts = new Dictionary<EffectKind, int[]>(amounts) { [EffectKind.Ritual] = [1], [EffectKind.Ringing] = [1] }
+            Amounts = new Dictionary<EffectKind, int[]>(amounts) { [EffectKind.Ringing] = [1] },
+            Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Ritual] = Status("amount*attackFrequency*survivalTurns", 0.8) }
         });
         var specializedActions = expanded.Generate(specialized, context, new ActionHistory(), 2).ToArray();
         var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
@@ -301,6 +318,8 @@ internal static class PrototypeChecks
         Console.WriteLine($"Single-hit sample: {attacks / 2000:F3} hits/turn (target {profile.AttackFrequency:F2}).");
         Console.WriteLine($"Three-hit sample: {totalHits / 2000:F3} hits/turn (target {multiProfile.AttackFrequency:F2}).");
 
+        static StatusValue Status(string term, double coefficient, int maxAmount = 1) =>
+            new(new Dictionary<string, double> { [term] = coefficient }, MaxAmount: maxAmount, Common: true);
     }
 
     private static void Equal(double expected, double actual, string name)

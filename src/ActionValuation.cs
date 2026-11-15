@@ -56,7 +56,6 @@ public sealed class ActionValuation
     }
 
     private static Factor ParseFactor(string name) =>
-        name.Equals("playerTurnValue", StringComparison.OrdinalIgnoreCase) ? Factor.PlayerActionValue :
         Enum.TryParse<Factor>(name, ignoreCase: true, out var factor) &&
         name.Equals(factor.ToString(), StringComparison.OrdinalIgnoreCase)
             ? factor : throw new ArgumentException($"Unknown action valuation factor: '{name}'.");
