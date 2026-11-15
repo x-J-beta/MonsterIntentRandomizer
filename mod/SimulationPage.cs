@@ -138,8 +138,7 @@ internal static class SimulationPage
             CurrentHp = hp,
             RoomsEntered = rooms + 1
         };
-        var candidates = rules.OpeningStatesFor(monster).Where(key => rules.OpeningValues[key].MinAct <= act &&
-            (key != "STUN" || !monster.FixedOpening))
+        var candidates = rules.OpeningStatesFor(monster).Where(key => rules.OpeningValues[key].MinAct <= act)
             .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms)).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },

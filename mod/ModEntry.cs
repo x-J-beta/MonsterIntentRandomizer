@@ -86,7 +86,6 @@ internal static class ModSettings
             if (!savedValuations.ContainsKey(id))
                 savedValuations[id] = formula!.DeepClone();
         UpgradeRoomRules(settings, defaults, stored.Revision);
-        UpgradeProgressiveBuffs(settings, defaults);
         defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
         UpgradeDefenseAmounts(settings, defaults);
@@ -391,11 +390,10 @@ internal static class ModSettings
         var newStates = defaults["opening"]!["states"]!;
         foreach (var (id, oldAmount) in new Dictionary<string, int>
         {
-            ["STRENGTH"] = 3, ["RITUAL"] = 1, ["REGEN"] = 8, ["PLATING"] = 10, ["WEAK"] = 3,
-            ["VULNERABLE"] = 3, ["DEMISE"] = 2, ["DOOM"] = 14, ["ARTIFACT"] = 2, ["THORNS"] = 3
+            ["WEAK"] = 3, ["VULNERABLE"] = 3, ["DEMISE"] = 2, ["DOOM"] = 14
         })
-            if (states[id]?["maxAmount"]?.GetValue<int>() == oldAmount && newStates[id]?["maxAmount"] is { } next)
-                states[id]!["maxAmount"] = next.DeepClone();
+            if (states[id]?["maxAmount"]?.GetValue<int>() == oldAmount)
+                states[id]!["maxAmount"] = newStates[id]!["maxAmount"]!.DeepClone();
     }
 
     private static void UpgradeSharedBuffs(JsonNode settings)
@@ -492,44 +490,6 @@ internal static class ModSettings
                 if (defaultProfile[field.Name] is { } next &&
                     JsonNode.DeepEquals(monster[field.Name], JsonNode.Parse(field.Value.GetRawText())))
                     monster[field.Name] = next.DeepClone();
-        }
-    }
-
-    private static void UpgradeProgressiveBuffs(JsonNode settings, JsonNode defaults)
-    {
-        var actions = settings["actions"]!;
-        var defaultWeights = defaults["actions"]!["weights"]!.AsObject();
-        foreach (var (id, rule) in defaultWeights.Where(entry => entry.Value?["base"]?.GetValue<double>() < 0 &&
-                     entry.Value?["perRoom"]?.GetValue<double>() > 0))
-        {
-            (actions["minActs"] as JsonObject)?.Remove(id);
-            if (actions["weights"]?[id] is JsonObject saved)
-                MoveWeight(saved, rule!, "base", "perRoom");
-        }
-        if (actions["minActs"] is JsonObject acts && acts.Count == 0)
-            actions.AsObject().Remove("minActs");
-
-        var opening = settings["opening"]!["states"]!;
-        foreach (var (id, rule) in defaults["opening"]!["states"]!.AsObject().Where(entry =>
-                     entry.Value?["weightPerRoom"]?.GetValue<double>() > 0 &&
-                     entry.Value?["weight"]?.GetValue<double>() < 0))
-            if (opening[id] is JsonObject saved)
-            {
-                saved.Remove("minAct");
-                MoveWeight(saved, rule!, "weight", "weightPerRoom");
-            }
-
-        static void MoveWeight(JsonObject saved, JsonNode rule, string baseKey, string slopeKey)
-        {
-            if ((saved[slopeKey]?.GetValue<double>() ?? 0) != 0 || saved[baseKey]?.GetValue<double>() is not double weight ||
-                weight <= 0)
-                return;
-
-            double baseline = rule[baseKey]!.GetValue<double>();
-            double slope = rule[slopeKey]!.GetValue<double>();
-            double scale = weight / (baseline + 30 * slope);
-            saved[baseKey] = baseline * scale;
-            saved[slopeKey] = slope * scale;
         }
     }
 

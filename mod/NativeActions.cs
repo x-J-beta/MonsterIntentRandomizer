@@ -26,13 +26,12 @@ internal static class NativeActions
         EffectKind.Attack => effect.Hits == 1 ? new SingleAttackIntent(effect.Amount) :
             new MultiAttackIntent(effect.Amount, effect.Hits),
         EffectKind.Wait => new UnknownIntent(),
-        EffectKind.Block or EffectKind.Intangible or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill
-            or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Slippery => new DefendIntent(),
+        EffectKind.Block => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
-        EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns
-            or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage => new BuffIntent(),
+        _ when ActionEffect.IsDefensiveBuff(effect.Kind) => new DefendIntent(),
+        _ when effect.Target == EffectTarget.Self => new BuffIntent(),
         _ when effect.IsStatusCard => new StatusIntent(effect.Amount),
-        _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
+        _ => new DebuffIntent()
     });
 
     private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets)

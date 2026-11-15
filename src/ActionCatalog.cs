@@ -16,14 +16,15 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
 {
     public EffectTarget Target => TargetFor(Kind);
-    public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or
-        EffectKind.Intangible or EffectKind.Thorns or EffectKind.TemporaryThorns or EffectKind.Plating
-        or EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Vigor or EffectKind.Enrage
-        || IsNonStackingDefense(kind)
-        || IsRareBuff(kind) ? EffectTarget.Self : EffectTarget.Player;
+    public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or
+        EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns
+        or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage || IsDefensiveBuff(kind) || IsRareBuff(kind)
+        ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => IsCard(Kind);
     public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
         kind is not (EffectKind.Block or EffectKind.Heal);
+    public static bool IsDefensiveBuff(EffectKind kind) => IsNonStackingDefense(kind) ||
+        kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade or EffectKind.CurlUp;
     public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
@@ -111,12 +112,12 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
-            double preference = actions?.GetValueOrDefault(kind, buff.Common ? 1 : 0) ?? (buff.Common ? 1 : 0);
+            double defaultPreference = buff.Common ? 1 : 0;
+            double preference = actions?.GetValueOrDefault(kind, defaultPreference) ?? defaultPreference;
             double weight = preference * buff.RoomWeight.At(context.Rooms);
             if (weight <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
-            var style = kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade or EffectKind.CurlUp ||
-                ActionEffect.IsNonStackingDefense(kind) ? IntentStyle.Defend : IntentStyle.Buff;
+            var style = ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff;
             if (profile.IntentWeights.GetValueOrDefault(style) <= 0)
                 continue;
             var doses = buff.Doses(profile).Select(amount => (Amount: amount, Value: OpeningValuation.Evaluate(buff, profile, amount)))
@@ -131,7 +132,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         {
             if (settings.Buffs?.ContainsKey(kind) == true)
                 continue;
-            double preference = actions?.GetValueOrDefault(kind, IsCommon(kind) ? 1 : 0) ?? (IsCommon(kind) ? 1 : 0);
+            double defaultPreference = IsCommon(kind) ? 1 : 0;
+            double preference = actions?.GetValueOrDefault(kind, defaultPreference) ?? defaultPreference;
             if (preference <= 0 || (settings.Weights?.GetValueOrDefault(kind)?.At(context.Rooms) ?? 1) <= 0)
                 continue;
             if (context.Act < (settings.MinActs?.GetValueOrDefault(kind) ?? 1) || context.ActiveEffects?.Contains(kind) == true)
@@ -151,22 +153,12 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Heal:
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
                         break;
-                    case EffectKind.Intangible:
-                    case EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Barricade or EffectKind.Slippery:
-                        Add(kind, amount, IntentStyle.Defend);
-                        break;
                     case EffectKind.CurlUp:
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, context.ExpectedDamageAgainstMonster));
                         break;
-                    case EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Artifact:
-                        Add(kind, amount, IntentStyle.Buff);
-                        break;
-                    case EffectKind.Thorns or EffectKind.TemporaryThorns:
-                        Add(kind, amount, IntentStyle.Buff);
-                        break;
-                    case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
-                        or EffectKind.Envenom or EffectKind.PaperCuts when turn > 1 && context.RareBuffRoll < preference:
-                        Add(kind, amount, IntentStyle.Buff);
+                    case var buff when ActionEffect.IsMonsterBuff(buff) &&
+                        (!ActionEffect.IsRareBuff(buff) || turn > 1 && context.RareBuffRoll < preference):
+                        Add(kind, amount, ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff);
                         break;
                     case EffectKind.Weak when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);

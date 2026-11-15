@@ -8,6 +8,8 @@
 
 游戏中打开 **设置 → 常规 → 怪物意图随机 · 设置**。逐怪参数页可以调整基础行动力、攻击段数偏好、攻击花费比例、波动及四类意图倾向。状态估值页分为出招效果、怪物强化和开场状态。随机开场强化与战斗中的强化共用 `buffs` 中的公式、房间权重、层数、叠加和独特规则。模拟会标出状态牌的去向。点击保存后从下一场战斗生效。配置保存于 `user://mod_data/MonsterIntentRandomizer/config.json`。局中重开战斗时，使用当前设置和该局种子重新生成。
 
+双击 `tools/sync_parameters.pyw` 打开参数同步窗口。选好文件和同步范围后，可以比较、从游戏拉取或推送到游戏。覆盖前会保留 `.bak`。也可以用 `python tools/sync_parameters.py diff` 在命令行比较。
+
 ## 哪些怪物会随机
 
 `keepVanilla` 在 [画像文件](data/monster-profiles.json) 顶部，列出完整使用原版行动的怪物。无厌沙虫、知识恶魔、女王等采用 `randomMoves` 招式白名单，通用招式可以随机，召唤和阶段机制等专属招式由原版执行。 [专属招式核对记录](data/mixed-monster-actions.json)

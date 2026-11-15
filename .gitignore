@@ -10,4 +10,5 @@ local-runs/
 dist/
 .scratch/
 data/*.json.bak
+__pycache__/
 

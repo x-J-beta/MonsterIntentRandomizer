@@ -73,8 +73,6 @@ internal sealed class RuleConfiguration
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
-        foreach (var (kind, buff) in buffs)
-            OpeningValues[EffectPolicy.Id(kind)] = buff;
         foreach (var kind in Enum.GetValues<EffectKind>().Where(kind => ActionEffect.TargetFor(kind) == EffectTarget.Self &&
                      Actions.PolicyFor(kind).Unique))
         {
@@ -82,6 +80,8 @@ internal sealed class RuleConfiguration
             if (OpeningValues.TryGetValue(id, out var state))
                 OpeningValues[id] = state with { Unique = true };
         }
+        foreach (var (kind, buff) in buffs)
+            OpeningValues[EffectPolicy.Id(kind)] = buff;
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
         TurnPrior = Read<ActionContext>(settings.GetProperty("simulation").GetProperty("turnContext"));
         var defaults = profiles.GetProperty("defaults");
