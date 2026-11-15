@@ -19,10 +19,12 @@
     "movesWithUnevaluatedNonAttackEffect": 93,
     "movesWithEstimatedNonAttackComponent": 109,
     "movesWithFullReferenceActionValue": 255,
-    "deterministicArchivedCycles": 40
+    "deterministicArchivedCycles": 40,
+    "deterministicCyclesVerifiedLocally": 4
   },
   "sources": {
     "archive": "https://raw.githubusercontent.com/ptrlrd/spire-codex/main/data-beta/v0.111.0/zhs/monsters.json",
+    "targetMonsterExport": "https://raw.githubusercontent.com/ptrlrd/spire-codex/main/data-beta/v0.113.0/zhs/monsters.json",
     "targetOfficialPatch": "https://steamcommunity.com/app/2868840/allnews",
     "targetExtractedDelta": "https://spire-codex.com/changelog/0.113.0#monsters",
     "targetLocalAssembly": "sts2.dll, local public-beta v0.113.0, release commit 16ac0fe3"
@@ -353,8 +355,8 @@
       "innatePowers": null,
       "knownDirectAttackValueRange": {"normal":[9,9],"ascension":[11,11]},
       "knownTotalActionValueRange": {"normal":[9,9],"ascension":[11,11]},
-      "deterministicCycle": null,
-      "stateMachine": {"type":"cycle","initial_move":"INCANTATION","states":[{"id":"INCANTATION_MOVE","type":"move","move_id":"INCANTATION"},{"id":"DARK_STRIKE_MOVE","type":"move","move_id":"DARK_STRIKE"}]},
+      "deterministicCycle": {"openingBeforeLoop":["INCANTATION"],"loop":["DARK_STRIKE"],"attackTurns":1,"turns":1,"attackFrequency":1,"meanDirectValuePerTurn":{"normal":9,"ascension":11},"source":"targetLocalAssembly"},
+      "stateMachine": {"type":"cycle","initial_move":"INCANTATION","states":[{"id":"INCANTATION_MOVE","type":"move","move_id":"INCANTATION","next":"DARK_STRIKE_MOVE"},{"id":"DARK_STRIKE_MOVE","type":"move","move_id":"DARK_STRIKE","next":"DARK_STRIKE_MOVE"}]},
       "moves": [
         {"id":"INCANTATION","name":"念咒","intents":["Buff"],"kind":"non_attack","directAttackValue":{"normal":0,"ascension":0},"nonAttackEffects":[{"kind":"power","id":"RITUAL","target":"self","amount":2,"value":null,"contextRequired":true}],"nonAttackValue":null,"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":null,"ascension":null}},
         {"id":"DARK_STRIKE","name":"黑暗打击","intents":["Attack"],"kind":"direct_attack","damage":{"normalPerHit":9,"ascensionPerHit":11,"hits":1,"ascensionHits":1,"hitCountInferred":true},"directAttackValue":{"normal":9,"ascension":11},"nonAttackEffects":[],"nonAttackValue":[0,0],"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":[9,9],"ascension":[11,11]}}
@@ -475,10 +477,10 @@
       "innatePowers": null,
       "knownDirectAttackValueRange": {"normal":[1,1],"ascension":[3,3]},
       "knownTotalActionValueRange": {"normal":[1,1],"ascension":[3,3]},
-      "deterministicCycle": null,
-      "stateMachine": {"type":"cycle","initial_move":"INCANTATION","states":[{"id":"INCANTATION_MOVE","type":"move","move_id":"INCANTATION"},{"id":"DARK_STRIKE_MOVE","type":"move","move_id":"DARK_STRIKE"}]},
+      "deterministicCycle": {"openingBeforeLoop":["INCANTATION"],"loop":["DARK_STRIKE"],"attackTurns":1,"turns":1,"attackFrequency":1,"meanDirectValuePerTurn":{"normal":1,"ascension":3},"source":"targetLocalAssembly"},
+      "stateMachine": {"type":"cycle","initial_move":"INCANTATION","states":[{"id":"INCANTATION_MOVE","type":"move","move_id":"INCANTATION","next":"DARK_STRIKE_MOVE"},{"id":"DARK_STRIKE_MOVE","type":"move","move_id":"DARK_STRIKE","next":"DARK_STRIKE_MOVE"}]},
       "moves": [
-        {"id":"INCANTATION","name":"念咒","intents":["Buff"],"kind":"non_attack","directAttackValue":{"normal":0,"ascension":0},"nonAttackEffects":[{"kind":"power","id":"RITUAL","target":"self","amount":5,"value":null,"contextRequired":true}],"nonAttackValue":null,"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":null,"ascension":null}},
+        {"id":"INCANTATION","name":"念咒","intents":["Buff"],"kind":"non_attack","directAttackValue":{"normal":0,"ascension":0},"nonAttackEffects":[{"kind":"power","id":"RITUAL","target":"self","amount":5,"ascensionAmount":6,"value":null,"contextRequired":true}],"nonAttackValue":null,"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":null,"ascension":null}},
         {"id":"DARK_STRIKE","name":"黑暗打击","intents":["Attack"],"kind":"direct_attack","damage":{"normalPerHit":1,"ascensionPerHit":3,"hits":1,"ascensionHits":1,"hitCountInferred":true},"directAttackValue":{"normal":1,"ascension":3},"nonAttackEffects":[],"nonAttackValue":[0,0],"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":[1,1],"ascension":[3,3]}}
       ]
     },
@@ -567,8 +569,8 @@
       "innatePowers": null,
       "knownDirectAttackValueRange": {"normal":[12,12],"ascension":[15,15]},
       "knownTotalActionValueRange": {"normal":[12,12],"ascension":[15,15]},
-      "deterministicCycle": null,
-      "stateMachine": {"type":"cycle","initial_move":"FORBIDDEN_INCANTATION","states":[{"id":"FORBIDDEN_INCANTATION_MOVE","type":"move","move_id":"FORBIDDEN_INCANTATION"},{"id":"SAVAGE_MOVE","type":"move","move_id":"SAVAGE"}]},
+      "deterministicCycle": {"openingBeforeLoop":["FORBIDDEN_INCANTATION"],"loop":["SAVAGE"],"attackTurns":1,"turns":1,"attackFrequency":1,"meanDirectValuePerTurn":{"normal":12,"ascension":15},"source":"targetLocalAssembly"},
+      "stateMachine": {"type":"cycle","initial_move":"FORBIDDEN_INCANTATION","states":[{"id":"FORBIDDEN_INCANTATION_MOVE","type":"move","move_id":"FORBIDDEN_INCANTATION","next":"SAVAGE_MOVE"},{"id":"SAVAGE_MOVE","type":"move","move_id":"SAVAGE","next":"SAVAGE_MOVE"}]},
       "moves": [
         {"id":"FORBIDDEN_INCANTATION","name":"禁忌唱诵","intents":["Buff"],"kind":"non_attack","directAttackValue":{"normal":0,"ascension":0},"nonAttackEffects":[{"kind":"power","id":"RITUAL","target":"self","amount":9,"value":null,"contextRequired":true}],"nonAttackValue":null,"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":null,"ascension":null}},
         {"id":"SAVAGE","name":"猛烈攻击","intents":["Attack"],"kind":"direct_attack","damage":{"normalPerHit":12,"ascensionPerHit":15,"hits":1,"ascensionHits":1,"hitCountInferred":true},"directAttackValue":{"normal":12,"ascension":15},"nonAttackEffects":[],"nonAttackValue":[0,0],"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":[12,12],"ascension":[15,15]}}
@@ -1403,11 +1405,11 @@
       "type": "Normal",
       "hp": {"normal":[56,56],"ascension":[58,58]},
       "encounters": [{"encounter_id":"SEWER_CLAM_NORMAL","encounter_name":"下水道蚌","room_type":"Monster","act":"Act 1 - Underdocks","is_weak":false}],
-      "innatePowers": null,
+      "innatePowers": [{"power_id":"PLATING","amount":8,"amount_ascension":9}],
       "knownDirectAttackValueRange": {"normal":[10,10],"ascension":[11,11]},
       "knownTotalActionValueRange": {"normal":[6,14],"ascension":[6,14]},
-      "deterministicCycle": null,
-      "stateMachine": {"type":"cycle","initial_move":null,"states":[{"id":"PRESSURIZE_MOVE","type":"move","move_id":"PRESSURIZE"},{"id":"JET_MOVE","type":"move","move_id":"JET"}]},
+      "deterministicCycle": {"openingBeforeLoop":[],"loop":["JET","PRESSURIZE"],"attackTurns":1,"turns":2,"attackFrequency":0.5,"meanDirectValuePerTurn":{"normal":5,"ascension":5.5},"source":"targetLocalAssembly"},
+      "stateMachine": {"type":"cycle","initial_move":"JET","states":[{"id":"PRESSURIZE_MOVE","type":"move","move_id":"PRESSURIZE","next":"JET_MOVE"},{"id":"JET_MOVE","type":"move","move_id":"JET","next":"PRESSURIZE_MOVE"}]},
       "moves": [
         {"id":"PRESSURIZE","name":"增压","intents":["Buff"],"kind":"non_attack","directAttackValue":{"normal":0,"ascension":0},"nonAttackEffects":[{"kind":"power","id":"STRENGTH","target":"self","amount":4,"value":[6,14]}],"nonAttackValue":[6,14],"knownNonAttackSubtotal":[6,14],"totalActionValue":{"normal":[6,14],"ascension":[6,14]}},
         {"id":"JET","name":"喷射","intents":["Attack"],"kind":"direct_attack","damage":{"normalPerHit":10,"ascensionPerHit":11,"hits":1,"ascensionHits":1,"hitCountInferred":true},"directAttackValue":{"normal":10,"ascension":11},"nonAttackEffects":[],"nonAttackValue":[0,0],"knownNonAttackSubtotal":[0,0],"totalActionValue":{"normal":[10,10],"ascension":[11,11]}}

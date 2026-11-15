@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 4;
+    private const int SettingsRevision = 5;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -78,9 +78,22 @@ internal static class ModSettings
                     .Contains("playerTurnValue", StringComparer.OrdinalIgnoreCase)))
                 savedValuations[id] = defaultValuations[id]!.DeepClone();
         }
+        // A formula present in a save owns its term keys, including replacements made in the editor.
+        foreach (var (id, formula) in defaultValuations.AsObject())
+            if (!savedValuations.ContainsKey(id))
+                savedValuations[id] = formula!.DeepClone();
+        defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
+
+        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        ApplyActionCalibration(profiles);
         if (stored.Revision >= 2)
-            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
+            return stored with
+            {
+                Settings = JsonSerializer.SerializeToElement(settings),
+                Profiles = JsonSerializer.SerializeToElement(profiles),
+                Revision = SettingsRevision
+            };
 
         var opening = settings["opening"]!;
         if (stored.Revision == 0 && opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
@@ -99,7 +112,6 @@ internal static class ModSettings
                 state.AsObject().Remove("amounts");
         }
 
-        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!;
         foreach (var (id, defaultProfile) in defaultProfiles["monsters"]!.AsObject())
         {
@@ -154,6 +166,36 @@ internal static class ModSettings
             if (monsters[id] is JsonObject monster && JsonNode.DeepEquals(monster[key], JsonNode.Parse(previous)))
                 monster[key] = defaultProfiles["monsters"]![id]![key]!.DeepClone();
         }
+    }
+
+    private static void ApplyActionCalibration(JsonNode profiles)
+    {
+        var data = ReadResource("action-value-calibration.json").GetProperty("monsters");
+        foreach (var entry in data.EnumerateObject())
+        {
+            if (profiles["monsters"]?[entry.Name] is not JsonObject profile)
+                continue;
+
+            var previous = entry.Value.GetProperty("previous");
+            var proposed = entry.Value.GetProperty("proposed");
+            var previousBase = previous[0].GetDouble();
+            var previousHigh = OptionalNumber(previous[1]);
+            var nextBase = proposed[0].GetDouble();
+            var nextHigh = OptionalNumber(proposed[1]);
+            bool usesDefaultBase = profile["actionValue"]?.GetValue<double>() == previousBase;
+            if (usesDefaultBase && previousBase != nextBase)
+                profile["actionValue"] = nextBase;
+            if (previousHigh != nextHigh && profile["deadlyEnemies"]?.GetValue<double>() == previousHigh &&
+                (previousHigh.HasValue || usesDefaultBase))
+            {
+                if (nextHigh is double value)
+                    profile["deadlyEnemies"] = value;
+                else
+                    profile.Remove("deadlyEnemies");
+            }
+        }
+
+        static double? OptionalNumber(JsonElement number) => number.ValueKind == JsonValueKind.Null ? null : number.GetDouble();
     }
 
     private static readonly Dictionary<string, double> OldOpeningCoefficients = new()

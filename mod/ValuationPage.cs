@@ -6,34 +6,37 @@ namespace MonsterIntentRandomizer;
 
 internal static class ValuationPage
 {
-    internal static Action Create(TabContainer tabs, TextEdit settings, Label message)
+    internal static Action Create(VBoxContainer page, TextEdit settings, Label message)
     {
+        var navigation = new HBoxContainer { Name = "估值分类" };
+        page.AddChild(navigation);
         var actions = AddScroll("出招效果");
         var opening = AddScroll("开场状态");
+        var group = new ButtonGroup();
+        AddCategory(actions, true);
+        AddCategory(opening, false);
         return () =>
         {
-            Clear(actions);
-            Clear(opening);
+            var actionList = actions.GetChild<VBoxContainer>(0);
+            var openingList = opening.GetChild<VBoxContainer>(0);
+            Clear(actionList);
+            Clear(openingList);
             try
             {
                 var document = JsonNode.Parse(settings.Text)!;
-                actions.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
+                actionList.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
                 foreach (var (id, formula) in document["actions"]!["valuation"]!.AsObject())
                 {
                     string name = Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
                         ? IntentDetails.Names(kind).Chinese : id;
-                    Heading(actions, name, id);
+                    Heading(actionList, name, id);
                     foreach (var (term, value) in formula!.AsObject())
-                    {
-                        var input = Coefficient(actions, FactorLabel(term), value!.GetValue<double>());
-                        input.ValueChanged += coefficient =>
-                            Edit(root => root["actions"]!["valuation"]![id]![term] = Math.Round(coefficient, 4));
-                    }
+                        AddTerm(actionList, id, term, value!.GetValue<double>());
                 }
-                opening.AddChild(new Label { Text = "状态值 = 层数绝对值 × 计价基数 × 系数" });
+                openingList.AddChild(new Label { Text = "状态值 = 层数绝对值 × 计价基数 × 系数" });
                 foreach (var (id, state) in document["opening"]!["states"]!.AsObject())
                 {
-                    Heading(opening, OpeningName(id), id);
+                    Heading(openingList, OpeningName(id), id);
                     var basis = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
                     var bases = Enum.GetValues<OpeningBasis>();
                     foreach (var choice in bases)
@@ -42,8 +45,8 @@ internal static class ValuationPage
                     basis.Select(Array.IndexOf(bases, current));
                     basis.ItemSelected += selected => Edit(root =>
                         root["opening"]!["states"]![id]!["basis"] = bases[(int)selected].ToString());
-                    opening.AddChild(basis);
-                    var input = Coefficient(opening, "每层系数", state["turns"]!.GetValue<double>());
+                    openingList.AddChild(basis);
+                    var input = Coefficient(openingList, "每层系数", state["turns"]!.GetValue<double>());
                     input.ValueChanged += coefficient =>
                         Edit(root => root["opening"]!["states"]![id]!["turns"] = Math.Round(coefficient, 4));
                 }
@@ -54,17 +57,94 @@ internal static class ValuationPage
             }
         };
 
-        VBoxContainer AddScroll(string name)
+        ScrollContainer AddScroll(string name)
         {
-            var scroll = new ScrollContainer { Name = name, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            var scroll = new ScrollContainer
+            {
+                Name = name, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+                SizeFlagsVertical = Control.SizeFlags.ExpandFill
+            };
             var content = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             content.AddThemeConstantOverride("separation", 6);
-            tabs.AddChild(scroll);
+            page.AddChild(scroll);
             scroll.AddChild(content);
-            return content;
+            return scroll;
         }
 
-        void Edit(Action<JsonNode> write)
+        void AddCategory(ScrollContainer scroll, bool selected)
+        {
+            var button = new Button
+            {
+                Name = scroll.Name, Text = scroll.Name.ToString(), ButtonGroup = group,
+                ToggleMode = true, ButtonPressed = selected
+            };
+            navigation.AddChild(button);
+            scroll.Visible = selected;
+            button.Pressed += () =>
+            {
+                actions.Visible = scroll == actions;
+                opening.Visible = scroll == opening;
+            };
+        }
+
+        void AddTerm(VBoxContainer content, string id, string term, double value)
+        {
+            var input = Coefficient(content, "系数", value);
+            var row = input.GetParent<HBoxContainer>();
+            var selector = new MenuButton
+            {
+                Text = FactorLabel(term), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                TooltipText = "选择乘数并应用。未选乘数时使用固定值。"
+            };
+            row.AddChild(selector);
+            row.MoveChild(selector, 0);
+
+            var popup = selector.GetPopup();
+            var factors = ActionValuation.FactorNames;
+            for (int i = 0; i < factors.Count; i++)
+                popup.AddCheckItem(FactorLabel(factors[i]), i);
+            popup.AddSeparator();
+            popup.AddItem("应用因子", factors.Count);
+            popup.HideOnCheckableItemSelection = false;
+            selector.AboutToPopup += () =>
+            {
+                var current = term.Split('*', StringSplitOptions.TrimEntries);
+                for (int i = 0; i < factors.Count; i++)
+                    popup.SetItemChecked(i, current.Contains(factors[i], StringComparer.OrdinalIgnoreCase));
+            };
+            popup.IdPressed += selected =>
+            {
+                if (selected < factors.Count)
+                {
+                    int index = (int)selected;
+                    popup.SetItemChecked(index, !popup.IsItemChecked(index));
+                    return;
+                }
+
+                string next = string.Join("*", factors.Where((_, i) => popup.IsItemChecked(i)));
+                next = next.Length == 0 ? "fixed" : next;
+                if (SameFactors(term, next))
+                    return;
+
+                if (Edit(root =>
+                {
+                    var formula = root["actions"]!["valuation"]![id]!.AsObject();
+                    if (formula.Any(existing => SameFactors(existing.Key, next)))
+                        throw new ArgumentException($"此效果已有「{FactorLabel(next)}」这一项。");
+                    var coefficient = formula[term]!.DeepClone();
+                    formula.Remove(term);
+                    formula.Add(next, coefficient);
+                }))
+                {
+                    term = next;
+                    selector.Text = FactorLabel(term);
+                }
+            };
+            input.ValueChanged += coefficient => Edit(root =>
+                root["actions"]!["valuation"]![id]![term] = Math.Round(coefficient, 4));
+        }
+
+        bool Edit(Action<JsonNode> write)
         {
             try
             {
@@ -72,13 +152,20 @@ internal static class ValuationPage
                 write(document);
                 settings.Text = document.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
                 message.Text = "";
+                return true;
             }
             catch (Exception error)
             {
                 message.Text = $"无法同步估值。{error.Message}";
+                return false;
             }
         }
     }
+
+    private static bool SameFactors(string left, string right) => left.Split('*', StringSplitOptions.TrimEntries)
+        .Order(StringComparer.OrdinalIgnoreCase).SequenceEqual(
+            right.Split('*', StringSplitOptions.TrimEntries).Order(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
 
     private static void Clear(VBoxContainer content)
     {

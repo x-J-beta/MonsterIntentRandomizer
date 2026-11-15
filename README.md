@@ -6,7 +6,7 @@
 
 构建 Mod 项目时，自动把 DLL 和清单安装到游戏目录的 `mods\MonsterIntentRandomizer`。重启游戏并在原版的模组界面启用。用预构建包时，可将 [dist/MonsterIntentRandomizer](dist/MonsterIntentRandomizer) 文件夹放入游戏的 `mods`。
 
-游戏中打开 **设置 → 常规 → 怪物意图随机 · 设置**。常用参数可以直接调，逐怪参数页可以调整基础行动力、攻击段数、预期寿命、波动及四类意图倾向。全局参数页和画像 JSON 页可以直接改估值公式、开场候选、状态牌位置等。点击保存后从下一场战斗生效。配置保存于 `user://mod_data/MonsterIntentRandomizer/config.json`。局中重开战斗时，使用当前设置和该局种子重新生成。
+游戏中打开 **设置 → 常规 → 怪物意图随机 · 设置**。逐怪参数页可以调整基础行动力、攻击段数、预期寿命、波动及四类意图倾向。状态估值页可在出招效果和开场状态之间切换。点击出招公式项的因子名称，选择乘数并应用。开场状态可通过下拉框更换计价基数。配置 JSON 和画像 JSON 页可编辑开场候选、状态牌位置等高级选项。点击保存后从下一场战斗生效。配置保存于 `user://mod_data/MonsterIntentRandomizer/config.json`。局中重开战斗时，使用当前设置和该局种子重新生成。
 
 ## 哪些怪物会随机
 

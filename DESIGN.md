@@ -51,10 +51,11 @@
 | 文件 | 内容 |
 | --- | --- |
 | [monster-action-baselines.json](data/monster-action-baselines.json) | 逐怪原版招式、可折算的攻击和非攻击分量、可恢复的循环频次、版本和数据缺口 |
+| [action-value-calibration.json](data/action-value-calibration.json) | 按怪物记录核算法、旧基准、新基准和可还原的攻击序列 |
 | [non-attack-actions.json](data/non-attack-actions.json) | 非攻击行动模板、使用条件、估值与原版校准示例 |
 | [initial-states.json](data/initial-states.json) | 开场状态的设计依据、结算说明和排除理由，运行参数在 `settings.json` |
 
-配置覆盖原版档案的 117 个条目。38 只用可还原的常规循环推导，66 只按已知可用招式列表计数，蟾蜍蝌蚪和飞蝇菌子保留手调值，11 个事件、陪伴单位或特殊脚本条目默认保留原行动。列表计数用于起始偏好，不能当作实际出招概率。推导时按原版标签归到四类，对带辅助效果的攻击按其附带倾向归类。虚弱、易伤、伤口等可映射到原型动作，其他常见减益或状态牌用虚弱或晕眩暂近似。召唤、复活、逃跑和 Dread 开场等专属招式不用于生成通用模板。缺少有效原版面板的行动价值或生命使用样例回退值，所有估值待逐怪校准。 [原版基线](data/monster-action-baselines.json)
+配置覆盖原版档案的 117 个条目。起始偏好按原版意图标签归为四类，混合攻击按附带效果归类。缺少循环频率时，按已知招式数量估计起始偏好。召唤、复活、逃跑和 Dread 开场等专属招式由原版机制处理。 [原版基线](data/monster-action-baselines.json)
 
 ## 每种怪物的参数
 
@@ -77,6 +78,8 @@
 ## 行动力如何标定
 
 把 1 点预告的单体攻击伤害定义为 1 点行动价值。这个单位用来比较招式，玩家的实际掉血留给战斗结算。普通攻击、大招和准备回合可以有不同额度。用原版对应剧情阶段、进阶和遭遇下的开场与后续若干回合标定怪物，取正常波次的平均压力和高值边界，机械上无法换出的招式作为固定动作处理。
+
+基础行动力按攻击招估算，计入每段伤害和可估的附带效果。已知循环按招式出现次数取均值。固定循环中的力量和仪式按之后的攻击计入，成长观察窗口取预期寿命的前 5 回合。下水道蚌使用社区该遭遇约 5 回合的平均长度。缺少可靠循环时，按已知攻击招等权近似。可运行 `node tools/calibrate-action-values.mjs` 重算。已下载怪物表时可传入 `--reference <文件>`，加 `--apply` 将结果写入默认画像。 [Spire Codex v0.113.0 怪物表](https://raw.githubusercontent.com/ptrlrd/spire-codex/main/data-beta/v0.113.0/zhs/monsters.json) [下水道蚌遭遇统计](https://spire-codex.com/monsters/sewer_clam#encounters)
 
 用三个独立限制来约束随机结果。
 

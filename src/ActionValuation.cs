@@ -9,6 +9,8 @@ public sealed class ActionValuation
 {
     private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers, PlayerTurnValue }
 
+    internal static IReadOnlyList<string> FactorNames { get; } = Enum.GetNames<Factor>();
+
     private sealed record Term(double Coefficient, Factor[] Factors);
 
     private readonly Dictionary<EffectKind, Term[]> formulas;

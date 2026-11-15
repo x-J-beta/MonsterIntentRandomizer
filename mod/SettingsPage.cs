@@ -77,7 +77,7 @@ internal static class SettingsPage
         var monsters = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         monsters.AddThemeConstantOverride("separation", 8);
         monsterScroll.AddChild(monsters);
-        var valuations = new TabContainer { Name = "状态估值" };
+        var valuations = new VBoxContainer { Name = "状态估值" };
         tabs.AddChild(valuations);
         var simulation = new VBoxContainer { Name = "模拟" };
         simulation.AddThemeConstantOverride("separation", 8);
