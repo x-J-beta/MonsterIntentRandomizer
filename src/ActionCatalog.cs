@@ -124,7 +124,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
-            var (weight, bonus) = Weights(kind, buff.Common, buff.RoomWeight);
+            var (weight, bonus) = Weights(kind, buff.RoomWeight);
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             var style = ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff;
@@ -156,7 +156,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         {
             if (ActionEffect.IsMonsterBuff(kind))
                 continue;
-            var (weight, bonus) = Weights(kind, IsCommon(kind), settings.Weights?.GetValueOrDefault(kind));
+            var (weight, bonus) = Weights(kind, settings.Weights?.GetValueOrDefault(kind));
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             if (ActionEffect.IsRareDebuff(kind) && !context.SpecialDebuffAvailable)
@@ -214,18 +214,10 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     extra.Weight / total * weight, Effects: [extra.Effect], SharedWeightBonus: extra.Weight / total * bonus);
         }
 
-        (double Base, double Bonus) Weights(EffectKind kind, bool common, RoomWeight? roomWeight)
+        (double Base, double Bonus) Weights(EffectKind kind, RoomWeight? roomWeight)
         {
-            double? configured = profile.EffectWeights != null && profile.EffectWeights.TryGetValue(kind, out double preference)
-                ? preference : null;
-            if (configured is <= 0)
-                return (0, 0);
-
-            double baseWeight = configured ?? (common ? 1 : 0);
-            if (baseWeight > 0)
-                baseWeight += (1 - baseWeight) * settings.ChaosProgress;
             double roomFactor = roomWeight?.At(context.Rooms, settings.ChaosProgress) ?? 1;
-            return (baseWeight * roomFactor, (profile.Favorites?.GetValueOrDefault(kind) ?? 0) * roomFactor);
+            return (roomFactor, (profile.Favorites?.GetValueOrDefault(kind) ?? 0) * roomFactor);
         }
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)
@@ -281,9 +273,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         double cost = settings.Valuation.Evaluate(EffectKind.Attack, profile, amount, hits: hits);
         return cost > 0 ? attack with { Value = cost } : null;
     }
-
-    private static bool IsCommon(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or EffectKind.Weak or
-        EffectKind.Vulnerable or EffectKind.Frail || ActionEffect.IsCard(kind);
 
     private static string EffectName(ActionEffect effect) =>
         $"{effect.Kind} {effect.Amount}" + (effect.GeneratedCard is { } card ? $" [{card}]" : "") + (effect.SplitDestinations is { } split

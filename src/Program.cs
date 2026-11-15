@@ -35,10 +35,13 @@ var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
 var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
     throw new ArgumentException($"Unknown action value tier: {ascension}.");
-var profile = rules.PoolSettings.Adjust(configured.Profile, ascension == "deadlyEnemies");
-if (!configured.Enabled)
+string? phaseId = args.Length > 6 ? args[6] : configured.DefaultPhase;
+var phase = phaseId == null ? null : configured.Phases?.GetValueOrDefault(phaseId) ??
+    throw new ArgumentException($"Unknown phase for {monsterId}: {phaseId}.");
+var profile = rules.PoolSettings.Adjust(phase?.Apply(configured.Profile) ?? configured.Profile, ascension == "deadlyEnemies");
+if (!configured.Enabled || rules.KeepVanilla.Contains(monsterId))
 {
-    Console.WriteLine($"{monsterId}: original actions retained (enabled is false).");
+    Console.WriteLine($"{monsterId}: original actions retained.");
     return;
 }
 
@@ -60,6 +63,8 @@ profile = profile with
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
+if (phase != null)
+    Console.WriteLine($"phase: {phase.Name}; action value: {profile.ActionValue:F2}");
 Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
 OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, MonsterProfile owner)
 {
@@ -105,7 +110,7 @@ Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpening, seed,
     sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
-    rooms: rooms, enemyCount: enemies.Length))
+    rooms: rooms, enemyCount: enemies.Length, phase: phase))
 {
     var action = turn.Plan;
     string moveName = action.Action?.Id ?? (turn.Imbalanced ? "imbalanced" : "skipped");

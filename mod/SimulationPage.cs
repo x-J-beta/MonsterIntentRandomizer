@@ -15,6 +15,8 @@ internal static class SimulationPage
         panel.AddChild(choices);
         choices.AddChild(monster);
         choices.AddChild(highAscension);
+        var phase = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false };
+        panel.AddChild(phase);
 
         var seed = SettingsPage.NumberRow(panel, "随机种子", int.MinValue, int.MaxValue, 1);
         seed.AllowGreater = false;
@@ -40,6 +42,7 @@ internal static class SimulationPage
         panel.AddChild(output);
 
         string[] ids = [];
+        string[] phases = [];
         monster.ItemSelected += _ =>
         {
             try
@@ -64,7 +67,7 @@ internal static class SimulationPage
                 string id = ids[monster.Selected];
                 output.Text = Run(rules, id, highAscension.ButtonPressed,
                     (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed, allyAlive.ButtonPressed,
-                    (int)rooms.Value, hp.Value, allyHp.Value);
+                    (int)rooms.Value, hp.Value, allyHp.Value, phase.Visible && phase.Selected >= 0 ? phases[phase.Selected] : null);
             }
             catch (Exception error)
             {
@@ -116,6 +119,17 @@ internal static class SimulationPage
         {
             var roster = profilesDocument.GetProperty("monsters");
             var entry = roster.GetProperty(ids[monster.Selected]);
+            string? previousPhase = phase.Selected >= 0 ? phases[phase.Selected] : null;
+            phase.Clear();
+            phases = entry.TryGetProperty("phases", out var configuredPhases)
+                ? configuredPhases.EnumerateObject().Select(item => item.Name).ToArray() : [];
+            phase.Visible = phases.Length > 0;
+            if (phase.Visible)
+            {
+                foreach (string id in phases)
+                    phase.AddItem(configuredPhases.GetProperty(id).GetProperty("name").GetString() ?? id);
+                phase.Select(Math.Max(0, Array.IndexOf(phases, previousPhase)));
+            }
             string? power = entry.TryGetProperty("randomizeWhenPower", out var condition) ? condition.GetString() : null;
             allowPhase.Visible = !string.IsNullOrWhiteSpace(power);
             allowPhase.Text = $"假定拥有 {power}";
@@ -131,12 +145,13 @@ internal static class SimulationPage
     }
 
     private static string Run(RuleConfiguration rules, string id, bool highAscension, int seed, int rounds,
-        bool allowPhase, bool allyAlive, int rooms, double hp, double allyHp)
+        bool allowPhase, bool allyAlive, int rooms, double hp, double allyHp, string? phaseId)
     {
         var monster = rules.Monsters[id];
         if (!monster.Enabled || rules.KeepVanilla.Contains(id))
             return "这个画像保留原版行动。";
-        var profile = rules.PoolSettings.Adjust(monster.Profile, highAscension) with
+        var phase = phaseId == null ? null : monster.Phases?.GetValueOrDefault(phaseId);
+        var profile = rules.PoolSettings.Adjust(phase?.Apply(monster.Profile) ?? monster.Profile, highAscension) with
         {
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
             PlayerActionValue = rules.PlayerAction.At(rooms),
@@ -152,16 +167,18 @@ internal static class SimulationPage
         bool phaseAllowsRandomization = !protectedByAlly &&
             (string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase);
         var turns = ActionSimulation.Trace(rules, id, profile, opening, seed, rounds,
-            phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
+            phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1, phase: phase);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();
         result.AppendLine($"{id}　　已经历 {rooms} 个房间　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
+        if (phase != null)
+            result.AppendLine(phase.Name);
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
         if (protectedByAlly)
             result.AppendLine("该同伴仍然存活，当前阶段保留原版行动。");
-        else if (SimulationMoveSequence.For(id) != null)
+        else if (SimulationMoveSequence.For(id, phase) != null)
             result.AppendLine("按常规战斗的原版招式顺序模拟，每回合标明原招和替换结果。");
         else if (monster.RandomMoves != null)
             result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下仅模拟可随机回合，未排入保留的原版招式。");

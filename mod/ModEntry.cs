@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 24;
+    private const int SettingsRevision = 25;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -79,7 +79,8 @@ internal static class ModSettings
             foreach (var kind in Enum.GetValues<EffectKind>().Where(ActionEffect.UsesThreshold))
                 if (settings["buffs"]?[kind.ToString()] is JsonObject rule)
                     rule["stackable"] = true;
-        UpgradeGeneratedCards(settings["buffs"] as JsonObject, defaultSettings["buffs"]!);
+        if (stored.Revision < 24)
+            UpgradeGeneratedCards(settings["buffs"] as JsonObject, defaultSettings["buffs"]!);
         if (stored.Revision < 23 && settings["simulation"] is JsonObject simulation)
         {
             foreach (string key in new[] { "fallback", "targetPriority", "targetBlock", "targetFirstPlayerWindow",
@@ -91,10 +92,22 @@ internal static class ModSettings
                     foreach (string key in new[] { "maxHp", "block", "priority", "firstPlayerWindow", "targetable" })
                         ally.Remove(key);
         }
-        if (stored.Revision >= 20)
-            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
-
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
+        settings["opening"]!["states"]!["NEUROSURGE"] ??=
+            defaultSettings["opening"]!["states"]!["NEUROSURGE"]!.DeepClone();
+        UpgradeMonsterCoverage(profiles, defaultProfiles);
+        UpgradeNaturalStatusWeights(settings, defaultSettings);
+        foreach (var (_, entry) in profiles["monsters"]!.AsObject())
+        {
+            (entry as JsonObject)?.Remove("effects");
+            if (entry?["phases"] is JsonObject phases)
+                foreach (var (_, phase) in phases)
+                    (phase as JsonObject)?.Remove("effects");
+        }
+        if (stored.Revision >= 20)
+            return Updated();
+
         if (profiles["keepVanilla"] is JsonArray keepVanilla)
         {
             foreach (var entry in keepVanilla.Where(entry => entry?.GetValue<string>() is
@@ -111,7 +124,6 @@ internal static class ModSettings
         pools["highAscensionActionValueMultiplier"] ??= defaultSettings["pools"]!["highAscensionActionValueMultiplier"]!.DeepClone();
         foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
             RemoveSteamAction(actions[section]);
-        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         var monsters = profiles["monsters"]!.AsObject();
         (profiles["defaults"] as JsonObject)?.Remove("attackSpend");
         foreach (var (id, profile) in monsters)
@@ -119,7 +131,6 @@ internal static class ModSettings
             if (profile is not JsonObject entry)
                 continue;
             entry.Remove("attackSpend");
-            RemoveSteamAction(entry["effects"]);
             RemoveSteamAction(entry["favorites"]);
             if (defaultProfiles[id]?["favorites"] is { } favorites)
                 entry["favorites"] ??= favorites.DeepClone();
@@ -206,7 +217,6 @@ internal static class ModSettings
         {
             (profile as JsonObject)?.Remove("hitWeights");
             (profile as JsonObject)?.Remove("deadlyEnemies");
-            (profile?["effects"] as JsonObject)?.Remove("CurlUp");
             if (profile?["openingStates"] is JsonArray pool)
                 foreach (var entry in pool.Where(entry => entry?.GetValue<string>() == "CURL_UP").ToArray())
                     pool.Remove(entry);
@@ -218,6 +228,92 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void UpgradeMonsterCoverage(JsonNode profiles, JsonObject defaults)
+    {
+        var added = new HashSet<string>(["PHROG_PARASITE", "WRIGGLER", "DECIMILLIPEDE_SEGMENT",
+            "DECIMILLIPEDE_SEGMENT_FRONT", "DECIMILLIPEDE_SEGMENT_MIDDLE", "DECIMILLIPEDE_SEGMENT_BACK",
+            "EYE_WITH_TEETH", "PARAFRIGHT", "TOUGH_EGG", "TWO_TAILED_RAT"]);
+        if (profiles["keepVanilla"] is JsonArray excluded)
+            foreach (var entry in excluded.Where(entry => entry != null && added.Contains(entry.GetValue<string>())).ToArray())
+                excluded.Remove(entry);
+
+        var monsters = profiles["monsters"]!.AsObject();
+        if (monsters["CEREMONIAL_BEAST"] is JsonObject beast)
+        {
+            var definition = defaults["CEREMONIAL_BEAST"]!;
+            beast["phases"] ??= definition["phases"]!.DeepClone();
+            if (beast["randomMoves"] == null ||
+                JsonNode.DeepEquals(beast["randomMoves"], new JsonArray("STOMP_MOVE", "CRUSH_MOVE")))
+                beast["randomMoves"] = definition["randomMoves"]!.DeepClone();
+        }
+        foreach (string id in added)
+        {
+            var definition = defaults[id]!.AsObject();
+            if (monsters[id] is not JsonObject profile)
+            {
+                monsters[id] = definition.DeepClone();
+                continue;
+            }
+            foreach (var (key, value) in definition)
+                profile[key] ??= value?.DeepClone();
+            bool millipede = id.StartsWith("DECIMILLIPEDE_", StringComparison.Ordinal);
+            if (millipede && profile["attackFrequency"]?.GetValue<double>() == 1)
+                profile["attackFrequency"] = definition["attackFrequency"]!.DeepClone();
+            if (millipede && MatchesWeights(profile, 25, 25, 25, 25) ||
+                id == "PHROG_PARASITE" && MatchesWeights(profile, 50, 0, 0, 50))
+                profile["preferences"] = definition["preferences"]!.DeepClone();
+        }
+        UpgradeSummoner("LIVING_FOG", new JsonArray("SUPER_GAS_BLAST_MOVE"), 100, 0, removeFixedOpening: true);
+        UpgradeSummoner("OVICOPTER", new JsonArray("SMASH_MOVE", "TENDERIZER_MOVE"), 74.97, 25.03);
+
+        void UpgradeSummoner(string id, JsonArray oldMoves, double attack, double debuff, bool removeFixedOpening = false)
+        {
+            if (monsters[id] is not JsonObject profile ||
+                profile["randomMoves"] != null && !JsonNode.DeepEquals(profile["randomMoves"], oldMoves))
+                return;
+            var definition = defaults[id]!;
+            profile["randomMoves"] = definition["randomMoves"]!.DeepClone();
+            profile["favorites"] ??= definition["favorites"]!.DeepClone();
+            if (removeFixedOpening)
+                profile.Remove("fixedOpening");
+            if (MatchesWeights(profile, attack, 0, 0, debuff))
+                profile["preferences"] = definition["preferences"]!.DeepClone();
+            if (profile["attackFrequency"]?.GetValue<double>() == 1)
+                profile["attackFrequency"] = definition["attackFrequency"]!.DeepClone();
+        }
+
+        static bool MatchesWeights(JsonObject profile, double attack, double buff, double defend, double debuff) =>
+            profile["preferences"] is JsonObject weights &&
+            weights["attack"]?.GetValue<double>() == attack && weights["buff"]?.GetValue<double>() == buff &&
+            weights["defend"]?.GetValue<double>() == defend && weights["playerDebuff"]?.GetValue<double>() == debuff;
+    }
+
+    private static void UpgradeNaturalStatusWeights(JsonNode settings, JsonNode defaults)
+    {
+        var weights = (settings["actions"]!["weights"] ??= new JsonObject()).AsObject();
+        foreach (string id in new[] { "Tangled", "Poison", "Ringing", "Smoggy", "Tender", "Shrink",
+            "StrengthDown", "DexterityDown", "Soulbind", "DrawDown", "EnergyDown" })
+        {
+            var existing = weights[id];
+            double oldBase = id == "Soulbind" ? 0 : 0.2;
+            double oldRoom = id == "Soulbind" ? 0.002 : 0;
+            if (existing == null ||
+                existing["base"]?.GetValue<double>() is double weight && Math.Abs(weight - oldBase) < 1e-9 &&
+                Math.Abs((existing["perRoom"]?.GetValue<double>() ?? 0) - oldRoom) < 1e-9)
+                weights[id] = defaults["actions"]!["weights"]![id]!.DeepClone();
+        }
+
+        if (settings["opening"]?["states"]?["IMBALANCED"] is JsonObject imbalance &&
+            imbalance["weight"]?.GetValue<double>() is double previous && Math.Abs(previous - 0.35) < 1e-9)
+            imbalance["weight"] = defaults["opening"]!["states"]!["IMBALANCED"]!["weight"]!.DeepClone();
+        if (settings["buffs"]?["Intangible"] is JsonObject intangible &&
+            (intangible["weight"]?.GetValue<double>() ?? 1) == 1 && (intangible["weightPerRoom"]?.GetValue<double>() ?? 0) == 0)
+        {
+            intangible["weight"] = defaults["buffs"]!["Intangible"]!["weight"]!.DeepClone();
+            intangible["weightPerRoom"] = defaults["buffs"]!["Intangible"]!["weightPerRoom"]!.DeepClone();
         }
     }
 

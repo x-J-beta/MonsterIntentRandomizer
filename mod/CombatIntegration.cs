@@ -25,11 +25,12 @@ internal static class CombatIntegration
     private static readonly AccessTools.FieldRef<MonsterModel, MoveState> NextMove =
         AccessTools.FieldRefAccess<MonsterModel, MoveState>("<NextMove>k__BackingField");
 
-    private sealed class EncounterRules(RuleConfiguration rules)
+    private sealed class EncounterRules(RuleConfiguration rules, IReadOnlyList<Creature> initialEnemies)
     {
         public RuleConfiguration Rules { get; } = rules;
         public ActionPlanner Planner { get; } = new(rules.PoolSettings);
         public ActionCatalog Catalog { get; } = new(rules.Actions);
+        public HashSet<Creature> InitialEnemies { get; } = initialEnemies.ToHashSet();
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
@@ -74,7 +75,7 @@ internal static class CombatIntegration
         try
         {
             int rooms = Math.Max(0, combat.RunState.MapPointHistory.SelectMany(act => act).Sum(point => point.Rooms.Count) - 1);
-            var encounter = new EncounterRules(rules) { Rooms = rooms };
+            var encounter = new EncounterRules(rules, combat.Enemies) { Rooms = rooms };
             Encounters.Add(combat, encounter);
             var candidates = new Dictionary<string, IReadOnlyList<OpeningOption>>();
             var actionValues = new Dictionary<string, double>();
@@ -154,7 +155,9 @@ internal static class CombatIntegration
             if (enemy.PlannedRound != round)
             {
                 var context = Snapshot(creature, combat, encounter);
-                var profile = WithSurvival(enemy.Profile, creature, combat, encounter);
+                var phase = enemy.Rules.PhaseForMove(original.Id);
+                var configured = phase == null ? enemy.Profile : Adjust(encounter.Rules, phase.Apply(enemy.Rules.Profile));
+                var profile = WithSurvival(configured, creature, combat, encounter);
                 enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
                     encounter.Catalog.Generate(profile, context),
                     RandomFor(combat, creature.CombatId ?? 0, round),
@@ -279,11 +282,11 @@ internal static class CombatIntegration
         if (encounter.Enemies.TryGetValue(creature, out var existing))
             return existing;
         if (creature.Monster is not { } monster || creature.CombatState == null ||
-            creature.IsPet || !creature.IsAlive ||
+            creature.Side != CombatSide.Enemy || !creature.IsAlive ||
             encounter.Rules.KeepVanilla.Contains(monster.Id.Entry) ||
             FindProfile(encounter.Rules, monster) is not { Rules.Enabled: true } configured ||
             monster.MoveStateMachine is not { } machine ||
-            !SupportsRandomMoves(machine, configured.Rules))
+            !SupportsRandomMoves(machine, configured.Rules, !encounter.InitialEnemies.Contains(creature)))
             return null;
 
         var state = new EnemyRules(configured.Rules, configured.Profile)
@@ -297,25 +300,32 @@ internal static class CombatIntegration
     private static (MonsterRules Rules, MonsterProfile Profile)? FindProfile(RuleConfiguration rules, MonsterModel monster) =>
         monster.GetType().Assembly == typeof(MonsterModel).Assembly &&
         rules.Monsters.TryGetValue(monster.Id.Entry, out var entry)
-            ? (entry, rules.PoolSettings.Adjust(entry.Profile, RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies)))
+            ? (entry, Adjust(rules, monster.NextMove is { } move && entry.PhaseForMove(move.Id) is { } phase
+                ? phase.Apply(entry.Profile) : entry.Profile))
             : null;
+
+    private static MonsterProfile Adjust(RuleConfiguration rules, MonsterProfile profile) =>
+        rules.PoolSettings.Adjust(profile, RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies));
 
     private static bool IsOrdinaryMove(MoveState move) => move.Intents.Count > 0 &&
         move.Intents.All(intent => intent.IntentType is IntentType.Attack or IntentType.Buff or IntentType.Debuff or
             IntentType.DebuffStrong or IntentType.Defend or IntentType.Heal or IntentType.StatusCard or IntentType.CardDebuff);
 
-    private static bool SupportsRandomMoves(MonsterMoveStateMachine machine, MonsterRules rules)
+    private static bool IsSummoningMove(MoveState move) => move.Intents.Any(intent => intent.IntentType == IntentType.Summon);
+
+    private static bool SupportsRandomMoves(MonsterMoveStateMachine machine, MonsterRules rules, bool joinedCombat)
     {
         if (rules.RandomizeAllMoves)
             return true;
-        var moves = machine.States.Values.OfType<MoveState>();
-        return rules.RandomMoves != null
+        var moves = machine.States.Values.OfType<MoveState>().ToArray();
+        return rules.RandomMoves != null || joinedCombat || moves.Any(IsSummoningMove)
             ? moves.Any(move => rules.AllowsMove(move.Id) && IsOrdinaryMove(move))
             : moves.All(move => rules.KeepMoves.Contains(move.Id) || IsOrdinaryMove(move));
     }
 
     private static bool CanReplaceMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
-        !creature.IsStunned && (enemy.Rules.RandomizeAllMoves || move.CanTransitionAway && IsOrdinaryMove(move)) &&
+        !creature.IsStunned && !IsSummoningMove(move) &&
+        (enemy.Rules.RandomizeAllMoves || move.CanTransitionAway && IsOrdinaryMove(move)) &&
         !KeepsNativeMove(creature, enemy, move, round);
 
     private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>

@@ -101,20 +101,28 @@ internal sealed class RuleConfiguration
             EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard);
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
-            .Concat((Actions.Buffs?.Keys ?? []).Where(kind => monster.Profile.EffectWeights?.GetValueOrDefault(kind) > 0)
-                .Select(EffectPolicy.Id))
             .Distinct().Where(id => id != "STUN" || !monster.FixedOpening);
 
     internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique;
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
     {
         JsonElement Setting(string name) => entry.TryGetProperty(name, out var value) ? value : defaults.GetProperty(name);
+        var phases = entry.TryGetProperty("phases", out var phaseDefinitions)
+            ? Read<Dictionary<string, MonsterPhase>>(phaseDefinitions) : null;
+        if (phases != null)
+        {
+            var movesInPhases = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var phase in phases.Values)
+                if (phase.Moves is not { Length: > 0 } || phase.Moves.Any(move => !movesInPhases.Add(move)) ||
+                    phase.ActionValue is <= 0 || phase.AttackFrequency is < 0 || phase.Volatility is < 0 ||
+                    phase.NonAttackMultiplier is < 0)
+                    throw new ArgumentException("阶段招式须存在且不可跨阶段重复，行动参数须在有效范围内。");
+        }
         var profile = new MonsterProfile(
             entry.GetProperty("actionValue").GetDouble(), Setting("volatility").GetDouble(),
             entry.GetProperty("attackFrequency").GetDouble(), Setting("nonAttackMultiplier").GetDouble(),
             0,
             Read<Dictionary<IntentStyle, double>>(entry.GetProperty("preferences")),
-            entry.TryGetProperty("effects", out var effects) ? Read<Dictionary<EffectKind, double>>(effects) : null,
             entry.TryGetProperty("cards", out var cards) ? Read<StatusPlacement[]>(cards) : null,
             SingleHitPreference: entry.TryGetProperty("singleHitPreference", out var single) ? single.GetDouble() : 1,
             DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1,
@@ -128,7 +136,7 @@ internal sealed class RuleConfiguration
             entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0,
             entry.TryGetProperty("randomMoves", out var randomMoves) ? Read<string[]>(randomMoves).ToHashSet(StringComparer.Ordinal) : null,
             entry.TryGetProperty("keepVanillaWhileAllyAlive", out var ally) ? ally.GetString() : null,
-            entry.TryGetProperty("randomizeAllMoves", out var all) && all.GetBoolean());
+            entry.TryGetProperty("randomizeAllMoves", out var all) && all.GetBoolean(), phases);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
@@ -136,7 +144,28 @@ internal sealed class RuleConfiguration
 
 internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
     bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance,
-    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false)
+    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false,
+    IReadOnlyDictionary<string, MonsterPhase>? Phases = null)
 {
     internal bool AllowsMove(string id) => !KeepMoves.Contains(id) && (RandomMoves?.Contains(id) ?? true);
+
+    internal MonsterPhase? PhaseForMove(string moveId) =>
+        Phases?.Values.FirstOrDefault(phase => phase.Moves.Contains(moveId, StringComparer.Ordinal));
+
+    internal string? DefaultPhase => Phases?.Keys.FirstOrDefault();
+}
+
+internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionValue = null, double? AttackFrequency = null,
+    double? Volatility = null, double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
+    IReadOnlyDictionary<EffectKind, double>? Favorites = null)
+{
+    internal MonsterProfile Apply(MonsterProfile profile) => profile with
+    {
+        ActionValue = ActionValue ?? profile.ActionValue,
+        AttackFrequency = AttackFrequency ?? profile.AttackFrequency,
+        Volatility = Volatility ?? profile.Volatility,
+        NonAttackMultiplier = NonAttackMultiplier ?? profile.NonAttackMultiplier,
+        IntentWeights = Preferences ?? profile.IntentWeights,
+        Favorites = Favorites ?? profile.Favorites
+    };
 }

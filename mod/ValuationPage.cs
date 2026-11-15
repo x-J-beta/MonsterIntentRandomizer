@@ -136,7 +136,7 @@ internal static class ValuationPage
             content.AddChild(new Label { Text = shared ? "目标：自身 · 开场和出招共用" : "目标：自身" });
             AddFormula(content, root => At(root)["formula"]!.AsObject(), state["formula"]!.AsObject(), openingFormula: true);
             if (shared)
-                AddCheck(content, "通用候选", state["common"]?.GetValue<bool>() ?? false,
+                AddCheck(content, "开场通用候选", state["common"]?.GetValue<bool>() ?? false,
                     (root, value) => At(root)["common"] = value);
             AddCheck(content, "可叠加", state["stackable"]?.GetValue<bool>() ?? false,
                 (root, value) => At(root)["stackable"] = value);
@@ -410,7 +410,7 @@ internal static class ValuationPage
     internal static string OpeningName(string id) => id switch
     {
         "STRENGTH_DOWN" => "负力量", "REGEN" => "再生", "PLATING" => "甲覆", "ARTIFACT" => "人工制品",
-        "DEMISE" => "消亡", "DOOM" => "灾厄", "IMBALANCED" => "失衡", "STUN" => "眩晕",
+        "DEMISE" => "消亡", "DOOM" => "灾厄", "NEUROSURGE" => "精神过载", "IMBALANCED" => "失衡", "STUN" => "眩晕",
         "SLOW" => "迟缓",
         _ => Enum.TryParse<EffectKind>(id.Replace("_", ""), ignoreCase: true, out var kind)
             ? IntentDetails.Names(kind).Chinese : id

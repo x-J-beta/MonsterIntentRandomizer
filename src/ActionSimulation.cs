@@ -17,8 +17,14 @@ internal sealed record SimulationMoveSequence(SimulationMove[] Opening, Simulati
     private static readonly SimulationMove[] KnowledgeCurseCycle =
         [new("CURSE_OF_KNOWLEDGE_MOVE", "知识的诅咒"), .. KnowledgeLoop];
 
-    internal static SimulationMoveSequence? For(string id) => id switch
+    internal static SimulationMoveSequence? For(string id, MonsterPhase? phase = null) => id switch
     {
+        "CEREMONIAL_BEAST" when phase?.Moves.Contains("STOMP_MOVE") == true =>
+            new([new("STUN_MOVE", "击晕")], [new("BEAST_CRY_MOVE", "野兽咆哮"),
+                new("STOMP_MOVE", "踩踏"), new("CRUSH_MOVE", "碾碎")]),
+        "CEREMONIAL_BEAST" => new([new("STAMP_MOVE", "跺地")], [new("PLOW_MOVE", "横冲直撞")]),
+        "PHROG_PARASITE" => new([], [new("INFECT_MOVE", "感染"), new("LASH_MOVE", "甩动")]),
+        "TOUGH_EGG" => new([new("HATCH_MOVE", "孵化")], [new("NIBBLE_MOVE", "啃咬")]),
         "VANTOM" => new([], [new("INK_BLOT_MOVE", "墨迹"), new("INKY_LANCE_MOVE", "墨水长枪"),
             new("DISMEMBER_MOVE", "肢解"), new("PREPARE_MOVE", "准备")]),
         "AEONGLASS" => new([], [new("EBB_MOVE", "消退"), new("EYE_LASERS_MOVE", "眼部激光"),
@@ -36,10 +42,10 @@ internal static class ActionSimulation
     internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, string monsterId, MonsterProfile profile,
         IReadOnlyList<OpeningPick> opening, int seed, int rounds,
         bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
-        int rooms = 0, int enemyCount = 1)
+        int rooms = 0, int enemyCount = 1, MonsterPhase? phase = null)
     {
         var monster = rules.Monsters[monsterId];
-        var sequence = SimulationMoveSequence.For(monsterId);
+        var sequence = SimulationMoveSequence.For(monsterId, phase);
         var planner = new ActionPlanner(rules.PoolSettings);
         var catalog = new ActionCatalog(rules.Actions);
         var actionRandom = new Random(seed ^ 0x649AAB81);

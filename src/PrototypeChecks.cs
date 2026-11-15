@@ -207,7 +207,6 @@ internal static class PrototypeChecks
         var varied = profile with
         {
             PlayerActionValue = 10,
-            EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
         var context = new ActionContext(6, MissingHp: 3);
@@ -284,23 +283,24 @@ internal static class PrototypeChecks
         Equal(3, weakenedMixed.Damage, "panel reflects weak");
         Equal(3 + Pure(EffectKind.Weak).Value, weakenedMixed.ActualScore, "resolved score reflects weak and the side effect");
         Equal(4 + Pure(EffectKind.Weak).Value, weakenedMixed.Value, "pool cost retains base attack value");
-        var preferences = varied with
+        var weighted = new ActionCatalog(catalogSettings with
         {
-            EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 2, [EffectKind.Vulnerable] = 1 }
-        };
-        var preferred = catalog.Generate(preferences, context)
+            Weights = new Dictionary<EffectKind, RoomWeight> { [EffectKind.Weak] = new(2), [EffectKind.Vulnerable] = new(1) }
+        });
+        var preferred = weighted.Generate(varied, context)
             .Where(action => !action.IsAttack).ToDictionary(action => action.Id);
-        Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "per-effect preference weights");
-        var favorites = preferences with
+        Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "global effect weights");
+        var favorites = varied with
         {
             AttackFrequency = 0,
             Favorites = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 5 }
         };
-        var favored = catalog.Generate(favorites, context).ToArray();
+        var favored = weighted.Generate(favorites, context).ToArray();
         Equal(preferred["Weak 1"].Weight, favored.Single(action => action.Id == "Weak 1").Weight,
             "favorites preserve directional weights");
-        Equal(5, favored.Where(action => action.Effects![0].Kind == EffectKind.Weak).Sum(action => action.SharedWeightBonus),
-            "doses share the configured bonus");
+        Equal(5 * preferred["Weak 1"].Weight,
+            favored.Where(action => action.Effects![0].Kind == EffectKind.Weak).Sum(action => action.SharedWeightBonus),
+            "doses share the bonus from the global status weight");
         var directPlanner = new ActionPlanner(new PoolSettings(0.75, 0.9, NonAttackCandidates: 1,
             FavoriteDirectBaseShare: 0.25, FavoriteDirectStrengthMultiplier: 0.15));
         var picked = Enumerable.Range(0, 30).Select(seed => directPlanner.Plan(new Pools(0, 0), favorites,
@@ -350,15 +350,25 @@ internal static class PrototypeChecks
         var specialized = varied with
         {
             BaseExpectedSurvivalTurns = 5,
-            EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Ritual] = 1, [EffectKind.Ringing] = 1, [EffectKind.Wound] = 1 },
             CardPlacements = [new(EffectKind.Wound, StatusPile.Top), new(EffectKind.Wound, StatusPile.Discard)]
         };
-        var expanded = new ActionCatalog(catalogSettings with
+        var expandedSettings = catalogSettings with
         {
             Amounts = new Dictionary<EffectKind, int[]>(amounts) { [EffectKind.Ringing] = [1] },
             Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Ritual] = Status("amount*attackFrequency*survivalTurns", 0.8) }
-        });
+        };
+        var expanded = new ActionCatalog(expandedSettings);
         var specializedActions = expanded.Generate(specialized, context).ToArray();
+        var lockedSettings = expandedSettings with
+        {
+            Weights = new Dictionary<EffectKind, RoomWeight> { [EffectKind.Ringing] = new(-0.2, 0.01) }
+        };
+        bool OffersRinging(ActionValuationSettings settings, int rooms) =>
+            new ActionCatalog(settings).Generate(specialized, context with { Rooms = rooms })
+                .Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
+        if (OffersRinging(lockedSettings, 0) || !OffersRinging(lockedSettings, 25) ||
+            !OffersRinging(lockedSettings with { ChaosProgress = 1 }, 0))
+            throw new InvalidOperationException("Global room and chaos weights should admit special effects without monster preferences.");
         var preferredSpecial = specialized with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.Ringing] = 5 } };
         if (expanded.Generate(preferredSpecial, context with { AllowHardCardLimit = false })
             .Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]))

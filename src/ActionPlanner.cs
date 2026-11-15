@@ -77,7 +77,6 @@ public sealed record PoolSettings(
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
-    IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
     IReadOnlyList<StatusPlacement>? CardPlacements = null, double PlayerActionValue = 0,
     double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1,
     IReadOnlyDictionary<EffectKind, double>? Favorites = null)

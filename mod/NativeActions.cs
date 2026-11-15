@@ -192,6 +192,7 @@ internal static class NativeActions
         "VULNERABLE" => Get<VulnerablePower>,
         "DEMISE" => Get<DemisePower>,
         "DOOM" => Get<DoomPower>,
+        "NEUROSURGE" => Get<NeurosurgePower>,
         "IMBALANCED" => Get<ImbalancedPower>,
         "PERSONAL_HIVE" => target => (PowerModel?)target.GetPower<RandomizedPersonalHivePower>() ?? target.GetPower<PersonalHivePower>(),
         "VITAL_SPARK" => Get<VitalSparkPower>,
@@ -293,6 +294,7 @@ internal static class NativeActions
             "VULNERABLE" => await Apply<VulnerablePower>(),
             "DEMISE" => await Apply<DemisePower>(),
             "DOOM" => await Apply<DoomPower>(),
+            "NEUROSURGE" => await Apply<NeurosurgePower>(),
             "IMBALANCED" => await Apply<ImbalancedPower>(),
             _ => 0
         };
