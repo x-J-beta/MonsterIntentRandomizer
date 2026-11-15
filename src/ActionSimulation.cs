@@ -26,6 +26,7 @@ internal static class ActionSimulation
         var prior = rules.TurnPrior with { Act = act, Rooms = rooms,
             ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
+        int vigor = opening.Where(pick => pick.State.Id == "VIGOR").Sum(pick => pick.State.Amount);
         bool previousAttack = false;
         bool specialDebuffSpent = false;
         bool imbalanced = opening.Any(pick => pick.State.Id == "IMBALANCED");
@@ -42,7 +43,7 @@ internal static class ActionSimulation
             bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
             var context = prior with
             {
-                Strength = strength,
+                Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
                 RareBuffRoll = rareBuffRandom.NextDouble(),
                 SpecialDebuffAvailable = !specialDebuffSpent,
@@ -72,6 +73,8 @@ internal static class ActionSimulation
             else
                 history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
             previousAttack = hits > 0;
+            if (previousAttack)
+                vigor = 0;
         }
         return turns;
 

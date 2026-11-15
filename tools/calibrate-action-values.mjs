@@ -87,6 +87,8 @@ function growthWindow(opening, loop, difficulty, turns) {
 function calibrate(monster, profile) {
     if (excluded.has(monster.id) || profile.enabled === false)
         return { method: 'vanilla' };
+    if (profile.randomMoves)
+        return { method: 'reviewedMixedProfile', values: [profile.actionValue, profile.deadlyEnemies ?? profile.actionValue] };
 
     const referenceMoves = new Map(published.get(monster.id).moves.map(move => [move.id, move]));
     const calibratedMoves = monster.moves.map(move => publishedDamage(move, referenceMoves.get(move.id)));

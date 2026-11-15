@@ -7,7 +7,7 @@ public enum EffectKind
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
-    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, CurlUp
+    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, CurlUp, Slippery
 }
 
 public enum EffectTarget { Self, Player }
@@ -26,7 +26,7 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
         EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
-    public static bool IsNonStackingDefense(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill;
+    public static bool IsNonStackingDefense(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Slippery;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
@@ -61,23 +61,21 @@ public sealed record ActionContext(
     int Strength = 0,
     bool Weakened = false,
     bool PlayerHasArtifact = false,
-    double DazedDraws = 0,
-    double WoundDraws = 0,
     double ExistingBlock = 0,
-    double BurnDraws = 0.6, bool PlayerAlreadyRestricted = false,
-    bool AllowHardCardLimit = true, double MissingHp = 0, double BeckonDraws = 0.6,
+    bool PlayerAlreadyRestricted = false,
+    bool AllowHardCardLimit = true, double MissingHp = 0,
     int Act = 1, IReadOnlySet<EffectKind>? ActiveEffects = null, double RareBuffRoll = 0,
-    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0, int Rooms = 0, double OtherStatusDraws = 0.6);
+    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0, int Rooms = 0);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
     IReadOnlyDictionary<EffectKind, int[]> Amounts,
     StatusPlacementValues? PlacementValues = null,
-    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1, IReadOnlyDictionary<EffectKind, int>? MinActs = null,
+    int MaxHardCardLimits = 1, IReadOnlyDictionary<EffectKind, int>? MinActs = null,
     double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, double>? HpPerSurvivalTurnCaps = null,
-    IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null, double PlayableStatusRetention = 0.9)
+    IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null)
 {
     public EffectPolicy PolicyFor(EffectKind kind) =>
         Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
@@ -130,7 +128,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
                         break;
                     case EffectKind.Intangible:
-                    case EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Barricade:
+                    case EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Barricade or EffectKind.Slippery:
                         Add(kind, amount, IntentStyle.Defend);
                         break;
                     case EffectKind.CurlUp:
@@ -182,17 +180,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                                 EffectKind.MindRot or EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration)
                                 continue;
 
-                            double draws = kind switch
-                            {
-                                EffectKind.Dazed => context.DazedDraws, EffectKind.Wound => context.WoundDraws,
-                                EffectKind.Beckon => context.BeckonDraws, EffectKind.Burn => context.BurnDraws,
-                                _ => context.OtherStatusDraws
-                            };
-                            if (kind == EffectKind.Dazed)
-                                draws = Math.Clamp(draws, 0, 1);
-                            double triggers = ForecastTriggers(kind, draws, placement.Pile);
-                            Add(kind, amount, IntentStyle.PlayerDebuff, placement.Pile, placement.Weight,
-                                draws: draws, triggers: triggers);
+                            Add(kind, amount, IntentStyle.PlayerDebuff, placement.Pile, placement.Weight);
                         }
                         break;
                 }
@@ -211,10 +199,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         }
 
         void Add(EffectKind kind, int amount, IntentStyle style, StatusPile? pile = null, double weight = 1,
-            double effectiveAmount = 0, double draws = 0, double triggers = 0)
+            double effectiveAmount = 0)
         {
-            double value = settings.Valuation.Evaluate(kind, profile, amount,
-                effectiveAmount: effectiveAmount, draws: draws, triggers: triggers);
+            double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount);
             if (pile is StatusPile position)
                 value *= (settings.PlacementValues ?? new StatusPlacementValues()).For(position);
             if (value > 0 && weight > 0 && profile.IntentWeights.GetValueOrDefault(style) > 0)
@@ -222,17 +209,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, weight));
             }
         }
-    }
-
-    private double ForecastTriggers(EffectKind kind, double draws, StatusPile position)
-    {
-        if (kind is EffectKind.Burn or EffectKind.Wither or EffectKind.Infection or EffectKind.Beckon or EffectKind.Toxic)
-        {
-            double retention = kind is EffectKind.Beckon or EffectKind.Toxic ? settings.PlayableStatusRetention : 1;
-            return (position == StatusPile.Hand ? settings.HandBurnDamageChance : draws) * retention;
-        }
-        return kind is EffectKind.Void or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sloth or
-            EffectKind.Disintegration or EffectKind.WasteAway ? draws : 0;
     }
 
     public ActionCandidate? BuildAttack(MonsterProfile profile, ActionContext context, int hits, double target)

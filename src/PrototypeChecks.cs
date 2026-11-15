@@ -171,9 +171,9 @@ internal static class PrototypeChecks
             [EffectKind.EnergyDown] = new() { ["amount*playerTurnValue"] = 0.33 },
             [EffectKind.StrengthDown] = new() { ["fixed"] = 2, ["amount"] = 0.5 },
             [EffectKind.DexterityDown] = new() { ["fixed"] = 1.5, ["amount"] = 0.4 },
-            [EffectKind.Dazed] = new() { ["amount*draws"] = 1.5 },
-            [EffectKind.Wound] = new() { ["amount*draws"] = 2.5 },
-            [EffectKind.Beckon] = new() { ["amount*draws"] = 2.5, ["amount*triggers"] = 3 }
+            [EffectKind.Dazed] = new() { ["amount"] = 1.5 },
+            [EffectKind.Wound] = new() { ["amount"] = 2.5 },
+            [EffectKind.Beckon] = new() { ["amount"] = 6.5 }
         });
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts);
         var catalog = new ActionCatalog(catalogSettings);
@@ -184,16 +184,16 @@ internal static class PrototypeChecks
             EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
-        var context = new ActionContext(6, DazedDraws: 0.6, WoundDraws: 0.8, MissingHp: 3);
+        var context = new ActionContext(6, MissingHp: 3);
         var generated = catalog.Generate(varied, context, new ActionHistory(), 1).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
         Equal(1.2 * profile.AttackFrequency, Pure(EffectKind.Strength).Value, "strength uses attack frequency");
         Equal(0.9 * profile.ActionValue, Pure(EffectKind.Intangible).Value, "intangible equivalent turns");
         Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
-        Equal(0.6 * (2.5 + 3 * 0.9), Pure(EffectKind.Beckon).Value, "beckon in draw pile");
-        Equal(0.9, Pure(EffectKind.Dazed).Value, "reduced dazed draw valuation");
-        Equal(1.5, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound draw valuation in the discard pile");
+        Equal(6.5, Pure(EffectKind.Beckon).Value, "beckon in draw pile");
+        Equal(1.5, Pure(EffectKind.Dazed).Value, "flat dazed value");
+        Equal(2.5 * 0.75, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound value in the discard pile");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
         Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),
             "smoggy uses the player action value");

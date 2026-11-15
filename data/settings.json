@@ -50,41 +50,27 @@
       "PaperCuts": { "amount*attackFrequency*survivalTurns": 1.55 },
       "StrengthDown": { "amount": 2.8, "amount*roomsEntered": 0.045 },
       "DexterityDown": { "amount": 2.3, "amount*roomsEntered": 0.04 },
-      "Dazed": { "Amount": 0.85 },
-      "Wound": { "Amount": 1.4 },
-      "Burn": { "Amount": 2.8 },
-      "Beckon": { "Amount": 6.5 },
-      "Wither": { "Amount": 4.2 },
-      "Amnesia": { "amount*draws*playerActionValue": 0.7 },
-      "MindRot": { "amount*draws*playerActionValue": 0.6 },
-      "Sadness": { "amount*draws": 3.5 },
-      "Infection": { "Amount": 3.9 },
-      "Sloth": { "amount*draws*playerActionValue": 0.85 },
-      "Toxic": { "Amount": 4.4 },
-      "Soot": { "Amount": 1.5 },
-      "Disintegration": { "amount*draws": 8 },
-      "Debris": { "Amount": 1.3 },
-      "Void": { "Amount*playerActionValue": 0.09, "Amount": 1.2 },
-      "WasteAway": { "amount*draws*playerActionValue": 0.9 },
-      "Slimed": { "Amount": 1.25 },
       "Artifact": { "amount*actionValue": 0.075 },
       "Barricade": { "actionValue*survivalTurns": 0.12 },
-      "CurlUp": { "effectiveAmount": 0.31 }
+      "CurlUp": { "effectiveAmount": 0.31 },
+      "Slippery": { "amount*playerActionValue": 0.18 }
     },
     "maxHardCardLimits": 1,
     "hardCardLimitFirstTurn": 2,
-    "handBurnDamageChance": 1,
-    "playableStatusRetention": 0.9,
+    "statusCardValues": {
+      "Dazed": 0.85, "Wound": 1.4, "Burn": 2.8, "Beckon": 6.5, "Wither": 4.2, "Infection": 3.9,
+      "Toxic": 4.4, "Soot": 1.5, "Debris": 1.3, "Void": 4, "Slimed": 1.25, "Amnesia": 4.5,
+      "MindRot": 5, "Sadness": 3.5, "Sloth": 8, "Disintegration": 6, "WasteAway": 9
+    },
     "cardPlacementValues": { "hand": 0.35, "top": 1.33, "draw": 1, "bottom": 0.45, "discard": 0.75 },
     "minimumBaseDamagePerHit": 1,
-    "minActs": { "PersonalHive": 2, "VitalSpark": 2, "WitheringPresence": 3, "Envenom": 2, "PaperCuts": 3 },
     "specialDebuffChance": 0.2,
     "weights": {
       "Strength": { "base": 2.5, "perRoom": 0 },
       "Ritual": { "base": 0.2, "perRoom": 0 },
       "Regen": { "base": 1, "perRoom": 0 },
-      "HardenedShell": { "base": 0.2, "perRoom": 0 },
-      "HardToKill": { "base": 0.2, "perRoom": 0 },
+      "HardenedShell": { "base": -0.225, "perRoom": 0.0125 },
+      "HardToKill": { "base": -0.18, "perRoom": 0.01 },
       "Burn": { "base": 0.5, "perRoom": 0 },
       "Beckon": { "base": 0.35, "perRoom": 0 },
       "Wither": { "base": 0.5, "perRoom": 0 },
@@ -102,8 +88,14 @@
       "Slimed": { "base": 0.6, "perRoom": 0 },
       "Soulbind": { "base": 0, "perRoom": 0.01 },
       "Artifact": { "base": 0.4, "perRoom": 0 },
-      "Barricade": { "base": 0.14, "perRoom": 0 },
-      "CurlUp": { "base": 0.4, "perRoom": 0 }
+      "Barricade": { "base": -0.0675, "perRoom": 0.0075 },
+      "CurlUp": { "base": -0.18, "perRoom": 0.02 },
+      "Slippery": { "base": -0.18, "perRoom": 0.01 },
+      "PersonalHive": { "base": -0.16, "perRoom": 0.01 },
+      "VitalSpark": { "base": -0.126, "perRoom": 0.007 },
+      "WitheringPresence": { "base": -0.2, "perRoom": 0.01 },
+      "Envenom": { "base": -0.112, "perRoom": 0.008 },
+      "PaperCuts": { "base": -0.08, "perRoom": 0.004 }
     },
     "minAmounts": { "Regen": 5, "Plating": 6, "Dazed": 2 },
     "hpPerSurvivalTurnCaps": { "HardenedShell": 1, "HardToKill": 0.5 },
@@ -155,7 +147,8 @@
       "Slimed": 4,
       "Artifact": 2,
       "Barricade": 1,
-      "CurlUp": 12
+      "CurlUp": 12,
+      "Slippery": 2
     },
     "policies": {
       "Attack": { "target": "player" },
@@ -208,7 +201,8 @@
       "Slimed": { "target": "player" },
       "Artifact": { "target": "self" },
       "Barricade": { "target": "self", "stackable": false },
-      "CurlUp": { "target": "self", "stackable": false, "unique": true }
+      "CurlUp": { "target": "self", "stackable": false, "unique": true },
+      "Slippery": { "target": "self", "stackable": false }
     }
   },
   "opening": {
@@ -217,30 +211,39 @@
     "maxPerMonster": 2,
     "maxEncounterValueMultiplier": 1,
     "states": {
-      "STRENGTH": { "maxAmount": 3, "formula": { "amount*attackFrequency": 1.65 } },
-      "RITUAL": { "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.8 } },
-      "REGEN": { "minAmount": 5, "maxAmount": 8, "formula": { "amount*survivalTurns": 0.2 } },
-      "PLATING": { "minAmount": 6, "maxAmount": 10, "formula": { "amount*survivalTurns": 0.18 } },
-      "HARDENED_SHELL": { "common": true, "hpPerSurvivalTurnCap": 1, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 1 }, "weight": 0.15 },
-      "HARD_TO_KILL": { "common": true, "hpPerSurvivalTurnCap": 0.5, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 0.4 }, "weight": 0.12 },
+      "STRENGTH": { "maxAmount": 4, "formula": { "amount*attackFrequency": 1.65 } },
+      "RITUAL": { "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 0.8 } },
+      "REGEN": { "minAmount": 5, "maxAmount": 10, "formula": { "amount*survivalTurns": 0.2 } },
+      "PLATING": { "minAmount": 6, "maxAmount": 12, "formula": { "amount*survivalTurns": 0.18 } },
+      "HARDENED_SHELL": { "common": true, "hpPerSurvivalTurnCap": 1, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 1 }, "weight": -0.225, "weightPerRoom": 0.0125 },
+      "HARD_TO_KILL": { "common": true, "hpPerSurvivalTurnCap": 0.5, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 0.4 }, "weight": -0.18, "weightPerRoom": 0.01 },
       "INTANGIBLE": { "maxAmount": 1, "formula": { "amount*actionValue": 0.9 } },
       "STRENGTH_DOWN": { "maxAmount": 3, "formula": { "amount*attackFrequency": -1.65 }, "amount": -1 },
-      "WEAK": { "maxAmount": 3, "formula": { "amount*actionValue": -0.15 } },
-      "VULNERABLE": { "maxAmount": 3, "formula": { "amount*actionValue": -0.27 } },
-      "DEMISE": { "maxAmount": 2, "formula": { "amount*actionValue": -0.065 } },
-      "DOOM": { "maxAmount": 14, "formula": { "amount": -0.32 } },
-      "ARTIFACT": { "maxAmount": 2, "formula": { "amount*actionValue": 0.15 } },
-      "THORNS": { "maxAmount": 3, "formula": { "amount*actionValue": 0.31 } },
+      "WEAK": { "maxAmount": 4, "formula": { "amount*actionValue": -0.15 } },
+      "VULNERABLE": { "maxAmount": 4, "formula": { "amount*actionValue": -0.27 } },
+      "DEMISE": { "maxAmount": 3, "formula": { "amount*actionValue": -0.065 } },
+      "DOOM": { "maxAmount": 15, "formula": { "amount": -0.32 } },
+      "ARTIFACT": { "maxAmount": 3, "formula": { "amount*actionValue": 0.15 } },
+      "THORNS": { "maxAmount": 4, "formula": { "amount*actionValue": 0.31 } },
       "TEMPORARY_THORNS": { "maxAmount": 5, "formula": { "amount": 1.8 } },
       "IMBALANCED": { "maxAmount": 1, "formula": { "amount*actionValue": -0.14 } },
-      "STUN": { "maxAmount": 1, "formula": { "amount*actionValue": -0.82 } },
-      "PERSONAL_HIVE": { "maxAmount": 1, "formula": { "amount*survivalTurns": 0.8 }, "weight": 0.12, "minAct": 2 },
-      "VITAL_SPARK": { "maxAmount": 1, "formula": { "amount*survivalTurns": 1.05 }, "weight": 0.08, "minAct": 2, "unique": true },
-      "WITHERING_PRESENCE": { "maxAmount": 1, "formula": { "amount*survivalTurns": 0.9 }, "weight": 0.1, "minAct": 3, "unique": true },
-      "ENVENOM": { "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.8 }, "weight": 0.12, "minAct": 2 },
-      "PAPER_CUTS": { "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 2 }, "weight": 0.035, "minAct": 3 },
-      "BARRICADE": { "common": true, "maxAmount": 1, "formula": { "actionValue*survivalTurns": 0.12 }, "weight": 0.12 },
-      "CURL_UP": { "common": true, "maxAmount": 8, "formula": { "amount": 0.32 }, "weight": 0.25, "unique": true }
+      "STUN": { "maxAmount": 1, "formula": { "amount*actionValue": -0.82 }, "common": true, "weight": 0.15 },
+      "PERSONAL_HIVE": { "maxAmount": 1, "formula": { "amount*survivalTurns": 0.8 }, "weight": -0.16, "weightPerRoom": 0.01 },
+      "VITAL_SPARK": { "maxAmount": 1, "formula": { "amount*survivalTurns": 1.05 }, "weight": -0.126, "unique": true, "weightPerRoom": 0.007 },
+      "WITHERING_PRESENCE": { "maxAmount": 1, "formula": { "amount*survivalTurns": 0.9 }, "weight": -0.2, "unique": true, "weightPerRoom": 0.01 },
+      "ENVENOM": { "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.8 }, "weight": -0.112, "weightPerRoom": 0.008 },
+      "PAPER_CUTS": { "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 2 }, "weight": -0.08, "weightPerRoom": 0.004 },
+      "BARRICADE": { "common": true, "maxAmount": 1, "formula": { "actionValue*survivalTurns": 0.12 }, "weight": -0.0675, "weightPerRoom": 0.0075 },
+      "CURL_UP": { "common": true, "maxAmount": 8, "formula": { "amount": 0.32 }, "weight": -0.18, "unique": true, "weightPerRoom": 0.02 },
+      "DEXTERITY": { "common": true, "maxAmount": 3, "formula": { "amount*survivalTurns": 0.35 }, "weight": 0.22 },
+      "DEXTERITY_DOWN": { "common": true, "maxAmount": 3, "formula": { "amount*survivalTurns": -0.35 }, "amount": -1, "weight": 0.22 },
+      "VIGOR": { "common": true, "maxAmount": 5, "formula": { "amount*attackFrequency": 1 }, "weight": 0.32 },
+      "ENRAGE": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.1 }, "weight": -0.072, "weightPerRoom": 0.008 },
+      "FLUTTER": { "common": true, "maxAmount": 3, "formula": { "amount*actionValue": 0.28 }, "weight": -0.108, "weightPerRoom": 0.009 },
+      "FRAIL": { "common": true, "maxAmount": 3, "formula": { "amount*actionValue": -0.08 }, "weight": 0.38 },
+      "POISON": { "common": true, "maxAmount": 7, "formula": { "amount": -0.85 }, "weight": 0.35 },
+      "SLOW": { "common": true, "maxAmount": 1, "formula": { "actionValue": -0.18 }, "weight": 0.14 },
+      "SLIPPERY": { "common": true, "maxAmount": 2, "formula": { "amount*playerActionValue": 0.18 }, "weight": -0.18, "weightPerRoom": 0.01 }
     }
   },
   "simulation": {
@@ -270,6 +273,6 @@
         ]
       }
     ],
-    "turnContext": { "expectedDamageAgainstMonster": 8, "dazedDraws": 0.8, "woundDraws": 0.95, "burnDraws": 0.95, "beckonDraws": 0.94, "otherStatusDraws": 0.9, "missingHp": 6 }
+    "turnContext": { "expectedDamageAgainstMonster": 8, "missingHp": 6 }
   }
 }

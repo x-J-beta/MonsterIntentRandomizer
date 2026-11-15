@@ -129,7 +129,7 @@ internal static class IntentDetails
             EffectKind.Debris => ("碎屑", "Debris"), EffectKind.Void => ("虚空", "Void"),
             EffectKind.WasteAway => ("衰朽", "Waste Away"), EffectKind.Slimed => ("黏液", "Slimed"),
             EffectKind.Artifact => ("人工制品", "Artifact"), EffectKind.Barricade => ("壁垒", "Barricade"),
-            EffectKind.CurlUp => ("蜷缩", "Curl Up"),
+            EffectKind.CurlUp => ("蜷缩", "Curl Up"), EffectKind.Slippery => ("滑溜", "Slippery"),
             _ => (kind.ToString(), kind.ToString())
         };
 

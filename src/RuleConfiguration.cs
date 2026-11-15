@@ -44,21 +44,27 @@ internal sealed class RuleConfiguration
             ? Read<Dictionary<EffectKind, EffectPolicy>>(policyConfig) : null;
         if (policies?.Any(entry => entry.Value.Target is EffectTarget target && ActionEffect.TargetFor(entry.Key) != target) == true)
             throw new ArgumentException("出招目标由原版效果决定。");
+        var valuation = Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation"));
+        if (actions.TryGetProperty("statusCardValues", out var cardValues))
+        {
+            foreach (var (card, value) in Read<Dictionary<EffectKind, double>>(cardValues))
+            {
+                if (!ActionEffect.IsCard(card) || value < 0)
+                    throw new ArgumentException($"{card} 的单张状态牌估值无效。");
+                valuation[card] = new Dictionary<string, double> { ["amount"] = value };
+            }
+        }
         Actions = new ActionValuationSettings(
-            new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation"))),
+            new ActionValuation(valuation),
             actions.GetProperty("weakDamageReduction").GetDouble(),
             actions.GetProperty("minimumBaseDamagePerHit").GetInt32(),
             maximums.ToDictionary(entry => entry.Key, entry => Enumerable.Range(1, entry.Value).ToArray()),
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
-            actions.GetProperty("handBurnDamageChance").GetDouble(),
             actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, hpCaps, policies,
-            actions.TryGetProperty("playableStatusRetention", out var retention) ? retention.GetDouble() : 0.9);
-        if (Actions.PlayableStatusRetention is < 0 or > 1)
-            throw new ArgumentException("可打出状态牌留到回合结束的概率须在 0 到 1 之间。");
+            minimums, hpCaps, policies);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
@@ -88,7 +94,8 @@ internal sealed class RuleConfiguration
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
-        monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key)).Distinct();
+        monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
+            .Distinct().Where(id => id != "STUN" || !monster.FixedOpening);
 
     internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique ||
         (ActionEffect.TargetFor(kind) == EffectTarget.Self &&
@@ -114,14 +121,16 @@ internal sealed class RuleConfiguration
             Read<string[]>(Setting("openingStates")),
             entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
             entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null,
-            entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0);
+            entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0,
+            entry.TryGetProperty("randomMoves", out var randomMoves) ? Read<string[]>(randomMoves).ToHashSet(StringComparer.Ordinal) : null);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
 internal sealed record MonsterRules(MonsterProfile Profile, double? DeadlyEnemies, bool Enabled,
-    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance)
+    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance,
+    HashSet<string>? RandomMoves = null)
 {
     public MonsterProfile AtAscension(bool deadly) =>
         deadly && DeadlyEnemies is double higher ? Profile with { ActionValue = higher } : Profile;

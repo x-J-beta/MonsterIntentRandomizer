@@ -153,6 +153,8 @@ internal static class SimulationPage
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
+        if (monster.RandomMoves != null)
+            result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下轨迹模拟符合随机条件的回合。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");

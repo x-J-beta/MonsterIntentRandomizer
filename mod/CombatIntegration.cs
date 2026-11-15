@@ -91,7 +91,9 @@ internal static class CombatIntegration
 
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
                 candidates[id] = rules.OpeningStatesFor(state.Rules)
-                    .Where(key => (key != "STUN" || !state.Rules.FixedOpening) && rules.OpeningValues[key].MinAct <= Act(combat))
+                    .Where(key => rules.OpeningValues[key].MinAct <= Act(combat) &&
+                        (key != "STUN" || (creature.Monster?.NextMove is { } first &&
+                            CanReplaceMove(creature, state, first, 1))))
                     .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
@@ -135,8 +137,7 @@ internal static class CombatIntegration
         try
         {
             var enemy = Register(encounter, creature);
-            if (enemy == null || !original.CanTransitionAway || creature.IsStunned ||
-                KeepsNativeMove(creature, enemy, original, combat.RoundNumber) || !IsOrdinaryMove(original))
+            if (enemy == null || !CanReplaceMove(creature, enemy, original, combat.RoundNumber))
                 return;
             int round = combat.RoundNumber;
             if (enemy.SettledRound >= round)
@@ -264,7 +265,7 @@ internal static class CombatIntegration
             encounter.Rules.KeepVanilla.Contains(monster.Id.Entry) ||
             FindProfile(encounter.Rules, monster) is not { Rules.Enabled: true } configured ||
             monster.MoveStateMachine is not { } machine ||
-            machine.States.Values.OfType<MoveState>().Any(move => !configured.Rules.KeepMoves.Contains(move.Id) && !IsOrdinaryMove(move)))
+            !SupportsRandomMoves(machine, configured.Rules))
             return null;
 
         var state = new EnemyRules(configured.Rules, configured.Profile)
@@ -285,8 +286,20 @@ internal static class CombatIntegration
         move.Intents.All(intent => intent.IntentType is IntentType.Attack or IntentType.Buff or IntentType.Debuff or
             IntentType.DebuffStrong or IntentType.Defend or IntentType.Heal or IntentType.StatusCard or IntentType.CardDebuff);
 
+    private static bool SupportsRandomMoves(MonsterMoveStateMachine machine, MonsterRules rules)
+    {
+        var moves = machine.States.Values.OfType<MoveState>();
+        return rules.RandomMoves is { } allowed
+            ? moves.Any(move => allowed.Contains(move.Id) && !rules.KeepMoves.Contains(move.Id) && IsOrdinaryMove(move))
+            : moves.All(move => rules.KeepMoves.Contains(move.Id) || IsOrdinaryMove(move));
+    }
+
+    private static bool CanReplaceMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
+        move.CanTransitionAway && !creature.IsStunned && IsOrdinaryMove(move) && !KeepsNativeMove(creature, enemy, move, round);
+
     private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
         (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id) ||
+        (enemy.Rules.RandomMoves is { } allowed && !allowed.Contains(move.Id)) ||
         (enemy.Rules.RandomizeWhenPower?.Trim() is { Length: > 0 } id &&
             !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));
 

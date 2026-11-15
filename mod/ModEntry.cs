@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 10;
+    private const int SettingsRevision = 11;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -70,6 +70,8 @@ internal static class ModSettings
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var savedValuations = settings["actions"]!["valuation"]!.AsObject();
+        var existingCardPrices = (settings["actions"]!["statusCardValues"] as JsonObject)?
+            .Select(entry => entry.Key).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
         var defaultValuations = defaults["actions"]!["valuation"]!;
         foreach (string id in new[] { "Tangled", "Ringing", "Smoggy" }.Where(_ => stored.Revision < 3))
         {
@@ -83,11 +85,14 @@ internal static class ModSettings
             if (!savedValuations.ContainsKey(id))
                 savedValuations[id] = formula!.DeepClone();
         UpgradeRoomRules(settings, defaults, stored.Revision);
+        UpgradeProgressiveBuffs(settings, defaults);
         defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
         UpgradeDefenseAmounts(settings, defaults);
         UpgradeProgressValuation(settings);
         ApplyEffectCalibration(settings);
+        UpgradeStatusCardPrices(settings, existingCardPrices);
+        UpgradeOpeningAmounts(settings, defaults);
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
@@ -95,6 +100,7 @@ internal static class ModSettings
             (profile as JsonObject)?.Remove("survivalTurns");
         if (stored.Revision < 5)
             ApplyActionCalibration(profiles);
+        UpgradeMixedProfiles(profiles);
         if (stored.Revision >= 2)
             return stored with
             {
@@ -325,14 +331,123 @@ internal static class ModSettings
                 owner[key] = JsonNode.Parse(change.GetProperty("after").GetRawText());
         }
 
-        var context = settings["simulation"]!["turnContext"]!;
-        foreach (var (key, previous, next) in new[] { ("dazedDraws", 0.6, 0.8), ("woundDraws", 0.8, 0.95),
-                     ("burnDraws", 0.6, 0.95), ("beckonDraws", 0.6, 0.94), ("otherStatusDraws", 0.6, 0.9) })
-            if (context[key]?.GetValue<double>() == previous)
-                context[key] = next;
-
         static string Normalize(string term) => string.Join("*", term.ToLowerInvariant()
             .Split('*', StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal));
+    }
+
+    private static void UpgradeStatusCardPrices(JsonNode settings, HashSet<string> existingPrices)
+    {
+        var actions = settings["actions"]!.AsObject();
+        var formulas = actions["valuation"]!.AsObject();
+        var prices = actions["statusCardValues"]!.AsObject();
+        foreach (var (id, node) in formulas.ToArray())
+        {
+            if (Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind) && ActionEffect.IsCard(kind))
+            {
+                var old = node!.AsObject();
+                if (!existingPrices.Contains(id) && old.All(term => term.Key.Equals("amount", StringComparison.OrdinalIgnoreCase) ||
+                                                                     term.Key.Equals("fixed", StringComparison.OrdinalIgnoreCase)))
+                    prices[kind.ToString()] = Math.Max(0, old.Sum(term => term.Value!.GetValue<double>()));
+                formulas.Remove(id);
+            }
+            else
+                RemoveObsoleteTerms(node as JsonObject);
+        }
+        foreach (var (_, state) in settings["opening"]!["states"]!.AsObject())
+            RemoveObsoleteTerms(state?["formula"] as JsonObject);
+
+        actions.Remove("handBurnDamageChance");
+        actions.Remove("playableStatusRetention");
+        var context = settings["simulation"]!["turnContext"]!.AsObject();
+        foreach (string key in new[] { "dazedDraws", "woundDraws", "burnDraws", "beckonDraws", "otherStatusDraws" })
+            context.Remove(key);
+
+        static void RemoveObsoleteTerms(JsonObject? formula)
+        {
+            if (formula == null)
+                return;
+            foreach (string key in formula.Select(term => term.Key).Where(key =>
+                key.Split('*', StringSplitOptions.TrimEntries).Any(factor =>
+                    factor.Equals("draws", StringComparison.OrdinalIgnoreCase) ||
+                    factor.Equals("triggers", StringComparison.OrdinalIgnoreCase))).ToArray())
+                formula.Remove(key);
+        }
+    }
+
+    private static void UpgradeOpeningAmounts(JsonNode settings, JsonNode defaults)
+    {
+        var states = settings["opening"]!["states"]!;
+        var newStates = defaults["opening"]!["states"]!;
+        foreach (var (id, oldAmount) in new Dictionary<string, int>
+        {
+            ["STRENGTH"] = 3, ["RITUAL"] = 1, ["REGEN"] = 8, ["PLATING"] = 10, ["WEAK"] = 3,
+            ["VULNERABLE"] = 3, ["DEMISE"] = 2, ["DOOM"] = 14, ["ARTIFACT"] = 2, ["THORNS"] = 3
+        })
+            if (states[id]?["maxAmount"]?.GetValue<int>() == oldAmount)
+                states[id]!["maxAmount"] = newStates[id]!["maxAmount"]!.DeepClone();
+    }
+
+    private static void UpgradeMixedProfiles(JsonNode profiles)
+    {
+        var reviewed = ReadResource("mixed-monster-actions.json").GetProperty("monsters");
+        var defaults = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!;
+        var saved = profiles["monsters"]!;
+        var exclusions = profiles["keepVanilla"] as JsonArray;
+        foreach (var entry in reviewed.EnumerateObject())
+        {
+            string id = entry.Name;
+            if (saved[id] is not JsonObject monster || defaults[id] is not JsonObject defaultProfile)
+                continue;
+            if (exclusions != null)
+                foreach (var exclusion in exclusions.Where(value => value?.GetValue<string>() == id).ToArray())
+                    exclusions.Remove(exclusion);
+
+            if (monster["randomMoves"] != null)
+                continue;
+            monster["randomMoves"] = defaultProfile["randomMoves"]!.DeepClone();
+            foreach (var field in entry.Value.GetProperty("previous").EnumerateObject())
+                if (defaultProfile[field.Name] is { } next &&
+                    JsonNode.DeepEquals(monster[field.Name], JsonNode.Parse(field.Value.GetRawText())))
+                    monster[field.Name] = next.DeepClone();
+        }
+    }
+
+    private static void UpgradeProgressiveBuffs(JsonNode settings, JsonNode defaults)
+    {
+        var actions = settings["actions"]!;
+        var defaultWeights = defaults["actions"]!["weights"]!.AsObject();
+        foreach (var (id, rule) in defaultWeights.Where(entry => entry.Value?["base"]?.GetValue<double>() < 0 &&
+                     entry.Value?["perRoom"]?.GetValue<double>() > 0))
+        {
+            (actions["minActs"] as JsonObject)?.Remove(id);
+            if (actions["weights"]?[id] is JsonObject saved)
+                MoveWeight(saved, rule!, "base", "perRoom");
+        }
+        if (actions["minActs"] is JsonObject acts && acts.Count == 0)
+            actions.AsObject().Remove("minActs");
+
+        var opening = settings["opening"]!["states"]!;
+        foreach (var (id, rule) in defaults["opening"]!["states"]!.AsObject().Where(entry =>
+                     entry.Value?["weightPerRoom"]?.GetValue<double>() > 0 &&
+                     entry.Value?["weight"]?.GetValue<double>() < 0))
+            if (opening[id] is JsonObject saved)
+            {
+                saved.Remove("minAct");
+                MoveWeight(saved, rule!, "weight", "weightPerRoom");
+            }
+
+        static void MoveWeight(JsonObject saved, JsonNode rule, string baseKey, string slopeKey)
+        {
+            if ((saved[slopeKey]?.GetValue<double>() ?? 0) != 0 || saved[baseKey]?.GetValue<double>() is not double weight ||
+                weight <= 0)
+                return;
+
+            double baseline = rule[baseKey]!.GetValue<double>();
+            double slope = rule[slopeKey]!.GetValue<double>();
+            double scale = weight / (baseline + 30 * slope);
+            saved[baseKey] = baseline * scale;
+            saved[slopeKey] = slope * scale;
+        }
     }
 
     private static readonly Dictionary<string, double> OldOpeningCoefficients = new()
@@ -369,7 +484,7 @@ internal static class ModSettings
             if ((state.Common && !NativeActions.SupportsOpening(id)) || state.MaxAmount is < 0 ||
                 state.MinAmount < 1 || state.HpPerSurvivalTurnCap is < 0 ||
                 (state.MaxAmount > 0 && state.MaxAmount < state.MinAmount) ||
-                Math.Sign(state.Amount) != (id == "STRENGTH_DOWN" ? -1 : 1) ||
+                Math.Sign(state.Amount) != (id is "STRENGTH_DOWN" or "DEXTERITY_DOWN" ? -1 : 1) ||
                 (id == "STUN" && (state.MinAmount != 1 || state.MaxAmount > 1 || state.HpPerSurvivalTurnCap.HasValue)) ||
                 state.MinAct < 1)
                 throw new ArgumentException($"{id} 的开场层数或幕数无效。");

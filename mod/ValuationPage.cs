@@ -26,7 +26,9 @@ internal static class ValuationPage
             try
             {
                 var document = JsonNode.Parse(settings.Text)!;
-                AddSelector(actionList, document["actions"]!["valuation"]!.AsObject().Select(entry => entry.Key),
+                var actionsConfig = document["actions"]!;
+                AddSelector(actionList, actionsConfig["valuation"]!.AsObject().Select(entry => entry.Key)
+                    .Concat(actionsConfig["statusCardValues"]!.AsObject().Select(entry => entry.Key)),
                     ActionName, selectedAction, (detail, id) =>
                     {
                         selectedAction = id;
@@ -83,7 +85,11 @@ internal static class ValuationPage
             {
                 Text = $"目标：{(ActionEffect.TargetFor(kind) == EffectTarget.Self ? "自身" : "玩家")}"
             });
-            AddFormula(content, root => root["actions"]!["valuation"]![id]!.AsObject(), config["valuation"]![id]!.AsObject());
+            if (ActionEffect.IsCard(kind))
+                AddNumber(content, "单张状态牌估值", config["statusCardValues"]![id]!.GetValue<double>(), 0.01,
+                    (root, number) => root["actions"]!["statusCardValues"]![id] = number, minimum: 0);
+            else
+                AddFormula(content, root => root["actions"]!["valuation"]![id]!.AsObject(), config["valuation"]![id]!.AsObject());
             if (id == "Attack")
                 return;
 
@@ -341,7 +347,7 @@ internal static class ValuationPage
         {
             "fixed" => "固定值", "amount" => "层数／数量", "actionvalue" => "基础行动力",
             "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
-            "hits" => "攻击段数", "draws" => "预计抽到次数", "triggers" => "预计触发次数",
+            "hits" => "攻击段数",
             "playeractionvalue" => "玩家行动力", "roomsentered" => "进入房间数",
             "hppersurvivalturn" => "当前血量／预期生存回合", "inverseamount" => "1／层数", _ => factor
         }));
@@ -350,6 +356,8 @@ internal static class ValuationPage
     {
         "STRENGTH_DOWN" => "负力量", "REGEN" => "再生", "PLATING" => "甲覆", "ARTIFACT" => "人工制品",
         "DEMISE" => "消亡", "DOOM" => "灾厄", "IMBALANCED" => "失衡", "STUN" => "眩晕",
+        "DEXTERITY" => "敏捷", "DEXTERITY_DOWN" => "负敏捷", "VIGOR" => "活力",
+        "ENRAGE" => "激怒", "FLUTTER" => "振翅", "SLOW" => "迟缓",
         _ => Enum.TryParse<EffectKind>(id.Replace("_", ""), ignoreCase: true, out var kind)
             ? IntentDetails.Names(kind).Chinese : id
     };

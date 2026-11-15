@@ -4,7 +4,7 @@ public sealed class ActionValuation
 {
     private enum Factor
     {
-        Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers,
+        Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits,
         PlayerActionValue, HpPerSurvivalTurn, InverseAmount, RoomsEntered
     }
 
@@ -24,7 +24,7 @@ public sealed class ActionValuation
     }
 
     public double Evaluate(EffectKind kind, MonsterProfile profile, int amount, int hits = 1,
-        double effectiveAmount = 0, double draws = 0, double triggers = 0)
+        double effectiveAmount = 0)
     {
         if (!formulas.TryGetValue(kind, out var terms))
             return 0;
@@ -43,8 +43,6 @@ public sealed class ActionValuation
                     Factor.SurvivalTurns => profile.BaseExpectedSurvivalTurns,
                     Factor.EffectiveAmount => effectiveAmount,
                     Factor.Hits => hits,
-                    Factor.Draws => draws,
-                    Factor.Triggers => triggers,
                     Factor.PlayerActionValue => profile.PlayerActionValue,
                     Factor.HpPerSurvivalTurn => profile.HpPerSurvivalTurn,
                     Factor.InverseAmount => amount > 0 ? 1.0 / amount : 0,

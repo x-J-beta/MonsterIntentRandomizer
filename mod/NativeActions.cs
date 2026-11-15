@@ -27,7 +27,7 @@ internal static class NativeActions
             new MultiAttackIntent(effect.Amount, effect.Hits),
         EffectKind.Wait => new UnknownIntent(),
         EffectKind.Block or EffectKind.Intangible or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill
-            or EffectKind.Barricade or EffectKind.CurlUp => new DefendIntent(),
+            or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Slippery => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
         EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns
             or EffectKind.Artifact => new BuffIntent(),
@@ -84,7 +84,7 @@ internal static class NativeActions
                 case EffectKind.HardToKill:
                     await ApplyOpening(self, new OpeningState("HARD_TO_KILL", amount));
                     break;
-                case EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp:
+                case EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Slippery:
                     await ApplyOpening(self, new OpeningState(EffectPolicy.Id(effect.Kind), amount));
                     break;
                 case EffectKind.Thorns:
@@ -188,7 +188,12 @@ internal static class NativeActions
     private static Func<Creature, PowerModel?>? OpeningPower(string id) => id switch
     {
         "STRENGTH" or "STRENGTH_DOWN" => Get<StrengthPower>,
+        "DEXTERITY" or "DEXTERITY_DOWN" => Get<DexterityPower>,
         "RITUAL" => Get<RitualPower>,
+        "VIGOR" => Get<VigorPower>,
+        "ENRAGE" => Get<EnragePower>,
+        "FLUTTER" => Get<FlutterPower>,
+        "SLIPPERY" => Get<SlipperyPower>,
         "REGEN" => Get<RegenPower>,
         "PLATING" => Get<PlatingPower>,
         "HARDENED_SHELL" => Get<HardenedShellPower>,
@@ -199,6 +204,9 @@ internal static class NativeActions
         "CURL_UP" => Get<CurlUpPower>,
         "INTANGIBLE" => Get<IntangiblePower>,
         "WEAK" => Get<WeakPower>,
+        "FRAIL" => Get<FrailPower>,
+        "POISON" => Get<PoisonPower>,
+        "SLOW" => Get<SlowPower>,
         "VULNERABLE" => Get<VulnerablePower>,
         "DEMISE" => Get<DemisePower>,
         "DOOM" => Get<DoomPower>,
@@ -274,7 +282,12 @@ internal static class NativeActions
         var applied = state.Id switch
         {
             "STRENGTH" or "STRENGTH_DOWN" => await Apply<StrengthPower>(),
+            "DEXTERITY" or "DEXTERITY_DOWN" => await Apply<DexterityPower>(),
             "RITUAL" => await Apply<RitualPower>(),
+            "VIGOR" => await Apply<VigorPower>(),
+            "ENRAGE" => await Apply<EnragePower>(),
+            "FLUTTER" => await Apply<FlutterPower>(),
+            "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
             "HARDENED_SHELL" => await Apply<HardenedShellPower>(),
@@ -286,6 +299,9 @@ internal static class NativeActions
             "CURL_UP" => await Apply<CurlUpPower>(),
             "INTANGIBLE" => await Apply<IntangiblePower>(),
             "WEAK" => await Apply<WeakPower>(),
+            "FRAIL" => await Apply<FrailPower>(),
+            "POISON" => await Apply<PoisonPower>(),
+            "SLOW" => await Apply<SlowPower>(),
             "VULNERABLE" => await Apply<VulnerablePower>(),
             "DEMISE" => await Apply<DemisePower>(),
             "DOOM" => await Apply<DoomPower>(),

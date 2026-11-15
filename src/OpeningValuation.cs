@@ -114,5 +114,6 @@ public static class OpeningValuation
     private static bool Conflicts(string existing, string added, bool stackable) =>
         existing == added ? !stackable :
         ((existing is "THORNS" or "TEMPORARY_THORNS") && (added is "THORNS" or "TEMPORARY_THORNS")) ||
-        ((existing is "STRENGTH" or "STRENGTH_DOWN") && (added is "STRENGTH" or "STRENGTH_DOWN"));
+        ((existing is "STRENGTH" or "STRENGTH_DOWN") && (added is "STRENGTH" or "STRENGTH_DOWN")) ||
+        ((existing is "DEXTERITY" or "DEXTERITY_DOWN") && (added is "DEXTERITY" or "DEXTERITY_DOWN"));
 }
