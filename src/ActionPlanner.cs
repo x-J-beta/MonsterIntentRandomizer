@@ -75,7 +75,7 @@ public sealed record PoolSettings(
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
-    IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
+    IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
     IReadOnlyList<StatusPlacement>? CardPlacements = null, double? AttackSpend = null, double PlayerActionValue = 0,
     double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1)
 {
@@ -84,28 +84,6 @@ public sealed record MonsterProfile(
     internal int CapAmount(int maximum, double? hpPerTurnFactor) => hpPerTurnFactor is double factor
         ? (int)Math.Clamp(Math.Floor(HpPerSurvivalTurn * factor + 1e-9), 0, maximum)
         : maximum;
-
-    internal static IReadOnlyDictionary<int, double> DefaultHitWeights { get; } =
-        new Dictionary<int, double> { [1] = 1 };
-
-    internal IEnumerable<KeyValuePair<int, double>> AttackHitWeights =>
-        (HitWeights ?? DefaultHitWeights).Where(pair => pair.Key > 0 && pair.Value > 0)
-            .Select(pair => KeyValuePair.Create(pair.Key, pair.Value * (pair.Key == 1 ? SingleHitPreference : DesireHitPreference)))
-            .Where(pair => pair.Value > 0);
-
-    public double ExpectedHitsPerAttack
-    {
-        get
-        {
-            var weights = AttackHitWeights.ToArray();
-            return weights.Length == 0 ? 0 : weights.Sum(pair => pair.Key * pair.Value) / weights.Sum(pair => pair.Value);
-        }
-    }
-
-    public double ExpectedAttackTurnShare => ExpectedHitsPerAttack > 0
-        ? Math.Clamp(AttackFrequency / ExpectedHitsPerAttack, 0, 1) : 0;
-
-    public double ExpectedAttackHitsPerTurn => ExpectedAttackTurnShare * ExpectedHitsPerAttack;
 
     public double BudgetedAttackShare
     {
@@ -140,14 +118,17 @@ public sealed class ActionPlanner(PoolSettings settings)
             return new ActionPlan(null, aged, aged, false);
         }
 
-        double turnShare = profile.ExpectedAttackTurnShare;
+        double turnShare = Math.Clamp(profile.AttackFrequency, 0, 1);
         double income = profile.ActionValue * (turnShare + (1 - turnShare) * profile.NonAttackMultiplier);
         var granted = new Pools(retainedAction + income, retainedDesire + profile.AttackFrequency);
         double target = Math.Max(0, profile.ActionValue + retainedAction * settings.BalanceTargetWeight) * settings.DrawBudgetMultiplier;
         double attackFraction = profile.BudgetedAttackShare;
         double attackTarget = Jitter(target * attackFraction, profile.Volatility, random);
         var eligible = candidates.Where(candidate => candidate.Value > 0 && candidate.Weight > 0).ToArray();
-        int hits = DrawHits(profile, granted.AttackDesire, attackFraction, random);
+        var fixedHits = buildAttack == null
+            ? eligible.Where(candidate => candidate.IsAttack).Select(candidate => candidate.AttackHits).ToHashSet()
+            : null;
+        int hits = DrawHits(profile, granted.AttackDesire, attackFraction, fixedHits, random);
         var attack = hits > 0 ? (buildAttack != null ? buildAttack(hits, attackTarget) :
             Pick(eligible.Where(candidate => candidate.AttackHits == hits), profile, attackTarget, random)) : null;
         double allocatedOthers = target * (1 - attackFraction +
@@ -180,22 +161,22 @@ public sealed class ActionPlanner(PoolSettings settings)
     public Pools Settle(Pools granted, double value, int attackHits) =>
         new(granted.ActionValue - value, granted.AttackDesire - attackHits);
 
-    private int DrawHits(MonsterProfile profile, double desire, double attackFraction, Random random)
+    private int DrawHits(MonsterProfile profile, double desire, double attackFraction, HashSet<int>? fixedHits, Random random)
     {
-        if (attackFraction <= 0 || profile.AttackFrequency <= 0 ||
+        if (desire < 0 || attackFraction <= 0 || profile.AttackFrequency <= 0 ||
             profile.IntentWeights.GetValueOrDefault(IntentStyle.Attack) <= 0)
             return 0;
-        var allowed = profile.AttackHitWeights.OrderBy(pair => pair.Key).ToArray();
-        int large = allowed.Where(pair => pair.Key > 1 && pair.Key <= Math.Floor(desire))
-            .Select(pair => pair.Key).LastOrDefault();
-        var choices = allowed.Where(pair => pair.Key == 1 || pair.Key == large).ToArray();
-        if (choices.Length == 0)
+        int desireHits = (int)Math.Clamp(Math.Floor(desire), 1, int.MaxValue);
+        int large = fixedHits?.Where(hits => hits <= desireHits).DefaultIfEmpty(1).Max() ?? desireHits;
+        var choices = new List<(int Hits, double Weight)>(2);
+        if (profile.SingleHitPreference > 0 && (fixedHits == null || fixedHits.Contains(1)))
+            choices.Add((1, profile.SingleHitPreference));
+        if (large > 1 && profile.DesireHitPreference > 0)
+            choices.Add((large, profile.DesireHitPreference));
+        double waitChance = 5 / (desire + 10);
+        if (choices.Count == 0 || random.NextDouble() < waitChance)
             return 0;
-
-        double waitChance = 5 / Math.Max(5, desire + 10);
-        if (random.NextDouble() < waitChance)
-            return 0;
-        return Draw(choices.Select(pair => (pair.Key, Math.Pow(pair.Value, settings.WeightPower))), 0, random);
+        return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, settings.WeightPower))), 0, random);
     }
 
     private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&

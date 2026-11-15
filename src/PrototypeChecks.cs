@@ -86,7 +86,7 @@ internal static class PrototypeChecks
             new ActionCandidate("defend", IntentStyle.Defend, false, 2, 0, Effects: [new(EffectKind.Block, 5)])
         };
         var amplified = ActionCandidate.Attack("multi", 3, 3, 2, weak: false, 1);
-        var multiProfile = profile with { AttackFrequency = 1.5, HitWeights = new Dictionary<int, double> { [3] = 1 } };
+        var multiProfile = profile with { AttackFrequency = 1.5 };
         var boosted = planner.Plan(new Pools(8, 4), multiProfile, [amplified], random);
         Equal(15, boosted.Action?.Damage ?? 0, "actual damage is not capped");
         Equal(3, boosted.Granted.AttackDesire - boosted.After.AttackDesire, "each segment spends one desire");
@@ -113,6 +113,14 @@ internal static class PrototypeChecks
             planner.Plan(fixedDesire, profile, choices, attackRolls).Action!.AttackHits == 0) / 2400.0;
         if (Math.Abs(waitRate - 5.0 / 13) > 0.035 || new RoomWeight(-1, 10).At(20) != 0)
             throw new InvalidOperationException("Wait probability or explicitly disabled weights were ignored.");
+        ActionCandidate BuildAttack(int hits, double _) => ActionCandidate.Attack("dynamic", hits, 2, 0, weak: false, 1);
+        var forcedMulti = profile with { SingleHitPreference = 0 };
+        int highest = Enumerable.Range(0, 32).Max(seed => planner.Plan(new Pools(0, 5), forcedMulti, [],
+            new Random(seed), buildAttack: BuildAttack).Action!.AttackHits);
+        Equal(5, highest, "dynamic attacks use the full floored desire");
+        int negative = Enumerable.Range(0, 32).Max(seed => planner.Plan(new Pools(0, -2), profile, [],
+            new Random(seed), buildAttack: BuildAttack).Action!.AttackHits);
+        Equal(0, negative, "negative granted desire forbids attacks");
 
         Equal(2, planner.Start(profile, 2).ActionValue, "positive opening charged in full at start");
         Equal(6, planner.Start(profile, -2).ActionValue, "negative opening credited in full at start");
@@ -179,7 +187,6 @@ internal static class PrototypeChecks
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
-            HitWeights = new Dictionary<int, double> { [1] = 1, [3] = 1 },
             PlayerActionValue = 10,
             EffectWeights = amounts.Keys.ToDictionary(kind => kind, _ => 1.0),
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
@@ -214,8 +221,7 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Special debuffs bypassed the first-turn, chance or encounter restriction.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
-        var mixedProfile = varied with { AttackSpend = 0.5, Volatility = 0,
-            HitWeights = new Dictionary<int, double> { [1] = 1 } };
+        var mixedProfile = varied with { AttackSpend = 0.5, Volatility = 0, DesireHitPreference = 0 };
         var weakenedMixed = Enumerable.Range(0, 50).Select(seed => planner.Plan(new Pools(0, 2), mixedProfile,
             [Pure(EffectKind.Weak)], new Random(seed),
             buildAttack: (hits, target) => catalog.BuildAttack(mixedProfile, context with { Weakened = true }, hits, target)))

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 12;
+    private const int SettingsRevision = 13;
     private static readonly HashSet<string> RetiredOpeningStates = ["DEXTERITY", "DEXTERITY_DOWN", "FRAIL", "FLUTTER"];
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
@@ -70,6 +70,20 @@ internal static class ModSettings
 
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        (profiles["defaults"] as JsonObject)?.Remove("hitWeights");
+        foreach (var (_, profile) in profiles["monsters"]!.AsObject())
+            (profile as JsonObject)?.Remove("hitWeights");
+        if (stored.Revision == 12)
+        {
+            UpgradeBuffPrices(settings, defaults);
+            return stored with
+            {
+                Settings = JsonSerializer.SerializeToElement(settings),
+                Profiles = JsonSerializer.SerializeToElement(profiles),
+                Revision = SettingsRevision
+            };
+        }
         var savedValuations = settings["actions"]!["valuation"]!.AsObject();
         var existingCardPrices = (settings["actions"]!["statusCardValues"] as JsonObject)?
             .Select(entry => entry.Key).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
@@ -94,8 +108,8 @@ internal static class ModSettings
         UpgradeStatusCardPrices(settings, existingCardPrices);
         UpgradeOpeningAmounts(settings, defaults);
         UpgradeSharedBuffs(settings);
+        UpgradeBuffPrices(settings, defaults);
 
-        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         RemoveRetiredOpeningStates(profiles["defaults"]);
         (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
         foreach (var (_, profile) in profiles["monsters"]!.AsObject())
@@ -466,6 +480,25 @@ internal static class ModSettings
         if (profile?["openingStates"] is JsonArray pool)
             foreach (var state in pool.Where(state => state != null && RetiredOpeningStates.Contains(state.GetValue<string>())).ToArray())
                 pool.Remove(state);
+    }
+
+    private static void UpgradeBuffPrices(JsonNode settings, JsonNode defaults)
+    {
+        (string Id, string Term, double[] Previous)[] updates =
+        [
+            ("Strength", "amount*attackFrequency", [1.2, 1.65, 1.8]),
+            ("Ritual", "amount*attackFrequency*survivalTurns", [0.8]),
+            ("Regen", "amount*survivalTurns", [0.18, 0.2]),
+            ("Plating", "amount*survivalTurns", [0.17, 0.18]),
+            ("Thorns", "amount*survivalTurns", [0.65]),
+            ("TemporaryThorns", "amount", [1.6, 1.8]),
+            ("Vigor", "amount*attackFrequency", [0.6, 1]),
+            ("Enrage", "amount*attackFrequency*survivalTurns", [1.1])
+        ];
+        foreach (var (id, term, previous) in updates)
+            if (settings["buffs"]?[id]?["formula"] is JsonObject { Count: 1 } formula &&
+                formula[term]?.GetValue<double>() is double current && previous.Any(value => Math.Abs(value - current) < 1e-9))
+                formula[term] = defaults["buffs"]![id]!["formula"]![term]!.DeepClone();
     }
 
     private static void UpgradeMixedProfiles(JsonNode profiles)

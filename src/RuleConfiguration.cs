@@ -116,7 +116,6 @@ internal sealed class RuleConfiguration
             entry.GetProperty("attackFrequency").GetDouble(), Setting("nonAttackMultiplier").GetDouble(),
             0,
             Read<Dictionary<IntentStyle, double>>(entry.GetProperty("preferences")),
-            Read<Dictionary<int, double>>(Setting("hitWeights")),
             entry.TryGetProperty("effects", out var effects) ? Read<Dictionary<EffectKind, double>>(effects) : null,
             entry.TryGetProperty("cards", out var cards) ? Read<StatusPlacement[]>(cards) : null,
             entry.TryGetProperty("attackSpend", out var spend) ? spend.GetDouble() : null,
