@@ -60,23 +60,23 @@ Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {prof
 Console.WriteLine($"player damage prior after blending: {damage.SingleTarget:F1} single, {damage.AreaPerTarget:F1} area per target");
 Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
 double fullBlockChance = entry.TryGetProperty("fullBlockChance", out var blockChance) ? blockChance.GetDouble() : 0;
-OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, double value)
+int act = int.Parse(stage.AsSpan(3), CultureInfo.InvariantCulture);
+OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
-            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
-        .Select(id =>
-        {
-            var state = rules.OpeningValues[id];
-            return new OpeningOption(new OpeningState(id, state.Amount), OpeningValuation.Evaluate(state, value));
-        }).ToArray();
+            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath) && rules.OpeningValues[id].MinAct <= act)
+        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner)).ToArray();
 }
-var options = Options(enemies[0], configured.OpeningStates, profile.ActionValue);
+var options = Options(enemies[0], configured.OpeningStates, profile);
 foreach (var option in options)
-    Console.WriteLine($"{option.State.Id,-15} {option.Value:+0.00;-0.00;0.00}");
+    Console.WriteLine($"{option.State.Id,-19} " + string.Join(", ", option.Doses!.Select(dose =>
+        $"{dose.State.Amount}: {dose.Value:+0.00;-0.00;0.00}")));
 
 var openingRandom = new Random(seed);
 var actionRandom = new Random(seed ^ 0x649AAB81);
+var rareBuffRandom = new Random(seed ^ 0x13C96303);
+var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
 var imbalanceRandom = new Random(seed ^ 0x4B82C097);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
 var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
@@ -85,13 +85,19 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
     string id = ally.GetProperty("id").GetString()!;
     actionValues[id] = ally.GetProperty("actionValue").GetDouble();
     if (ally.TryGetProperty("openingStates", out var allyStates))
-        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), RuleConfiguration.Read<string[]>(allyStates), actionValues[id]);
+        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), RuleConfiguration.Read<string[]>(allyStates),
+            profile with
+            {
+                ActionValue = actionValues[id],
+                AttackFrequency = ally.TryGetProperty("attackFrequency", out var frequency) ? frequency.GetDouble() : 1,
+                BaseExpectedSurvivalTurns = ally.TryGetProperty("survivalTurns", out var survival) ? survival.GetDouble() : 3
+            });
 }
 var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();
 double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
-    $"{pick.MonsterId}:{pick.State.Id} ({pick.Value:+0.00;-0.00;0.00})"))) +
+    $"{pick.MonsterId}:{pick.State.Id} {pick.State.Amount} ({pick.Value:+0.00;-0.00;0.00})"))) +
     $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, " +
     $"net limit {actionValues.Values.Sum() * rules.Draws.MaxEncounterValueMultiplier:F2}");
 
@@ -102,7 +108,11 @@ var catalog = new ActionCatalog(rules.Actions);
 var history = new ActionHistory();
 bool previousAttack = false;
 int intangibleTurns = ownOpening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
-var turnContext = rules.TurnPrior;
+var activeEffects = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsRareBuff(kind) &&
+    ownOpening.Any(pick => pick.State.Id.Replace("_", "").Equals(kind.ToString(), StringComparison.OrdinalIgnoreCase)))
+    .ToHashSet();
+var turnContext = rules.TurnPrior with { Act = act, ActiveEffects = activeEffects };
+bool specialDebuffSpent = false;
 bool hasFallback = sample.TryGetProperty("fallback", out var fallback);
 int fallbackHits = hasFallback && fallback.TryGetProperty("attackHits", out var fallbackCount)
     ? fallbackCount.GetInt32() : (profile.AttackFrequency > 0 ? 1 : 0);
@@ -123,7 +133,8 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
     bool weak = turnContext.Weakened || ownOpening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount);
     bool imbalanced = ownOpening.Any(pick => pick.State.Id == "IMBALANCED");
     bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
-    var context = turnContext with { Strength = strength, Weakened = weak,
+    var context = turnContext with { Strength = strength, Weakened = weak, RareBuffRoll = rareBuffRandom.NextDouble(),
+        SpecialDebuffAvailable = !specialDebuffSpent, SpecialDebuffRoll = specialDebuffRandom.NextDouble(),
         AlreadyIntangible = turnContext.AlreadyIntangible || intangibleTurns > 0,
         AllowHardCardLimit = turnContext.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn };
     var candidates = catalog.Generate(profile, context, history, turn);
@@ -135,7 +146,11 @@ for (int turn = 1; turn <= sample.GetProperty("traceTurns").GetInt32(); turn++)
         ? planner.Settle(action.Granted, fallbackActionValue, fallbackHits)
         : action.After;
     if (action.Action is not null)
+    {
         history = history.Record(action.Action, turn);
+        activeEffects.UnionWith(action.Action.Effects!.Select(effect => effect.Kind).Where(ActionEffect.IsRareBuff));
+        specialDebuffSpent |= action.Action.Effects!.Any(effect => effect.IsSpecialDebuff);
+    }
     else
         history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
     previousAttack = action.Action?.IsAttack ?? (usedFallback && fallbackHits > 0);

@@ -17,9 +17,16 @@ internal static class PrototypeChecks
         Equal(0, late[0].AliveAtAction, "no action on spawn round");
         Equal(1, late[1].AliveAtAction, "late spawn survives next window");
 
-        Equal(-3, OpeningValuation.Evaluate(new StatusValue(1, -0.3), 10), "opening vulnerable");
-        Equal(9, OpeningValuation.Evaluate(new StatusValue(1, 0.9), 10), "opening intangible");
-        Equal(-4, OpeningValuation.Evaluate(new StatusValue(-2, -0.2), 10), "negative strength amounts");
+        var estimate = new MonsterProfile(10, 0.15, 1.5, 0.35, 4, new Dictionary<IntentStyle, double>());
+        Equal(-3, OpeningValuation.Evaluate(new StatusValue(1, -0.3), estimate, 1), "opening vulnerable");
+        Equal(9, OpeningValuation.Evaluate(new StatusValue(1, 0.9), estimate, 1), "opening intangible");
+        Equal(-3.6, OpeningValuation.Evaluate(new StatusValue(-2, -1.2, Basis: OpeningBasis.AttackFrequency), estimate, -2),
+            "negative strength uses hit frequency");
+        Equal(-2, OpeningValuation.Evaluate(new StatusValue(5, -0.4, Basis: OpeningBasis.Flat), estimate, 5), "flat doom");
+        Equal(2.7, OpeningValuation.Evaluate(new StatusValue(3, 0.225, Basis: OpeningBasis.SurvivalTurns), estimate, 3),
+            "regen uses lifetime");
+        Equal(3.2, OpeningValuation.Evaluate(new StatusValue(4, 0.2, Basis: OpeningBasis.SurvivalTurns),
+            estimate with { ActionValue = 100 }, 4), "plating ignores action value");
         Equal(1.5, SurvivalForecast.FromExpectedSurvival(1.5, 4).Sum(window => window.AliveAtAction),
             "profile survival fallback");
         try
@@ -48,6 +55,19 @@ internal static class PrototypeChecks
         if (OpeningValuation.Draw(openingOptions, openingActionValues,
                 draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25 }, new Random(11)).Count != 0)
             throw new InvalidOperationException("An unbalanced opening exceeded the encounter multiplier.");
+        var variable = OpeningValuation.Option("REGEN",
+            new StatusValue(1, 0.225, [1, 2, 3, 4], Basis: OpeningBasis.SurvivalTurns), estimate);
+        var rolledDoses = new HashSet<int>();
+        var doseRandom = new Random(123);
+        for (int i = 0; i < 50; i++)
+        {
+            var pick = OpeningValuation.Draw(new Dictionary<string, IReadOnlyList<OpeningOption>> { ["first"] = [variable] },
+                new Dictionary<string, double> { ["first"] = 10 }, new OpeningDraws(0, 1, 0, 1, 1, 1), doseRandom).Single();
+            rolledDoses.Add(pick.State.Amount);
+            Equal(pick.State.Amount * 0.225 * 4, pick.Value, "rolled dose is priced before budget");
+        }
+        if (!rolledDoses.SetEquals([1, 2, 3, 4]))
+            throw new InvalidOperationException("Opening dose range was ignored.");
 
         var planner = new ActionPlanner(new PoolSettings(0.75, 0.9));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
@@ -160,8 +180,15 @@ internal static class PrototypeChecks
         Equal(0.9, Pure(EffectKind.Dazed).Value, "reduced dazed draw valuation");
         Equal(1.2, Pure(EffectKind.Wound).Value, "wound draw valuation in the discard pile");
         Equal(3, Pure(EffectKind.Tangled).Value, "tangled has a fixed cost");
-        Equal(3, generated.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
-        Equal(2.3, generated.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
+        var later = catalog.Generate(varied, context, new ActionHistory(), 2).ToArray();
+        Equal(3, later.Single(action => action.Id == "StrengthDown 2").Value, "strength reduction costs fixed plus stacks");
+        Equal(2.3, later.Single(action => action.Id == "DexterityDown 2").Value, "dexterity reduction costs fixed plus stacks");
+        if (generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
+            catalog.Generate(varied, context with { SpecialDebuffRoll = 0.2 }, new ActionHistory(), 2)
+                .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
+            catalog.Generate(varied, context with { SpecialDebuffAvailable = false }, new ActionHistory(), 2)
+                .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)))
+            throw new InvalidOperationException("Special debuffs bypassed the first-turn, chance or encounter restriction.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
@@ -17,13 +18,14 @@ public static class ModEntry
     }
 }
 
-internal sealed record StoredSettings(bool Enabled, JsonElement Settings, JsonElement Profiles);
+internal sealed record StoredSettings(bool Enabled, JsonElement Settings, JsonElement Profiles, int Revision = 0);
 
 internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"));
+    private const int SettingsRevision = 1;
+    internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
 
@@ -33,7 +35,7 @@ internal static class ModSettings
         {
             if (File.Exists(SavePath))
             {
-                var stored = JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(SavePath))!;
+                var stored = Upgrade(JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(SavePath))!);
                 var rules = Parse(stored);
                 Current = stored;
                 Rules = rules;
@@ -47,6 +49,7 @@ internal static class ModSettings
 
     internal static void Save(StoredSettings edited)
     {
+        edited = edited with { Revision = SettingsRevision };
         var rules = Parse(edited);
         string path = SavePath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -58,12 +61,94 @@ internal static class ModSettings
 
     internal static string Format(JsonElement json) => JsonSerializer.Serialize(json, Pretty);
 
+    private static StoredSettings Upgrade(StoredSettings stored)
+    {
+        if (stored.Revision >= SettingsRevision)
+            return stored;
+
+        var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
+        var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        FillMissing(settings.AsObject(), defaults.AsObject());
+        var opening = settings["opening"]!;
+        if (opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
+            opening["maxEncounterValueMultiplier"] = 1;
+
+        foreach (var (id, oldCoefficient) in OldOpeningCoefficients)
+        {
+            var state = opening["states"]![id]!;
+            if (state["turns"]?.GetValue<double>() == oldCoefficient)
+                state["turns"] = defaults["opening"]!["states"]![id]!["turns"]!.DeepClone();
+        }
+        foreach (var (id, defaultState) in defaults["opening"]!["states"]!.AsObject())
+        {
+            var state = opening["states"]![id]!;
+            if (state["amount"]?.GetValue<int>() != defaultState!["amount"]?.GetValue<int>())
+                state.AsObject().Remove("amounts");
+        }
+
+        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!;
+        foreach (var (id, defaultProfile) in defaultProfiles["monsters"]!.AsObject())
+        {
+            if (profiles["monsters"]?[id] is not JsonObject profile)
+                continue;
+            FillMissing(profile, defaultProfile!.AsObject());
+            if (profile["openingStates"] is JsonArray pool && defaultProfile["openingStates"] is JsonArray candidates)
+            {
+                foreach (var candidate in candidates.Where(value => value != null &&
+                    NewOpeningIds.Contains(value.GetValue<string>())))
+                {
+                    if (!pool.Any(existing => JsonNode.DeepEquals(existing, candidate)))
+                        pool.Add(candidate!.DeepClone());
+                }
+            }
+        }
+        if (profiles["keepVanilla"] is JsonArray exclusions)
+        {
+            foreach (var entry in exclusions.Where(value => value != null &&
+                NewlyEligible.Contains(value.GetValue<string>())).ToArray())
+                exclusions.Remove(entry);
+        }
+        return new StoredSettings(stored.Enabled, JsonSerializer.SerializeToElement(settings),
+            JsonSerializer.SerializeToElement(profiles), SettingsRevision);
+    }
+
+    private static readonly Dictionary<string, double> OldOpeningCoefficients = new()
+    {
+        ["STRENGTH"] = 0.2, ["RITUAL"] = 0.4, ["STRENGTH_DOWN"] = -0.2,
+        ["REGEN"] = 0.08, ["PLATING"] = 0.06, ["DOOM"] = -0.04
+    };
+
+    private static readonly HashSet<string> NewOpeningIds =
+        ["PERSONAL_HIVE", "VITAL_SPARK", "WITHERING_PRESENCE", "ENVENOM", "PAPER_CUTS"];
+    private static readonly HashSet<string> NewlyEligible =
+        ["CORPSE_SLUG", "EXOSKELETON", "FROG_KNIGHT", "MYTE", "NIBBIT", "SEWER_CLAM", "SHRINKER_BEETLE", "SKULKING_COLONY"];
+
+    private static void FillMissing(JsonObject stored, JsonObject defaults)
+    {
+        foreach (var (key, value) in defaults)
+        {
+            if (!stored.TryGetPropertyValue(key, out var current))
+                stored[key] = value?.DeepClone();
+            else if (current is JsonObject nested && value is JsonObject nestedDefaults)
+                FillMissing(nested, nestedDefaults);
+        }
+    }
+
     private static RuleConfiguration Parse(StoredSettings stored)
     {
         var rules = new RuleConfiguration(stored.Settings, stored.Profiles);
         if (rules.Draws.Attempts < 0 || rules.Draws.MaxPerMonster < 0 || rules.Draws.MaxEncounterValueMultiplier < 0 ||
             rules.Draws.None < 0 || rules.Draws.Positive < 0 || rules.Draws.Negative < 0)
             throw new ArgumentException("开场权重、次数和倍率须为非负数。");
+
+        foreach (var (id, state) in rules.OpeningValues)
+        {
+            int[] doses = state.Amounts ?? [state.Amount];
+            if (doses.Length == 0 || doses.Any(amount => Math.Sign(amount) != (id == "STRENGTH_DOWN" ? -1 : 1)) ||
+                (id == "STUN" && doses.Any(amount => amount != 1)) || state.Weight < 0 || state.MinAct < 1)
+                throw new ArgumentException($"{id} 的开场层数、权重或幕数无效。");
+        }
 
         foreach (var (id, monster) in rules.Monsters)
         {

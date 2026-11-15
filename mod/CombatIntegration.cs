@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Hooks;
@@ -30,6 +31,10 @@ internal static class CombatIntegration
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Queue<Dictionary<Creature, double>> RecentDamage { get; } = new();
         public Dictionary<Creature, double> PlayerDamage { get; } = new();
+        public HashSet<PowerModel> OneTurnDebuffs { get; } = new();
+        public Creature? SpecialDebuffOwner { get; set; }
+        public int SpecialDebuffRound { get; set; }
+        public bool SpecialDebuffSpent { get; set; }
         public bool Ready { get; set; }
         public double DamagePrior { get; init; }
     }
@@ -83,10 +88,9 @@ internal static class CombatIntegration
                     continue;
 
                 candidates[id] = state.Rules.OpeningStates
-                    .Where(key => key != "STUN" || !state.Rules.FixedOpening)
-                    .Select(key => new OpeningOption(new OpeningState(key, rules.OpeningValues[key].Amount),
-                        OpeningValuation.Evaluate(rules.OpeningValues[key], state.Profile.ActionValue)))
-                    .Where(option => NativeActions.CanApplyOpening(creature, option))
+                    .Where(key => (key != "STUN" || !state.Rules.FixedOpening) && rules.OpeningValues[key].MinAct <= Act(combat))
+                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], state.Profile))
+                    .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
 
@@ -99,10 +103,10 @@ internal static class CombatIntegration
                 Creature target = byId[pick.MonsterId];
                 int applied = await NativeActions.ApplyOpening(target, pick.State);
                 var state = encounter.Enemies[target];
-                var price = rules.OpeningValues[pick.State.Id] with { Amount = applied };
+                var price = rules.OpeningValues[pick.State.Id];
                 state.Balance = state.Balance with
                 {
-                    ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price, state.Profile.ActionValue)
+                    ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price, state.Profile, applied)
                 };
             }
             encounter.Ready = true;
@@ -126,7 +130,7 @@ internal static class CombatIntegration
         {
             var enemy = Register(encounter, creature);
             if (enemy == null || !original.CanTransitionAway || creature.IsStunned ||
-                (enemy.Rules.FixedOpening && combat.RoundNumber == 1) || !IsOrdinaryMove(original))
+                KeepsNativeMove(enemy, original, combat.RoundNumber) || !IsOrdinaryMove(original))
                 return;
             int round = combat.RoundNumber;
             if (enemy.SettledRound >= round)
@@ -139,6 +143,11 @@ internal static class CombatIntegration
                     RandomFor(combat, creature.CombatId ?? 0, round));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
                 enemy.PlannedRound = round;
+                if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialDebuff) == true)
+                {
+                    encounter.SpecialDebuffOwner = creature;
+                    encounter.SpecialDebuffRound = round;
+                }
             }
 
             // The original state machine keeps its branch and stun history. Only the advertised/executed move changes.
@@ -166,7 +175,7 @@ internal static class CombatIntegration
             state.History = state.History.Record(action, __0.RoundNumber);
             state.Balance = plan.After;
         }
-        else if (!IsOrdinaryMove(__2) || state.Rules.FixedOpening && __0.RoundNumber == 1)
+        else if (!IsOrdinaryMove(__2) || KeepsNativeMove(state, __2, __0.RoundNumber))
         {
             state.Balance = encounter.Planner.Plan(state.Balance, state.Profile, [], new Random(0), canRandomize: false).After;
         }
@@ -201,9 +210,29 @@ internal static class CombatIntegration
             __result = FinishDamageRound(__result, encounter);
     }
 
+    internal static void TrackOneTurnDebuff(ICombatState combat, PowerModel power)
+    {
+        if (Encounters.TryGetValue(combat, out var encounter))
+            encounter.OneTurnDebuffs.Add(power);
+    }
+
+    internal static bool SpendSpecialDebuff(ICombatState combat)
+    {
+        if (!Encounters.TryGetValue(combat, out var encounter) || encounter.SpecialDebuffSpent)
+            return false;
+        encounter.SpecialDebuffSpent = true;
+        return true;
+    }
+
     private static async Task FinishDamageRound(Task original, EncounterRules encounter)
     {
         await original;
+        foreach (var power in encounter.OneTurnDebuffs)
+        {
+            if (power.Owner.Powers.Contains(power))
+                await PowerCmd.Remove(power);
+        }
+        encounter.OneTurnDebuffs.Clear();
         int recentRounds = Math.Max(0, encounter.Rules.Forecast.GetProperty("recentPlayerRoundLimit").GetInt32());
         encounter.RecentDamage.Enqueue(new Dictionary<Creature, double>(encounter.PlayerDamage));
         encounter.PlayerDamage.Clear();
@@ -241,6 +270,9 @@ internal static class CombatIntegration
         move.Intents.All(intent => intent.IntentType is IntentType.Attack or IntentType.Buff or IntentType.Debuff or
             IntentType.DebuffStrong or IntentType.Defend or IntentType.Heal or IntentType.StatusCard or IntentType.CardDebuff);
 
+    private static bool KeepsNativeMove(EnemyRules enemy, MoveState move, int round) =>
+        (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id);
+
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
         var player = combat.PlayerCreatures[0];
@@ -260,16 +292,24 @@ internal static class CombatIntegration
             PlayerAlreadyWeak = player.HasPower<WeakPower>(),
             PlayerAlreadyVulnerable = player.HasPower<VulnerablePower>(),
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
-            PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>(),
-            AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn
+            PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
+            AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
+            Act = Act(combat),
+            ActiveEffects = NativeActions.ActiveEffects(self, player, combat.Enemies),
+            RareBuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0xA4CB124Bu, combat.RoundNumber).NextDouble(),
+            SpecialDebuffRoll = RandomFor(combat, (self.CombatId ?? 0) ^ 0x0BC16431u, combat.RoundNumber).NextDouble(),
+            SpecialDebuffAvailable = !encounter.SpecialDebuffSpent &&
+                (encounter.SpecialDebuffRound != combat.RoundNumber || encounter.SpecialDebuffOwner == self)
         };
     }
 
     private static double StageDamage(ICombatState combat, RuleConfiguration rules)
     {
-        var stage = rules.Forecast.GetProperty("playerDamageByStage").GetProperty($"act{Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3)}");
+        var stage = rules.Forecast.GetProperty("playerDamageByStage").GetProperty($"act{Act(combat)}");
         return stage.GetProperty("singleTarget").GetDouble() + stage.GetProperty("areaPerTarget").GetDouble();
     }
+
+    private static int Act(ICombatState combat) => Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3);
 
     private static bool IsCurrentCombat(ICombatState combat) =>
         CombatManager.Instance.IsInProgress && ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), combat);

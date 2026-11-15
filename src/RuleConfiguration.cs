@@ -29,7 +29,9 @@ internal sealed class RuleConfiguration
             actions.GetProperty("maxAddedRitual").GetInt32(),
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
-            actions.GetProperty("handBurnDamageChance").GetDouble());
+            actions.GetProperty("handBurnDamageChance").GetDouble(),
+            actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
+            actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
@@ -69,14 +71,15 @@ internal sealed class RuleConfiguration
             entry.TryGetProperty("deadlyEnemies", out var higher) ? higher.GetDouble() : null,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
             entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),
-            Read<string[]>(Setting("openingStates")));
+            Read<string[]>(Setting("openingStates")),
+            entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : []);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
 internal sealed record MonsterRules(MonsterProfile Profile, double? DeadlyEnemies, bool Enabled,
-    bool FixedOpening, string[] OpeningStates)
+    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves)
 {
     public MonsterProfile AtAscension(bool deadly) =>
         deadly && DeadlyEnemies is double higher ? Profile with { ActionValue = higher } : Profile;

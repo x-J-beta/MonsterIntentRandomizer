@@ -27,7 +27,7 @@ internal static class NativeActions
         EffectKind.Heal => new HealIntent(),
         EffectKind.Strength or EffectKind.Ritual => new BuffIntent(),
         EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon => new StatusIntent(effect.Amount),
-        _ => new DebuffIntent()
+        _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
     };
 
     private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets)
@@ -42,6 +42,8 @@ internal static class NativeActions
             var living = targets.Where(target => target.IsAlive && target.CombatState == combat).ToArray();
             if (living.Length == 0)
                 return;
+            if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
+                continue;
 
             int amount = effect.Amount;
             switch (effect.Kind)
@@ -82,6 +84,35 @@ internal static class NativeActions
                     break;
                 case EffectKind.DexterityDown:
                     await PowerCmd.Apply<DexterityPower>(choice, living, -amount, self, null);
+                    break;
+                case EffectKind.Smoggy:
+                    foreach (var player in living.Where(target => !target.HasPower<SmoggyPower>()))
+                    {
+                        var smog = await PowerCmd.Apply<SmoggyPower>(choice, player, 1, self, null);
+                        if (smog != null)
+                            CombatIntegration.TrackOneTurnDebuff(combat, smog);
+                    }
+                    break;
+                case EffectKind.Tender:
+                    foreach (var player in living.Where(target => !target.HasPower<TenderPower>()))
+                    {
+                        var tender = await PowerCmd.Apply<TenderPower>(choice, player, amount, self, null);
+                        if (tender != null)
+                            CombatIntegration.TrackOneTurnDebuff(combat, tender);
+                    }
+                    break;
+                case EffectKind.Frail:
+                    await PowerCmd.Apply<FrailPower>(choice, living, amount, self, null);
+                    break;
+                case EffectKind.Poison:
+                    await PowerCmd.Apply<PoisonPower>(choice, living, amount, self, null);
+                    break;
+                case EffectKind.PlayerDoom:
+                    await PowerCmd.Apply<DoomPower>(choice, living, amount, self, null);
+                    break;
+                case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
+                    or EffectKind.Envenom or EffectKind.PaperCuts:
+                    await ApplyRareBuff(self, new OpeningState(OpeningId(effect.Kind), amount));
                     break;
                 case EffectKind.Dazed:
                     await Insert<Dazed>(living, effect);
@@ -127,6 +158,11 @@ internal static class NativeActions
         "DEMISE" => Get<DemisePower>,
         "DOOM" => Get<DoomPower>,
         "IMBALANCED" => Get<ImbalancedPower>,
+        "PERSONAL_HIVE" => Get<PersonalHivePower>,
+        "VITAL_SPARK" => Get<VitalSparkPower>,
+        "WITHERING_PRESENCE" => Get<WitheringPresencePower>,
+        "ENVENOM" => Get<EnvenomPower>,
+        "PAPER_CUTS" => Get<PaperCutsPower>,
         _ => null
     };
 
@@ -134,9 +170,31 @@ internal static class NativeActions
 
     internal static bool SupportsOpening(string id) => id == "STUN" || OpeningPower(id) != null;
 
-    internal static bool CanApplyOpening(Creature target, OpeningOption option) =>
+    private static readonly (EffectKind Kind, string Id)[] RareBuffs =
+    [
+        (EffectKind.PersonalHive, "PERSONAL_HIVE"), (EffectKind.VitalSpark, "VITAL_SPARK"),
+        (EffectKind.WitheringPresence, "WITHERING_PRESENCE"), (EffectKind.Envenom, "ENVENOM"),
+        (EffectKind.PaperCuts, "PAPER_CUTS")
+    ];
+
+    private static string OpeningId(EffectKind kind) => RareBuffs.First(effect => effect.Kind == kind).Id;
+
+    internal static HashSet<EffectKind> ActiveEffects(Creature self, Creature player, IEnumerable<Creature> enemies)
+    {
+        var active = RareBuffs.Where(effect => HasRareBuff(self, effect.Id, enemies)).Select(effect => effect.Kind).ToHashSet();
+        if (player.HasPower<TenderPower>())
+            active.Add(EffectKind.Tender);
+        return active;
+    }
+
+    private static bool HasRareBuff(Creature self, string id, IEnumerable<Creature> enemies) =>
+        OpeningValuation.IsEncounterUnique(id)
+            ? enemies.Any(enemy => enemy.IsAlive && OpeningPower(id)!(enemy) != null)
+            : OpeningPower(id)!(self) != null;
+
+    internal static bool CanApplyOpening(Creature target, OpeningOption option, IEnumerable<Creature> enemies) =>
         target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
-        (option.State.Id == "STUN" ? !target.IsStunned : OpeningPower(option.State.Id)?.Invoke(target) == null);
+        (option.State.Id == "STUN" ? !target.IsStunned : !HasRareBuff(target, option.State.Id, enemies));
 
     internal static async Task<int> ApplyOpening(Creature target, OpeningState state)
     {
@@ -147,6 +205,9 @@ internal static class NativeActions
             await CreatureCmd.Stun(target, original.Id);
             return target.IsStunned ? 1 : 0;
         }
+
+        if (RareBuffs.Any(effect => effect.Id == state.Id))
+            return await ApplyRareBuff(target, state);
 
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
@@ -172,6 +233,36 @@ internal static class NativeActions
             int before = target.GetPower<T>()?.Amount ?? 0;
             await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
             return (target.GetPower<T>()?.Amount ?? 0) - before;
+        }
+    }
+
+    private static async Task<int> ApplyRareBuff(Creature owner, OpeningState state)
+    {
+        if (owner.CombatState is not { } combat || HasRareBuff(owner, state.Id, combat.Enemies))
+            return 0;
+
+        var choice = new ThrowingPlayerChoiceContext();
+        var power = state.Id switch
+        {
+            "PERSONAL_HIVE" => (PowerModel?)await PowerCmd.Apply<PersonalHivePower>(choice, owner, state.Amount, owner, null),
+            "VITAL_SPARK" => await PowerCmd.Apply<VitalSparkPower>(choice, owner, state.Amount, owner, null),
+            "WITHERING_PRESENCE" => await ApplyWithering(),
+            "ENVENOM" => await PowerCmd.Apply<EnvenomPower>(choice, owner, state.Amount, owner, null),
+            "PAPER_CUTS" => await PowerCmd.Apply<PaperCutsPower>(choice, owner, state.Amount, owner, null),
+            _ => null
+        };
+        if (power is VitalSparkPower spark)
+            await spark.BeforeCombatStart();
+        return power?.Amount ?? 0;
+
+        async Task<WitheringPresencePower?> ApplyWithering()
+        {
+            if (combat.PlayerCreatures.FirstOrDefault(player => player.IsAlive) is not { } player)
+                return null;
+            var power = (WitheringPresencePower)ModelDb.Power<WitheringPresencePower>().ToMutable();
+            power.Target = player;
+            await PowerCmd.Apply(choice, power, owner, state.Amount, owner, null);
+            return owner.Powers.Contains(power) ? power : null;
         }
     }
 }

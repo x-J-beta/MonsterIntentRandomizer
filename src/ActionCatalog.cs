@@ -3,7 +3,8 @@ namespace MonsterIntentRandomizer;
 public enum EffectKind
 {
     Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled,
-    Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon
+    Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon,
+    PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, PlayerDoom
 }
 
 public enum EffectTarget { Self, Player }
@@ -12,10 +13,18 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
 {
     public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Strength or EffectKind.Ritual or EffectKind.Intangible
-        ? EffectTarget.Self : EffectTarget.Player;
+        || IsRareBuff(Kind) ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
-        EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown;
+        EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
+        EffectKind.Frail or EffectKind.Poison or EffectKind.PlayerDoom;
+    public bool IsHardCardLimit => Kind is EffectKind.Ringing or EffectKind.Smoggy;
+    public bool IsSpecialDebuff => IsRareDebuff(Kind);
+    public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
+        EffectKind.Tender or EffectKind.PlayerDoom or EffectKind.StrengthDown or EffectKind.DexterityDown;
+
+    public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
+        EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts;
 }
 
 public sealed record StatusPlacement(EffectKind Card, StatusPile Pile, double Weight = 1)
@@ -44,7 +53,9 @@ public sealed record ActionContext(
     double WoundDraws = 0,
     double ExistingBlock = 0,
     double BurnDraws = 0.6, bool PlayerAlreadyRestricted = false,
-    bool AllowHardCardLimit = true, double MissingHp = 0, bool AlreadyIntangible = false, double BeckonDraws = 0.6);
+    bool AllowHardCardLimit = true, double MissingHp = 0, bool AlreadyIntangible = false, double BeckonDraws = 0.6,
+    int Act = 1, IReadOnlySet<EffectKind>? ActiveEffects = null, double RareBuffRoll = 0,
+    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction,
@@ -52,7 +63,8 @@ public sealed record ActionValuationSettings(
     int PureBlockCooldownTurns, int MinimumBaseDamagePerHit,
     IReadOnlyDictionary<EffectKind, int[]> Amounts, int MaxAddedRitual = 1,
     StatusPlacementValues? PlacementValues = null,
-    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1);
+    int MaxHardCardLimits = 1, double HandBurnDamageChance = 1, IReadOnlyDictionary<EffectKind, int>? MinActs = null,
+    double SpecialDebuffChance = 0.20);
 
 public sealed record ActionHistory(
     int AddedStrength = 0, int InsertedCards = 0, int LastPlayerDebuffTurn = int.MinValue,
@@ -73,7 +85,7 @@ public sealed record ActionHistory(
             !action.IsAttack && effects.Any(effect => effect.Kind == EffectKind.Block)
                 ? turn : LastPureBlockTurn,
             AddedRitual + addedRitual, RitualStrength + AddedRitual,
-            HardCardLimits + effects.Count(effect => effect.Kind == EffectKind.Ringing));
+            HardCardLimits + effects.Count(effect => effect.IsHardCardLimit));
     }
 }
 
@@ -92,6 +104,12 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, weight) in actions.Where(entry => entry.Value > 0))
         {
+            if (context.Act < (settings.MinActs?.GetValueOrDefault(kind) ?? 1) || context.ActiveEffects?.Contains(kind) == true)
+                continue;
+            if (ActionEffect.IsRareDebuff(kind) && (!context.SpecialDebuffAvailable || turn <= 1 ||
+                context.SpecialDebuffRoll >= settings.SpecialDebuffChance))
+                continue;
+
             foreach (int amount in (settings.Amounts.GetValueOrDefault(kind) ?? []).Where(value => value > 0).Distinct())
             {
                 switch (kind)
@@ -112,6 +130,10 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Ritual when amount <= settings.MaxAddedRitual - history.AddedRitual:
                         Add(kind, amount, IntentStyle.Buff);
                         break;
+                    case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
+                        or EffectKind.Envenom or EffectKind.PaperCuts when turn > 1 && context.RareBuffRoll < weight:
+                        Add(kind, amount, IntentStyle.Buff);
+                        break;
                     case EffectKind.Weak when canDebuff && !context.PlayerAlreadyWeak:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
@@ -121,11 +143,17 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Tangled when canDebuff && !context.PlayerAlreadyRestricted:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
-                    case EffectKind.Ringing when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
+                    case EffectKind.Ringing or EffectKind.Smoggy when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
                         context.AllowHardCardLimit && history.HardCardLimits < settings.MaxHardCardLimits:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
+                    case EffectKind.Tender when amount == 1 && canDebuff:
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
+                        break;
                     case EffectKind.StrengthDown or EffectKind.DexterityDown when canDebuff:
+                        Add(kind, amount, IntentStyle.PlayerDebuff);
+                        break;
+                    case EffectKind.Frail or EffectKind.Poison or EffectKind.PlayerDoom when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon
@@ -185,7 +213,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 yield return attack;
                 foreach (var extra in extras)
                 {
-                    if (extra.Effect.Kind is EffectKind.Ringing or EffectKind.Intangible)
+                    if (extra.Effect.IsHardCardLimit || extra.Effect.Kind == EffectKind.Intangible ||
+                        ActionEffect.IsRareBuff(extra.Effect.Kind))
                         continue;
                     yield return new ActionCandidate(
                         $"{attack.Id} + {EffectName(extra.Effect)}", extra.Style, true,
@@ -204,7 +233,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (value > 0 && weight > 0 && profile.IntentWeights.GetValueOrDefault(style) > 0)
             {
                 int doses = settings.Amounts[kind].Where(dose => dose > 0).Distinct().Count();
-                extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, actions[kind] * weight / doses));
+                double preference = ActionEffect.IsRareBuff(kind) ? 1 : actions[kind];
+                extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, preference * weight / doses));
             }
         }
     }
