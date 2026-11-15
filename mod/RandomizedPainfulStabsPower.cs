@@ -34,28 +34,35 @@ public sealed class RandomizedPainfulStabsPower : PowerModel
         if (hits.Length > 0)
             Flash();
     }
+}
 
-    [HarmonyPatch]
-    private static class Appearance
+[HarmonyPatch]
+internal static class CustomPowerIcons
+{
+    private static PowerModel? NativeIcon(PowerModel power) => power switch
     {
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(PowerModel), nameof(PackedIconPath), MethodType.Getter)]
-        private static bool UsePackedIcon(PowerModel __instance, ref string __result)
-        {
-            if (__instance is not RandomizedPainfulStabsPower)
-                return true;
-            __result = ModelDb.Power<PainfulStabsPower>().PackedIconPath;
-            return false;
-        }
+        RandomizedPainfulStabsPower => ModelDb.Power<PainfulStabsPower>(),
+        SteamBuildupPower => ModelDb.Power<SteamEruptionPower>(),
+        _ => null
+    };
 
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(PowerModel), nameof(BigIcon), MethodType.Getter)]
-        private static bool UseBigIcon(PowerModel __instance, ref Texture2D __result)
-        {
-            if (__instance is not RandomizedPainfulStabsPower)
-                return true;
-            __result = ModelDb.Power<PainfulStabsPower>().BigIcon;
-            return false;
-        }
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(PowerModel), nameof(PowerModel.PackedIconPath), MethodType.Getter)]
+    private static bool UsePackedIcon(PowerModel __instance, ref string __result)
+    {
+        if (NativeIcon(__instance) is not { } source)
+            return true;
+        __result = source.PackedIconPath;
+        return false;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(PowerModel), nameof(PowerModel.BigIcon), MethodType.Getter)]
+    private static bool UseBigIcon(PowerModel __instance, ref Texture2D __result)
+    {
+        if (NativeIcon(__instance) is not { } source)
+            return true;
+        __result = source.BigIcon;
+        return false;
     }
 }

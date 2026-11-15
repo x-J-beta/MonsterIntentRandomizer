@@ -376,7 +376,7 @@ internal static class SettingsPage
             }
 
             foreach (var kind in Enum.GetValues<EffectKind>().OrderBy(kind => IntentDetails.Names(kind).Chinese))
-                if (ActionCatalog.CanFavor(kind, selected) &&
+                if (ActionCatalog.CanFavor(kind) &&
                     configured?.Any(pair => string.Equals(pair.Key, kind.ToString(), StringComparison.OrdinalIgnoreCase)) != true)
                     effects.AddItem(IntentDetails.Names(kind).Chinese, (int)kind);
             if (effects.ItemCount > 0)

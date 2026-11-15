@@ -52,6 +52,7 @@ function moveSubset(monster, profile) {
 function moveValues(move, profile, factors) {
     const result = Object.fromEntries(styles.map(style => [style, 0]));
     const missing = new Set();
+    const hasSteamEruption = move.nonAttackEffects.some(effect => effect.id === 'STEAM_ERUPTION');
     if (move.kind === 'direct_attack') {
         if (!Number.isFinite(move.directAttackValue.normal))
             missing.add('attack');
@@ -60,6 +61,8 @@ function moveValues(move, profile, factors) {
 
     for (const effect of move.nonAttackEffects) {
         const id = effect.id ?? '';
+        if (id === 'STEAM_ERUPTION')
+            continue;
         const player = String(effect.target ?? '').toLowerCase().includes('player');
         const style = effect.kind === 'block' || effect.kind.startsWith('heal') || defensivePowers.has(id) && !player
             ? 'defend' : player || effect.kind.includes('debuff') || effect.kind.includes('status_card')
@@ -92,7 +95,7 @@ function moveValues(move, profile, factors) {
         DebuffStrong: 'playerDebuff', Status: 'playerDebuff', CardDebuff: 'playerDebuff'
     };
     for (const intent of move.intents)
-        if (intentStyles[intent] && result[intentStyles[intent]] === 0)
+        if (intentStyles[intent] && result[intentStyles[intent]] === 0 && !(intent === 'Buff' && hasSteamEruption))
             missing.add(intentStyles[intent]);
     for (const style of missing)
         if (result[style] === 0)

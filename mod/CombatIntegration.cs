@@ -9,6 +9,7 @@ using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Monsters;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
@@ -183,6 +184,16 @@ internal static class CombatIntegration
         state.SettledRound = __0.RoundNumber;
         state.History = state.History.Record(action);
         state.Balance = plan.After;
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(WaterfallGiant), "PressurizeMove")]
+    private static void GrantSteamBuildup(WaterfallGiant __instance, ref Task __result)
+    {
+        var owner = __instance.Creature;
+        if (owner.CombatState is { } combat && Encounters.TryGetValue(combat, out var encounter) &&
+            encounter.Ready && Register(encounter, owner) != null)
+            __result = SteamBuildupPower.ApplyAfterOpening(__result, __instance);
     }
 
     [HarmonyPostfix]

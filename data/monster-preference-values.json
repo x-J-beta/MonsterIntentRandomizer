@@ -6,7 +6,7 @@
     "act2": 18,
     "act3": 33
   },
-  "recalculated": 76,
+  "recalculated": 77,
   "monsters": {
     "AEONGLASS": {"previous":{"attack":33.33,"buff":16.67,"defend":33.33,"playerDebuff":16.67},"proposed":{"attack":65.41,"buff":16.32,"defend":16.19,"playerDebuff":2.08},"values":{"attack":44,"buff":10.98,"defend":10.89,"playerDebuff":1.4},"moves":["EBB","EYE_LASERS","INCREASING_INTENSITY"],"approximations":[["INCREASING_INTENSITY",["buff"]]]},
     "ASSASSIN_RUBY_RAIDER": {"previous":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"proposed":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"values":{"attack":10,"buff":0,"defend":0,"playerDebuff":0},"moves":["KILLSHOT"]},
@@ -83,6 +83,7 @@
     "TWIG_SLIME_S": {"previous":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"proposed":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"values":{"attack":4,"buff":0,"defend":0,"playerDebuff":0},"moves":["TACKLE"]},
     "VANTOM": {"previous":{"attack":70,"buff":30,"defend":0,"playerDebuff":0},"proposed":{"attack":88.79,"buff":11.21,"defend":0,"playerDebuff":0},"values":{"attack":19,"buff":2.4,"defend":0,"playerDebuff":0},"moves":["INK_BLOT","INKY_LANCE","PREPARE"]},
     "VINE_SHAMBLER": {"previous":{"attack":66.67,"buff":0,"defend":0,"playerDebuff":33.33},"proposed":{"attack":89.73,"buff":0,"defend":0,"playerDebuff":10.27},"values":{"attack":36,"buff":0,"defend":0,"playerDebuff":4.12},"moves":["GRASPING_VINES","SWIPE","CHOMP"]},
+    "WATERFALL_GIANT": {"previous":{"attack":4,"buff":80,"defend":8,"playerDebuff":8},"proposed":{"attack":86.94,"buff":0,"defend":10.13,"playerDebuff":2.93},"values":{"attack":51.27,"buff":0,"defend":5.97,"playerDebuff":1.73},"moves":["STOMP","RAM","SIPHON","PRESSURE_GUN","PRESSURE_UP"],"approximations":[["SIPHON",["defend"]],["PRESSURE_GUN",["attack"]]]},
     "ZAPBOT": {"previous":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"proposed":{"attack":100,"buff":0,"defend":0,"playerDebuff":0},"values":{"attack":14,"buff":0,"defend":0,"playerDebuff":0},"moves":["ZAP"]}
   }
 }

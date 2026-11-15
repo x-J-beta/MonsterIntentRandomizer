@@ -38,8 +38,7 @@
       "Poison": { "amount": 1.25 },
       "Shrink": { "amount*actionValue": 0.3 },
       "StrengthDown": { "amount": 2.8, "amount*roomsEntered": 0.045 },
-      "DexterityDown": { "amount": 2.3, "amount*roomsEntered": 0.04 },
-      "GainSteam": { "amount": 1 }
+      "DexterityDown": { "amount": 2.3, "amount*roomsEntered": 0.04 }
     },
     "maxHardCardLimits": 1,
     "hardCardLimitFirstTurn": 2,
@@ -79,8 +78,7 @@
       "Debris": 3,
       "Void": 1,
       "WasteAway": 1,
-      "Slimed": 4,
-      "GainSteam": 5
+      "Slimed": 4
     },
     "weights": {
       "Burn": { "base": 0.5, "perRoom": 0 },

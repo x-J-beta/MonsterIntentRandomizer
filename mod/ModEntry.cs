@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 18;
+    private const int SettingsRevision = 19;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -76,6 +76,8 @@ internal static class ModSettings
         pools["highAscensionActionValueMultiplier"] ??= defaultSettings["pools"]!["highAscensionActionValueMultiplier"]!.DeepClone();
         var actions = settings["actions"]!;
         actions["statusCardPlayerActionValueRatios"] ??= defaultSettings["actions"]!["statusCardPlayerActionValueRatios"]!.DeepClone();
+        foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
+            RemoveSteamAction(actions[section]);
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         var monsters = profiles["monsters"]!.AsObject();
@@ -85,9 +87,16 @@ internal static class ModSettings
             if (profile is not JsonObject entry)
                 continue;
             entry.Remove("attackSpend");
+            RemoveSteamAction(entry["effects"]);
+            RemoveSteamAction(entry["favorites"]);
             if (defaultProfiles[id]?["favorites"] is { } favorites)
                 entry["favorites"] ??= favorites.DeepClone();
         }
+        var giant = monsters["WATERFALL_GIANT"] as JsonObject;
+        if (giant?["preferences"] is JsonObject preferences &&
+            preferences["attack"]?.GetValue<double>() == 4 && preferences["buff"]?.GetValue<double>() == 80 &&
+            preferences["defend"]?.GetValue<double>() == 8 && preferences["playerDebuff"]?.GetValue<double>() == 8)
+            giant["preferences"] = defaultProfiles["WATERFALL_GIANT"]!["preferences"]!.DeepClone();
         if (stored.Revision >= 16)
             return Updated();
 
@@ -105,8 +114,6 @@ internal static class ModSettings
         actions.AsObject().Remove("hpPerSurvivalTurnCaps");
         settings["pools"]!["openingStrengthAtMax"] ??=
             Defaults.Settings.GetProperty("pools").GetProperty("openingStrengthAtMax").GetDouble();
-        actions["valuation"]!["GainSteam"] ??= defaultSettings["actions"]!["valuation"]!["GainSteam"]!.DeepClone();
-        actions["maxAmounts"]!["GainSteam"] ??= defaultSettings["actions"]!["maxAmounts"]!["GainSteam"]!.DeepClone();
         buffs["PainfulStabs"] ??= JsonNode.Parse(Defaults.Settings.GetProperty("buffs").GetProperty("PainfulStabs").GetRawText());
 
         CleanProfile(profiles["defaults"]);
@@ -136,12 +143,8 @@ internal static class ModSettings
                 profile["openingStates"] = new JsonArray();
             }
         }
-        if (monsters["WATERFALL_GIANT"] is JsonObject giant)
-        {
+        if (giant != null)
             giant["fixedOpening"] = true;
-            giant["effects"] ??= new JsonObject();
-            giant["effects"]!["GainSteam"] ??= defaultProfiles["WATERFALL_GIANT"]!["effects"]!["GainSteam"]!.DeepClone();
-        }
         if (monsters["AEONGLASS"] is JsonObject aeonglass)
         {
             aeonglass["keepMoves"] ??= new JsonArray();
@@ -175,6 +178,14 @@ internal static class ModSettings
             if (profile?["openingStates"] is JsonArray pool)
                 foreach (var entry in pool.Where(entry => entry?.GetValue<string>() == "CURL_UP").ToArray())
                     pool.Remove(entry);
+        }
+
+        static void RemoveSteamAction(JsonNode? node)
+        {
+            if (node is JsonObject map)
+                foreach (string key in map.Select(entry => entry.Key)
+                    .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
+                    map.Remove(key);
         }
     }
 
@@ -221,10 +232,8 @@ internal static class ModSettings
                 monster.Profile.SingleHitPreference < 0 || monster.Profile.DesireHitPreference < 0 ||
                 monster.Profile.Volatility < 0 || monster.Profile.NonAttackMultiplier < 0)
                 throw new ArgumentException($"{id} 的行动力须为正数，其余怪物参数须为非负数。");
-            if (monster.Profile.Favorites?.Any(entry => !ActionCatalog.CanFavor(entry.Key, id) || entry.Value < 0) == true)
+            if (monster.Profile.Favorites?.Any(entry => !ActionCatalog.CanFavor(entry.Key) || entry.Value < 0) == true)
                 throw new ArgumentException($"{id} 的行动偏好须为可用的非攻击行动，权重须为非负数。");
-            if (id != "WATERFALL_GIANT" && monster.Profile.EffectWeights?.GetValueOrDefault(EffectKind.GainSteam) > 0)
-                throw new ArgumentException($"{id} 无法获得蒸汽喷发。");
             foreach (string state in monster.OpeningStates)
             {
                 if (!rules.OpeningValues.ContainsKey(state) || !NativeActions.SupportsOpening(state))
