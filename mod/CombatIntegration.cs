@@ -117,6 +117,7 @@ internal static class CombatIntegration
                         WithSurvival(state.Profile, target, combat, encounter), applied)
                 };
             }
+            await VitalSparkIntegration.Refresh(combat);
             encounter.Ready = true;
         }
         catch (Exception error)
@@ -209,6 +210,8 @@ internal static class CombatIntegration
         if (Encounters.TryGetValue(combat, out var encounter))
             encounter.TemporaryThorns[power] = encounter.TemporaryThorns.GetValueOrDefault(power) + amount;
     }
+
+    internal static bool ManagesCombat(ICombatState combat) => Encounters.TryGetValue(combat, out _);
 
     internal static bool SpendSpecialDebuff(ICombatState combat)
     {

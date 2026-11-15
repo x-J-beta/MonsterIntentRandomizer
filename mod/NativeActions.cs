@@ -303,8 +303,6 @@ internal static class NativeActions
             "PAPER_CUTS" => await PowerCmd.Apply<PaperCutsPower>(choice, owner, state.Amount, owner, null),
             _ => null
         };
-        if (power is VitalSparkPower spark)
-            await spark.BeforeCombatStart();
         return power == null ? 0 : power.Amount - before;
 
         async Task<WitheringPresencePower?> ApplyWithering()
