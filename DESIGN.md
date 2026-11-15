@@ -31,7 +31,7 @@
 
 塞牌位置用 `cards` 指定，例如 `{"card":"Wound","pile":"Discard","weight":3}`。位置包括 `Hand`、`Top`、`Draw`、`Bottom`、`Discard`。晕眩只接受堆顶、抽牌堆和弃牌堆。
 
-单张状态牌估值取固定值与玩家行动力下限的较大值，再乘张数和位置倍率。`actions.statusCardPlayerActionValueRatios` 中晕眩的系数是全体牌的基准，默认为 0.05。其余牌可配置更高的系数。
+单张状态牌估值由固定部分加玩家行动力乘系数组成，再乘张数和位置倍率。固定部分等于起始单张估值减去开局玩家行动力乘系数，最低为 0。`actions.statusCardPlayerActionValueRatios` 中晕眩的系数是全体牌的下限，默认为 0.05。其余牌可配置更高的系数。
 
 ### 行动力池与攻击欲望池
 

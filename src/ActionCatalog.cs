@@ -79,7 +79,7 @@ public sealed record ActionValuationSettings(
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
     IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
-    IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null)
+    IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null, double CardStartingPlayerActionValue = 16)
 {
     public EffectPolicy PolicyFor(EffectKind kind) => Buffs?.GetValueOrDefault(kind) is { } buff
         ? new EffectPolicy(buff.Stackable, buff.Unique, EffectTarget.Self)
@@ -214,7 +214,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (pile is StatusPile position)
             {
                 double ratio = Math.Max(cardBaseline, settings.CardPlayerActionValueRatios?.GetValueOrDefault(kind) ?? 0);
-                value = Math.Max(value, amount * profile.PlayerActionValue * ratio) *
+                double rate = amount * ratio;
+                double fixedValue = Math.Max(0, value - rate * settings.CardStartingPlayerActionValue);
+                value = (fixedValue + rate * profile.PlayerActionValue) *
                     (settings.PlacementValues ?? new StatusPlacementValues()).For(position);
             }
             if (value > 0 && weight > 0)

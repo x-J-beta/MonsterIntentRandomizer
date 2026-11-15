@@ -64,7 +64,7 @@ internal sealed class RuleConfiguration
             actions.GetProperty("maxHardCardLimits").GetInt32(),
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, policies, buffs, PoolSettings.ChaosProgress, cardRatios);
+            minimums, policies, buffs, PoolSettings.ChaosProgress, cardRatios, PlayerAction.At(0));
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),

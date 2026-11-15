@@ -206,7 +206,7 @@ internal static class PrototypeChecks
             [EffectKind.Strength] = Status("amount*attackFrequency", 1.2),
             [EffectKind.Intangible] = Status("amount*actionValue", 0.9)
         };
-        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs);
+        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs, CardStartingPlayerActionValue: 10);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
@@ -224,8 +224,8 @@ internal static class PrototypeChecks
         Equal(6.5, Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(1.5, Pure(EffectKind.Dazed).Value, "flat dazed value");
         var highPlayerAction = catalog.Generate(varied with { PlayerActionValue = 40 }, context, new ActionHistory(), 1);
-        Equal(2 * 1.33, highPlayerAction.Single(action => action.Id == "Dazed 1 @Top").Value,
-            "player action value floors card price before pile placement");
+        Equal(3 * 1.33, highPlayerAction.Single(action => action.Id == "Dazed 1 @Top").Value,
+            "player action value replaces a portion of starting card value before pile placement");
         Equal(2.5 * 0.75, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound value in the discard pile");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
         Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),
