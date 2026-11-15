@@ -8,6 +8,8 @@ public sealed record EffectPolicy(bool Stackable = true, bool Unique = false, Ef
         .ToDictionary(kind => kind, kind => Regex.Replace(kind.ToString(), "(?<!^)[A-Z]", "_$0").ToUpperInvariant());
 
     public static string Id(EffectKind kind) => Ids[kind];
+    internal static bool IsThreshold(string id) =>
+        Enum.TryParse<EffectKind>(id.Replace("_", ""), true, out var kind) && ActionEffect.UsesThreshold(kind);
 
     public static EffectPolicy Default(EffectKind kind) => new(
         Stackable: !(ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind) ||

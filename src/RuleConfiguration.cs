@@ -90,8 +90,9 @@ internal sealed class RuleConfiguration
     public HashSet<string> KeepVanilla { get; }
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
-    internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms) =>
-        OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress);
+    internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null) =>
+        OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress,
+            EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null);
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
             .Concat((Actions.Buffs?.Keys ?? []).Where(kind => monster.Profile.EffectWeights?.GetValueOrDefault(kind) > 0)

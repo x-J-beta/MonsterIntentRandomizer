@@ -49,6 +49,7 @@ internal static class CombatIntegration
         public ActionHistory History { get; set; } = new();
         public int PlannedRound { get; set; }
         public int SettledRound { get; set; }
+        public double ActualThresholdCost { get; set; }
         public MoveState? RandomMove { get; set; }
         public ActionPlan? Plan { get; set; }
     }
@@ -94,7 +95,7 @@ internal static class CombatIntegration
                 candidates[id] = rules.OpeningStatesFor(state.Rules)
                     .Where(key => key != "STUN" || (creature.Monster?.NextMove is { } first &&
                         CanReplaceMove(creature, state, first, 1)))
-                    .Select(key => rules.OpeningOption(key, profile, rooms))
+                    .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key)))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -106,15 +107,20 @@ internal static class CombatIntegration
                 if (!IsCurrentCombat(combat))
                     return;
                 Creature target = byId[pick.MonsterId];
+                int previousThreshold = NativeActions.ThresholdFor(target, pick.State.Id);
                 int applied = await NativeActions.ApplyOpening(target, pick.State);
-                if (applied != 0)
-                    encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
                 var state = encounter.Enemies[target];
-                var price = rules.OpeningValues[pick.State.Id];
+                var pricing = rules.OpeningValues[pick.State.Id];
+                var profile = WithSurvival(state.Profile, target, combat, encounter);
+                bool threshold = EffectPolicy.IsThreshold(pick.State.Id);
+                double price = threshold
+                    ? OpeningValuation.ThresholdCost(pricing, profile, previousThreshold, applied)
+                    : OpeningValuation.Evaluate(pricing, profile, applied);
+                if (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0)
+                    encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
                 state.Balance = state.Balance with
                 {
-                    ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price,
-                        WithSurvival(state.Profile, target, combat, encounter), applied)
+                    ActionValue = state.Balance.ActionValue - price
                 };
             }
             await VitalSparkIntegration.Refresh(combat);
@@ -153,6 +159,7 @@ internal static class CombatIntegration
                     buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
                 enemy.PlannedRound = round;
+                enemy.ActualThresholdCost = 0;
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
                     if (encounter.Rules.UniqueAction(effect.Kind))
                         encounter.UniquePlans[effect.Kind] = (creature, round);
@@ -184,7 +191,11 @@ internal static class CombatIntegration
 
         state.SettledRound = __0.RoundNumber;
         state.History = state.History.Record(action);
-        state.Balance = plan.After;
+        double plannedThresholdCost = action.Effects?.Sum(effect => effect.Threshold?.Planned ?? 0) ?? 0;
+        state.Balance = plan.After with
+        {
+            ActionValue = plan.After.ActionValue + plannedThresholdCost - state.ActualThresholdCost
+        };
     }
 
     [HarmonyPostfix]
@@ -227,8 +238,11 @@ internal static class CombatIntegration
             return true;
         var targetKind = ActionEffect.TargetFor(kind);
         var target = targetKind == EffectTarget.Self ? self : player;
-        if (!encounter.Rules.Actions.PolicyFor(kind).Stackable && NativeActions.HasActionEffect(kind, target))
+        bool stackable = encounter.Rules.Actions.PolicyFor(kind).Stackable;
+        if (!stackable && NativeActions.HasActionEffect(kind, target))
             return false;
+        if (ActionEffect.UsesThreshold(kind) && NativeActions.ThresholdFor(self, EffectPolicy.Id(kind)) > 0)
+            return stackable;
         return !encounter.Rules.UniqueAction(kind) ||
             (!encounter.UsedEffects.Contains((targetKind, EffectPolicy.Id(kind))) &&
                 !(targetKind == EffectTarget.Self ? combat.Enemies : combat.PlayerCreatures)
@@ -239,6 +253,12 @@ internal static class CombatIntegration
     {
         if (Encounters.TryGetValue(combat, out var encounter))
             encounter.UsedEffects.Add((ActionEffect.TargetFor(kind), EffectPolicy.Id(kind)));
+    }
+
+    internal static void RecordThresholdCost(ICombatState combat, Creature owner, double cost)
+    {
+        if (Encounters.TryGetValue(combat, out var encounter) && encounter.Enemies.TryGetValue(owner, out var state))
+            state.ActualThresholdCost += cost;
     }
 
     private static async Task ExpireTemporaryThorns(Task original, EncounterRules encounter)
@@ -327,6 +347,8 @@ internal static class CombatIntegration
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
             AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
+            Thresholds = (encounter.Rules.Actions.Buffs?.Keys ?? []).Where(ActionEffect.UsesThreshold)
+                .ToDictionary(kind => kind, kind => NativeActions.ThresholdFor(self, EffectPolicy.Id(kind))),
             ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&

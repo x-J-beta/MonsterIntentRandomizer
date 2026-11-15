@@ -55,7 +55,8 @@ internal static class NativeActions
             }
             if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
                 continue;
-            CombatIntegration.RecordEffect(combat, effect.Kind);
+            if (effect.Threshold == null)
+                CombatIntegration.RecordEffect(combat, effect.Kind);
 
             int amount = effect.Amount;
             switch (effect.Kind)
@@ -71,7 +72,16 @@ internal static class NativeActions
                     await CreatureCmd.Heal(self, amount);
                     break;
                 case var buff when ActionEffect.IsMonsterBuff(buff):
-                    await ApplyOpening(self, new OpeningState(EffectPolicy.Id(buff), amount));
+                    string id = EffectPolicy.Id(buff);
+                    int before = effect.Threshold != null ? ThresholdFor(self, id) : 0;
+                    int applied = await ApplyOpening(self, new OpeningState(id, amount));
+                    if (effect.Threshold is { } pricing)
+                    {
+                        CombatIntegration.RecordThresholdCost(combat, self,
+                            OpeningValuation.ThresholdCost(pricing.State, pricing.Profile, before, applied));
+                        if (applied > 0 && (before == 0 || applied < before))
+                            CombatIntegration.RecordEffect(combat, buff);
+                    }
                     break;
                 case EffectKind.Weak:
                     await PowerCmd.Apply<WeakPower>(choice, living, amount, self, null);
@@ -225,10 +235,21 @@ internal static class NativeActions
     private static bool HasOpening(Creature target, string id) => id == "STUN"
         ? target.IsStunned : OpeningPower(id)?.Invoke(target) != null;
 
-    internal static bool CanApplyOpening(Creature target, OpeningOption option, IEnumerable<Creature> enemies) =>
-        target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
-        (option.Stackable || !HasOpening(target, option.State.Id)) &&
-        (!option.Unique || !enemies.Any(enemy => enemy.IsAlive && HasOpening(enemy, option.State.Id)));
+    internal static int ThresholdFor(Creature target, string id) => id switch
+    {
+        "HARDENED_SHELL" => target.GetPower<HardenedShellPower>()?.Amount ?? 0,
+        "HARD_TO_KILL" => target.GetPower<HardToKillPower>()?.Amount ?? 0,
+        _ => 0
+    };
+
+    internal static bool CanApplyOpening(Creature target, OpeningOption option, IEnumerable<Creature> enemies)
+    {
+        string id = option.State.Id;
+        bool upgrade = option.PreviousThreshold is > 0 && option.Stackable;
+        return target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
+            (option.Stackable || !HasOpening(target, id)) &&
+            (!option.Unique || !enemies.Any(enemy => enemy.IsAlive && (!upgrade || enemy != target) && HasOpening(enemy, id)));
+    }
 
     internal static async Task<int> ApplyOpening(Creature target, OpeningState state)
     {
@@ -255,8 +276,8 @@ internal static class NativeActions
             "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
-            "HARDENED_SHELL" => await Apply<HardenedShellPower>(),
-            "HARD_TO_KILL" => await Apply<HardToKillPower>(),
+            "HARDENED_SHELL" => await ApplyThreshold<HardenedShellPower>(),
+            "HARD_TO_KILL" => await ApplyThreshold<HardToKillPower>(),
             "THORNS" => await Apply<ThornsPower>(),
             "TEMPORARY_THORNS" => await ApplyTemporaryThorns(target, state.Amount),
             "ARTIFACT" => await Apply<ArtifactPower>(),
@@ -278,6 +299,16 @@ internal static class NativeActions
             int before = target.GetPower<T>()?.Amount ?? 0;
             await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
             return (target.GetPower<T>()?.Amount ?? 0) - before;
+        }
+
+        async Task<int> ApplyThreshold<T>() where T : PowerModel
+        {
+            var power = target.GetPower<T>();
+            if (power == null)
+                await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
+            else if (state.Amount < power.Amount)
+                await PowerCmd.ModifyAmount(choice, power, state.Amount - power.Amount, target, null);
+            return target.GetPower<T>()?.Amount ?? 0;
         }
     }
 

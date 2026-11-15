@@ -1,7 +1,9 @@
 namespace MonsterIntentRandomizer;
 
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
-    IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false);
+    IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
+    int? PreviousThreshold = null, double PreviousValue = 0);
+public sealed record ThresholdPrice(StatusValue State, MonsterProfile Profile, double Planned);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
 public sealed record OpeningDraws(double None, double Positive, double Negative, int Attempts,
     int MaxPerMonster, double MaxEncounterValueMultiplier, double Strength = 1);
@@ -28,15 +30,20 @@ public static class OpeningValuation
     public static double Evaluate(StatusValue state, MonsterProfile profile, int amount) =>
         amount == 0 ? 0 : state.CompiledFormula.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), effectiveAmount: Math.Abs(amount));
 
+    public static double ThresholdCost(StatusValue state, MonsterProfile profile, int before, int after) =>
+        after <= 0 || (before > 0 && after >= before) ? 0 :
+            Math.Max(0, Evaluate(state, profile, after) - Evaluate(state, profile, before));
+
     public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
-        double strength = 1, double chaosProgress = 0)
+        double strength = 1, double chaosProgress = 0, int? previousThreshold = null)
     {
         var doses = state.Doses(profile, strength).Select(amount =>
             new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount))).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);
         return representative with { Weight = state.RoomWeight.At(rooms, chaosProgress), Doses = doses,
-            Stackable = state.Stackable, Unique = state.Unique };
+            Stackable = state.Stackable, Unique = state.Unique, PreviousThreshold = previousThreshold,
+            PreviousValue = Evaluate(state, profile, previousThreshold ?? 0) };
     }
 
     public static IReadOnlyList<OpeningPick> Draw(
@@ -61,11 +68,14 @@ public static class OpeningValuation
                 .Select(pair =>
                 {
                     var previous = selected.Where(pick => pick.MonsterId == pair.Key).ToArray();
-                    var options = pair.Value.Where(option => previous.Length < settings.MaxPerMonster && option.Weight > 0 &&
+                    var options = pair.Value.Select(option => PriceThreshold(option, previous))
+                        .Where(option => (previous.Length < settings.MaxPerMonster || option.PreviousThreshold.HasValue &&
+                            previous.Any(pick => pick.State.Id == option.State.Id)) && option.Weight > 0 &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
                             (positive ? option.Value > 0 : option.Value < 0)) &&
                         previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable)) &&
-                        (!option.Unique || selected.All(pick => pick.State.Id != option.State.Id))).ToArray();
+                        (!option.Unique || selected.All(pick => pick.State.Id != option.State.Id ||
+                            option.PreviousThreshold.HasValue && option.Stackable && pick.MonsterId == pair.Key))).ToArray();
                     return (pair.Key, Options: options);
                 }).Where(pair => pair.Options.Length > 0).ToArray();
             if (available.Length == 0)
@@ -75,6 +85,7 @@ public static class OpeningValuation
             var chosen = optionsForMonster.FirstOrDefault(option => (weightRoll -= option.Weight) < 0);
             if (chosen == null)
                 continue;
+            bool threshold = chosen.PreviousThreshold.HasValue;
             if (chosen.Doses is { } doses)
             {
                 double baseBudget = Math.Max(0, actionValues.GetValueOrDefault(id));
@@ -90,7 +101,11 @@ public static class OpeningValuation
                         break;
                 }
             }
-            selected.Add(new OpeningPick(id, chosen.State, chosen.Value));
+            int earlier = threshold ? selected.FindIndex(pick => pick.MonsterId == id && pick.State.Id == chosen.State.Id) : -1;
+            if (earlier >= 0)
+                selected[earlier] = new OpeningPick(id, chosen.State, selected[earlier].Value + chosen.Value);
+            else
+                selected.Add(new OpeningPick(id, chosen.State, chosen.Value));
             total += chosen.Value;
         }
         while (Math.Abs(total) > limit + 1e-9 && selected.Count > 0)
@@ -102,6 +117,20 @@ public static class OpeningValuation
             selected.RemoveAt(remove);
         }
         return selected;
+    }
+
+    private static OpeningOption PriceThreshold(OpeningOption option, IReadOnlyList<OpeningPick> previous)
+    {
+        if (option.PreviousThreshold is not int current || option.Doses is not { } doses)
+            return option;
+        var upgraded = previous.FirstOrDefault(pick => pick.State.Id == option.State.Id);
+        double alreadyPaid = option.PreviousValue + (upgraded?.Value ?? 0);
+        int threshold = upgraded?.State.Amount ?? current;
+        return option with
+        {
+            Doses = doses.Where(dose => threshold == 0 || option.Stackable && dose.State.Amount < threshold)
+                .Select(dose => dose with { Value = dose.Value - alreadyPaid }).Where(dose => dose.Value > 0).ToArray()
+        };
     }
 
     private static bool Conflicts(string existing, string added, bool stackable) =>

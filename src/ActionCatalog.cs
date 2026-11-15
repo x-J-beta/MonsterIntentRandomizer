@@ -16,7 +16,7 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 public sealed record StatusCardDestination(StatusPile Pile, int Amount);
 
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null,
-    IReadOnlyList<StatusCardDestination>? SplitDestinations = null)
+    IReadOnlyList<StatusCardDestination>? SplitDestinations = null, ThresholdPrice? Threshold = null)
 {
     public IReadOnlyList<StatusCardDestination> CardDestinations => SplitDestinations ?? [new(Pile ?? StatusPile.Discard, Amount)];
     public EffectTarget Target => TargetFor(Kind);
@@ -34,6 +34,7 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
         EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
     public static bool IsNonStackingDefense(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.Slippery;
+    public static bool UsesThreshold(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
@@ -72,7 +73,7 @@ public sealed record ActionContext(
     bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
-    bool SpecialDebuffAvailable = true, int Rooms = 0);
+    bool SpecialDebuffAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
@@ -123,11 +124,18 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             var style = ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff;
-            var doses = buff.Doses(profile).Select(amount => (Amount: amount, Value: OpeningValuation.Evaluate(buff, profile, amount)))
+            bool threshold = ActionEffect.UsesThreshold(kind);
+            int current = threshold ? context.Thresholds?.GetValueOrDefault(kind) ?? 0 : 0;
+            if (current > 0 && !buff.Stackable)
+                continue;
+            var doses = buff.Doses(profile).Where(amount => current == 0 || amount < current)
+                .Select(amount => (Amount: amount, Value: threshold ? OpeningValuation.ThresholdCost(buff, profile, current, amount)
+                    : OpeningValuation.Evaluate(buff, profile, amount)))
                 .Where(dose => dose.Value > 0).ToArray();
             foreach (var dose in doses)
             {
-                var effect = new ActionEffect(kind, dose.Amount);
+                var effect = new ActionEffect(kind, dose.Amount,
+                    Threshold: threshold ? new ThresholdPrice(buff, profile, dose.Value) : null);
                 yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight / doses.Length,
                     Effects: [effect], SharedWeightBonus: bonus / doses.Length);
             }

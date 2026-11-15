@@ -43,6 +43,7 @@ internal static class ActionSimulation
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
         var activeEffects = new Dictionary<EffectKind, int>();
+        var thresholds = new Dictionary<EffectKind, int>();
         var usedEffects = new HashSet<EffectKind>();
         int vigor = 0;
         foreach (var pick in opening)
@@ -72,8 +73,9 @@ internal static class ActionSimulation
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
                 SpecialDebuffAvailable = !specialDebuffSpent,
+                Thresholds = thresholds,
                 ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
-                    .Concat(usedEffects.Where(rules.UniqueAction)).ToHashSet(),
+                    .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet(),
                 AllowHardCardLimit = prior.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn
             };
             bool hasMove = turn >= firstEnemyAction && !skipFromImbalance && !opening.Any(pick => pick.State.Id == "STUN" &&
@@ -111,6 +113,8 @@ internal static class ActionSimulation
         void RecordEffect(EffectKind kind, int amount, int round)
         {
             usedEffects.Add(kind);
+            if (ActionEffect.UsesThreshold(kind))
+                thresholds[kind] = amount;
             if (kind == EffectKind.Vigor)
                 vigor += amount;
             if (rules.Actions.PolicyFor(kind).Stackable)

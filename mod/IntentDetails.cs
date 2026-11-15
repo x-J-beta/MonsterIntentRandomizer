@@ -88,6 +88,10 @@ internal static class IntentDetails
             EffectKind.Soulbind => chinese ? (zh, $"对玩家施加 {n} 层魂缚锁链。") :
                 (en, $"Applies {n} Chains of Binding to the player."),
             EffectKind.Block or EffectKind.Heal => chinese ? (zh, $"自身{zh} {n} 点。") : (en, $"Self: {n} {en}."),
+            EffectKind.HardenedShell => chinese ? (zh, $"将每回合失去的生命上限设为 {n}。") :
+                (en, $"Sets its maximum HP loss per turn to {n}."),
+            EffectKind.HardToKill => chinese ? (zh, $"将单次伤害或生命减少的上限设为 {n}。") :
+                (en, $"Sets its damage and HP loss cap per instance to {n}."),
             EffectKind.StrengthDown or EffectKind.DexterityDown => chinese ? (zh, $"使玩家{zh} {n} 点。") :
                 (en, $"Applies {n} {en} to the player."),
             _ when effect.Target == EffectTarget.Player => chinese ? (zh, $"对玩家施加 {n} 层{zh}。") :

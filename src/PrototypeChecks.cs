@@ -27,6 +27,15 @@ internal static class PrototypeChecks
             "regen uses lifetime");
         Equal(3.2, OpeningValuation.Evaluate(Status("amount*survivalTurns", 0.2),
             estimate with { ActionValue = 100 }, 4), "plating ignores action value");
+        var shell = Status("actionValue*hpPerSurvivalTurn*inverseAmount", 1, 6) with { Stackable = true };
+        var shellProfile = estimate with { CurrentHp = 40 };
+        Equal(100.0 / 3 - 100.0 / 5, OpeningValuation.ThresholdCost(shell, shellProfile, 5, 3), "lower cap costs the difference");
+        Equal(0, OpeningValuation.ThresholdCost(shell, shellProfile, 3, 5), "a weaker cap has no cost");
+        var shellOption = OpeningValuation.Option("HARDENED_SHELL", shell, shellProfile, previousThreshold: 5);
+        var improved = OpeningValuation.Draw(
+            new Dictionary<string, IReadOnlyList<OpeningOption>> { ["test"] = [shellOption] },
+            new Dictionary<string, double> { ["test"] = 10 }, new OpeningDraws(0, 1, 0, 20, 1, 10), new Random(11)).Single();
+        Equal(100.0 / improved.State.Amount - 20, improved.Value, "opening upgrades are charged from the native cap");
         Equal(1.5, SurvivalForecast.FromExpectedSurvival(1.5, 4).Sum(window => window.AliveAtAction),
             "profile survival fallback");
         try
@@ -208,6 +217,17 @@ internal static class PrototypeChecks
         };
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs, CardStartingPlayerActionValue: 10);
         var catalog = new ActionCatalog(catalogSettings);
+        var shellCatalog = new ActionCatalog(catalogSettings with
+        {
+            Buffs = new Dictionary<EffectKind, StatusValue> { [EffectKind.HardenedShell] = shell }
+        });
+        var upgrades = shellCatalog.Generate(shellProfile, new ActionContext(6,
+                Thresholds: new Dictionary<EffectKind, int> { [EffectKind.HardenedShell] = 4 }), new ActionHistory())
+            .Where(action => action.Effects is [{ Kind: EffectKind.HardenedShell }]).ToArray();
+        if (upgrades.Length != 3)
+            throw new InvalidOperationException("Only stronger damage caps should be offered.");
+        Equal(100.0 / 3 - 25, upgrades.Single(action => action.Effects is [{ Amount: 3 }]).Value,
+            "combat upgrades are charged from the active cap");
         var varied = profile with
         {
             PlayerActionValue = 10,
