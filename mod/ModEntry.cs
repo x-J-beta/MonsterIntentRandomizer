@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 19;
+    private const int SettingsRevision = 20;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -67,6 +67,16 @@ internal static class ModSettings
         if (stored.Revision >= SettingsRevision)
             return stored;
 
+        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        if (profiles["keepVanilla"] is JsonArray keepVanilla)
+        {
+            foreach (var entry in keepVanilla.Where(entry => entry?.GetValue<string>() is
+                "KIN_FOLLOWER" or "KIN_PRIEST" or "TRACKER_RUBY_RAIDER").ToArray())
+                keepVanilla.Remove(entry);
+        }
+        if (stored.Revision >= 19)
+            return stored with { Profiles = JsonSerializer.SerializeToElement(profiles), Revision = SettingsRevision };
+
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var pools = settings["pools"]!.AsObject();
@@ -78,7 +88,6 @@ internal static class ModSettings
         actions["statusCardPlayerActionValueRatios"] ??= defaultSettings["actions"]!["statusCardPlayerActionValueRatios"]!.DeepClone();
         foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
             RemoveSteamAction(actions[section]);
-        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         var monsters = profiles["monsters"]!.AsObject();
         (profiles["defaults"] as JsonObject)?.Remove("attackSpend");
