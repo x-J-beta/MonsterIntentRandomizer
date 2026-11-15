@@ -179,7 +179,7 @@ public sealed class ActionPlanner(PoolSettings settings)
     }
 
     private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&
-        (effect.Kind == EffectKind.VitalSpark || !ActionEffect.IsRareBuff(effect.Kind));
+        !ActionEffect.IsRareBuff(effect.Kind);
 
     private List<ActionCandidate> Shortlist(IEnumerable<ActionCandidate> options, MonsterProfile profile, double budget,
         double overdraft, bool twoSlots, Random random)

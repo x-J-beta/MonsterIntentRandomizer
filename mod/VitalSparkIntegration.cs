@@ -3,6 +3,8 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Afflictions;
 using MegaCrit.Sts2.Core.Models.Powers;
@@ -12,6 +14,22 @@ namespace MonsterIntentRandomizer;
 [HarmonyPatch]
 internal static class VitalSparkIntegration
 {
+    internal static async Task<int> Apply(Creature owner, int amount)
+    {
+        var choice = new ThrowingPlayerChoiceContext();
+        var existing = owner.GetPower<VitalSparkPower>();
+        int before = existing?.Amount ?? 0;
+        if (existing == null)
+            await PowerCmd.Apply<VitalSparkPower>(choice, owner, amount, owner, null);
+        else
+            await PowerCmd.ModifyAmount(choice, existing, amount, owner, null);
+
+        int applied = (owner.GetPower<VitalSparkPower>()?.Amount ?? 0) - before;
+        if (applied <= 0)
+            Log.Warn($"[MonsterIntentRandomizer] {owner.ModelId.Entry} requested Vital Spark +{amount}, but gained {applied}.");
+        return applied;
+    }
+
     internal static Task Refresh(ICombatState combat) => Refresh(combat, TotalSpark(combat));
 
     private static int TotalSpark(ICombatState combat) =>

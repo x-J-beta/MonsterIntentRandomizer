@@ -258,12 +258,6 @@ internal static class PrototypeChecks
         Equal(3, weakenedMixed.Damage, "panel reflects weak");
         Equal(3 + Pure(EffectKind.Weak).Value, weakenedMixed.ActualScore, "resolved score reflects weak and the side effect");
         Equal(4 + Pure(EffectKind.Weak).Value, weakenedMixed.Value, "pool cost retains base attack value");
-        var spark = new ActionCandidate("Vital Spark", IntentStyle.Buff, false, 1, 0,
-            Effects: [new ActionEffect(EffectKind.VitalSpark, 1)]);
-        if (!Enumerable.Range(0, 30).Any(seed => planner.Plan(new Pools(0, 2), mixedProfile, [spark],
-                new Random(seed), buildAttack: (hits, target) => catalog.BuildAttack(mixedProfile, context, hits, target))
-            .Action?.Effects is [{ Kind: EffectKind.Attack }, { Kind: EffectKind.VitalSpark }]))
-            throw new InvalidOperationException("Vital Spark should be offered alongside an attack.");
         var preferences = varied with
         {
             EffectWeights = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 2, [EffectKind.Vulnerable] = 1 }

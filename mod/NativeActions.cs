@@ -2,6 +2,7 @@ using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Models.Powers;
@@ -47,7 +48,11 @@ internal static class NativeActions
             if (living.Length == 0)
                 return;
             if (!CombatIntegration.CanUseEffect(combat, self, living[0], effect.Kind))
+            {
+                if (effect.Kind == EffectKind.VitalSpark)
+                    Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
+            }
             if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
                 continue;
             CombatIntegration.RecordEffect(combat, effect.Kind);
@@ -235,7 +240,9 @@ internal static class NativeActions
             return target.IsStunned ? 1 : 0;
         }
 
-        if (state.Id is "PERSONAL_HIVE" or "VITAL_SPARK" or "WITHERING_PRESENCE" or "ENVENOM" or "PAPER_CUTS")
+        if (state.Id == "VITAL_SPARK")
+            return await VitalSparkIntegration.Apply(target, state.Amount);
+        if (state.Id is "PERSONAL_HIVE" or "WITHERING_PRESENCE" or "ENVENOM" or "PAPER_CUTS")
             return await ApplyRareBuff(target, state);
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
@@ -297,7 +304,6 @@ internal static class NativeActions
         var power = state.Id switch
         {
             "PERSONAL_HIVE" => (PowerModel?)await PowerCmd.Apply<PersonalHivePower>(choice, owner, state.Amount, owner, null),
-            "VITAL_SPARK" => await PowerCmd.Apply<VitalSparkPower>(choice, owner, state.Amount, owner, null),
             "WITHERING_PRESENCE" => await ApplyWithering(),
             "ENVENOM" => await PowerCmd.Apply<EnvenomPower>(choice, owner, state.Amount, owner, null),
             "PAPER_CUTS" => await PowerCmd.Apply<PaperCutsPower>(choice, owner, state.Amount, owner, null),
