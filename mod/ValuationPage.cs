@@ -39,8 +39,14 @@ internal static class ValuationPage
                         (root, number) => SetActionWeight(root, id, "base", number));
                     AddNumber(actionList, "每房间权重变化", weight?["perRoom"]?.GetValue<double>() ?? 0, 0.001,
                         (root, number) => SetActionWeight(root, id, "perRoom", number));
-                    AddNumber(actionList, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
-                        (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
+                    AddNumber(actionList, "每次层数下限", config["minAmounts"]?[id]?.GetValue<int>() ?? 1, 1,
+                        (root, number) => root["actions"]!["minAmounts"]![id] = (int)number, minimum: 1);
+                    if (config["hpPerSurvivalTurnCaps"]?[id]?.GetValue<double>() is double cap)
+                        AddNumber(actionList, "动态层数上限系数", cap, 0.01,
+                            (root, number) => root["actions"]!["hpPerSurvivalTurnCaps"]![id] = number, minimum: 0);
+                    else
+                        AddNumber(actionList, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
+                            (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
                 }
                 openingList.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
                 foreach (var (id, state) in document["opening"]!["states"]!.AsObject())
@@ -52,8 +58,14 @@ internal static class ValuationPage
                         (root, number) => root["opening"]!["states"]![id]!["weight"] = number);
                     AddNumber(openingList, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
                         (root, number) => root["opening"]!["states"]![id]!["weightPerRoom"] = number);
-                    AddNumber(openingList, "开场层数上限", state["maxAmount"]!.GetValue<int>(), 1,
-                        (root, number) => root["opening"]!["states"]![id]!["maxAmount"] = (int)number);
+                    AddNumber(openingList, "开场层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
+                        (root, number) => root["opening"]!["states"]![id]!["minAmount"] = (int)number, minimum: 1);
+                    if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
+                        AddNumber(openingList, "动态层数上限系数", cap, 0.01,
+                            (root, number) => root["opening"]!["states"]![id]!["hpPerSurvivalTurnCap"] = number, minimum: 0);
+                    else
+                        AddNumber(openingList, "开场层数上限", state["maxAmount"]?.GetValue<int>() ?? 0, 1,
+                            (root, number) => root["opening"]!["states"]![id]!["maxAmount"] = (int)number);
                 }
             }
             catch (Exception error)
@@ -103,10 +115,11 @@ internal static class ValuationPage
             weights[id]![key] = number;
         }
 
-        void AddNumber(VBoxContainer content, string caption, double value, double step, Action<JsonNode, double> update)
+        void AddNumber(VBoxContainer content, string caption, double value, double step, Action<JsonNode, double> update,
+            double? minimum = null)
         {
-            var input = SettingsPage.NumberRow(content, caption, step == 1 ? 0 : -100, 100, step);
-            input.AllowLesser = step != 1;
+            var input = SettingsPage.NumberRow(content, caption, minimum ?? (step == 1 ? 0 : -100), 100, step);
+            input.AllowLesser = minimum == null && step != 1;
             input.SetValueNoSignal(value);
             input.ValueChanged += number => Edit(root => update(root, number));
         }
@@ -118,7 +131,7 @@ internal static class ValuationPage
             content.AddChild(terms);
             var factors = ActionValuation.FactorNames.Where(name => !openingFormula ||
                 name is "Amount" or "ActionValue" or "AttackFrequency" or "SurvivalTurns" or "PlayerTurnValue"
-                    or "PlayerActionValue").ToArray();
+                    or "PlayerActionValue" or "HpPerSurvivalTurn" or "InverseAmount").ToArray();
             foreach (var (term, value) in initial)
                 AddTerm(terms, getFormula, factors, term, value!.GetValue<double>());
             var add = new Button { Text = "新增估值项", SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin };
@@ -259,7 +272,8 @@ internal static class ValuationPage
             "fixed" => "固定值", "amount" => "层数／数量", "actionvalue" => "基础行动力",
             "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
             "hits" => "攻击段数", "draws" => "预计抽到次数", "triggers" => "预计触发次数",
-            "playerturnvalue" => "玩家回合价值", "playeractionvalue" => "玩家行动力", _ => factor
+            "playerturnvalue" => "玩家回合价值", "playeractionvalue" => "玩家行动力",
+            "hppersurvivalturn" => "当前血量／预期生存回合", "inverseamount" => "1／层数", _ => factor
         }));
 
     internal static string OpeningName(string id) => id switch

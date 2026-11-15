@@ -69,7 +69,8 @@ internal static class PrototypeChecks
         if (!rolledDoses.SetEquals([1, 2, 3, 4]))
             throw new InvalidOperationException("Opening dose range was ignored.");
 
-        var planner = new ActionPlanner(new PoolSettings(0.75, 0.9));
+        var planner = new ActionPlanner(new PoolSettings(0.75, 0.9,
+            DrawBudgetMultiplier: 1, UnusedAttackBudgetShare: 0));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
         var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, ChaosMultiplier: 0).Adjust(profile);

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 6;
+    private const int SettingsRevision = 7;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -85,6 +85,7 @@ internal static class ModSettings
         UpgradeRoomRules(settings, defaults, stored.Revision);
         defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
+        UpgradeDefenseAmounts(settings, defaults);
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
@@ -245,6 +246,25 @@ internal static class ModSettings
         static double? OptionalNumber(JsonElement number) => number.ValueKind == JsonValueKind.Null ? null : number.GetDouble();
     }
 
+    private static void UpgradeDefenseAmounts(JsonNode settings, JsonNode defaults)
+    {
+        var actions = settings["actions"]!;
+        UpgradeMaximum(actions["maxAmounts"]!.AsObject(), "Regen", 4,
+            defaults["actions"]!["maxAmounts"]!["Regen"]!.GetValue<int>(), actions["minAmounts"]!["Regen"]!.GetValue<int>());
+        foreach (string id in new[] { "REGEN", "PLATING" })
+        {
+            var state = settings["opening"]!["states"]![id]!.AsObject();
+            var fallback = defaults["opening"]!["states"]![id]!;
+            UpgradeMaximum(state, "maxAmount", 4, fallback["maxAmount"]!.GetValue<int>(), state["minAmount"]!.GetValue<int>());
+        }
+
+        static void UpgradeMaximum(JsonObject owner, string key, int oldMaximum, int defaultMaximum, int minimum)
+        {
+            if (owner[key]?.GetValue<int>() is int previous && previous > 0)
+                owner[key] = previous == oldMaximum ? Math.Max(defaultMaximum, minimum) : Math.Max(previous, minimum);
+        }
+    }
+
     private static readonly Dictionary<string, double> OldOpeningCoefficients = new()
     {
         ["STRENGTH"] = 0.2, ["RITUAL"] = 0.4, ["STRENGTH_DOWN"] = -0.2,
@@ -276,8 +296,12 @@ internal static class ModSettings
 
         foreach (var (id, state) in rules.OpeningValues)
         {
-            if (state.MaxAmount is < 0 || Math.Sign(state.Amount) != (id == "STRENGTH_DOWN" ? -1 : 1) ||
-                (id == "STUN" && state.MaxAmount > 1) || state.MinAct < 1)
+            if ((state.Common && !NativeActions.SupportsOpening(id)) || state.MaxAmount is < 0 ||
+                state.MinAmount < 1 || state.HpPerSurvivalTurnCap is < 0 ||
+                (state.MaxAmount > 0 && state.MaxAmount < state.MinAmount) ||
+                Math.Sign(state.Amount) != (id == "STRENGTH_DOWN" ? -1 : 1) ||
+                (id == "STUN" && (state.MinAmount != 1 || state.MaxAmount > 1 || state.HpPerSurvivalTurnCap.HasValue)) ||
+                state.MinAct < 1)
                 throw new ArgumentException($"{id} 的开场层数或幕数无效。");
         }
 

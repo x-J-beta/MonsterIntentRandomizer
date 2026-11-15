@@ -41,7 +41,8 @@ double allyHp = enemies.Skip(1).Sum(enemy => enemy.Hp);
 profile = profile with
 {
     BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
-    PlayerActionValue = rules.PlayerAction.At(rooms)
+    PlayerActionValue = rules.PlayerAction.At(rooms),
+    CurrentHp = hp
 };
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
@@ -55,7 +56,7 @@ OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, Monster
             !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath) && rules.OpeningValues[id].MinAct <= act)
         .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner, rooms, rules.PlayerTurns.ForAct(act))).ToArray();
 }
-var options = Options(enemies[0], configured.OpeningStates, profile);
+var options = Options(enemies[0], rules.OpeningStatesFor(configured), profile);
 foreach (var option in options)
     Console.WriteLine($"{option.State.Id,-19} " + string.Join(", ", option.Doses!.Select(dose =>
         $"{dose.State.Amount}: {dose.Value:+0.00;-0.00;0.00}")));
@@ -74,7 +75,8 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
                 ActionValue = actionValues[id],
                 AttackFrequency = ally.TryGetProperty("attackFrequency", out var frequency) ? frequency.GetDouble() : 1,
                 BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(enemies.Single(enemy => enemy.Id == id).Hp,
-                    enemies.Where(enemy => enemy.Id != id).Sum(enemy => enemy.Hp), rooms)
+                    enemies.Where(enemy => enemy.Id != id).Sum(enemy => enemy.Hp), rooms),
+                CurrentHp = enemies.Single(enemy => enemy.Id == id).Hp
             });
 }
 var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);

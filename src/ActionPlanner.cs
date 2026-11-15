@@ -32,21 +32,57 @@ internal static class CombatMath
 public sealed record PoolSettings(
     double ActionValueRetention, double AttackDesireRetention, double InitialActionValueShare = 0.5,
     double InitialAttackDesire = 0, double BalanceTargetWeight = 0.5, double MinimumSelectionSpread = 0.5,
-    double ActionValueMultiplier = 1, double ChaosMultiplier = 1)
+    double ActionValueMultiplier = 1, double ChaosMultiplier = 1,
+    double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
+    double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
+    IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null)
 {
-    public MonsterProfile Adjust(MonsterProfile profile) => profile with
+    private static readonly IReadOnlyDictionary<IntentStyle, double> DefaultChaosWeights =
+        new Dictionary<IntentStyle, double>
+        {
+            [IntentStyle.Attack] = 40, [IntentStyle.Buff] = 20, [IntentStyle.Defend] = 20, [IntentStyle.PlayerDebuff] = 20
+        };
+
+    public MonsterProfile Adjust(MonsterProfile profile)
     {
-        ActionValue = profile.ActionValue * ActionValueMultiplier,
-        Volatility = profile.Volatility * ChaosMultiplier
-    };
+        var adjusted = profile with
+        {
+            ActionValue = profile.ActionValue * ActionValueMultiplier,
+            Volatility = profile.Volatility * ChaosMultiplier
+        };
+        double mix = Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
+        if (mix == 0)
+            return adjusted;
+
+        var target = ChaosBudgetWeights ?? DefaultChaosWeights;
+        var styles = Enum.GetValues<IntentStyle>();
+        double configuredTotal = styles.Sum(style => Math.Max(0, profile.IntentWeights.GetValueOrDefault(style)));
+        double targetTotal = styles.Sum(style => target.GetValueOrDefault(style));
+        double targetAttack = target.GetValueOrDefault(IntentStyle.Attack) / targetTotal;
+        return adjusted with
+        {
+            AttackSpend = profile.AttackFrequency > 0
+                ? (1 - mix) * profile.BudgetedAttackShare + mix * targetAttack : 0,
+            IntentWeights = styles.ToDictionary(style => style, style =>
+                (1 - mix) * Math.Max(0, profile.IntentWeights.GetValueOrDefault(style)) / Math.Max(configuredTotal, double.Epsilon)
+                + mix * target.GetValueOrDefault(style) / targetTotal)
+        };
+    }
 }
 
 public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
     IReadOnlyDictionary<int, double>? HitWeights = null, IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
-    IReadOnlyList<StatusPlacement>? CardPlacements = null, double? AttackSpend = null, double PlayerActionValue = 0)
+    IReadOnlyList<StatusPlacement>? CardPlacements = null, double? AttackSpend = null, double PlayerActionValue = 0,
+    double CurrentHp = 0)
 {
+    public double HpPerSurvivalTurn => BaseExpectedSurvivalTurns > 0 ? CurrentHp / BaseExpectedSurvivalTurns : 0;
+
+    internal int CapAmount(int maximum, double? hpPerTurnFactor) => hpPerTurnFactor is double factor
+        ? (int)Math.Clamp(Math.Floor(HpPerSurvivalTurn * factor + 1e-9), 0, maximum)
+        : maximum;
+
     internal static IReadOnlyDictionary<int, double> DefaultHitWeights { get; } =
         new Dictionary<int, double> { [1] = 1 };
 
@@ -103,30 +139,34 @@ public sealed class ActionPlanner(PoolSettings settings)
         double turnShare = profile.ExpectedAttackTurnShare;
         double income = profile.ActionValue * (turnShare + (1 - turnShare) * profile.NonAttackMultiplier);
         var granted = new Pools(retainedAction + income, retainedDesire + profile.AttackFrequency);
-        double target = Math.Max(0, profile.ActionValue + retainedAction * settings.BalanceTargetWeight);
+        double target = Math.Max(0, profile.ActionValue + retainedAction * settings.BalanceTargetWeight) * settings.DrawBudgetMultiplier;
         double attackFraction = profile.BudgetedAttackShare;
         double attackTarget = Jitter(target * attackFraction, profile.Volatility, random);
-        double otherTarget = Jitter(target * (1 - attackFraction), profile.Volatility, random);
         var eligible = candidates.Where(candidate => candidate.Value > 0 && candidate.Weight > 0).ToArray();
         int hits = DrawHits(profile, granted.AttackDesire, attackFraction, attackTarget, random);
         var attack = hits > 0 ? (buildAttack != null ? buildAttack(hits, attackTarget) :
             Pick(eligible.Where(candidate => candidate.AttackHits == hits), profile, attackTarget, random)) : null;
+        double allocatedOthers = target * (1 - attackFraction +
+            (attack == null ? attackFraction * settings.UnusedAttackBudgetShare : 0));
+        double otherTarget = Jitter(allocatedOthers, profile.Volatility, random);
+        double overdraft = profile.ActionValue * settings.LocalOverdraftShare;
         var parts = new List<ActionCandidate>(2);
         if (attack != null)
             parts.Add(attack);
 
-        var extras = eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is { Count: 1 } &&
-            (attack == null || CanAttach(candidate.Effects[0]))).ToArray();
-        while (parts.Count < 2 && otherTarget > 0)
+        var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is { Count: 1 } &&
+            (attack == null || CanAttach(candidate.Effects[0]))), profile, otherTarget, overdraft, attack == null, random);
+        while (parts.Count < 2 && otherTarget > 0 && extras.Count > 0)
         {
-            var extra = Pick(extras, profile, otherTarget, random, maySkip: true);
+            var extra = Pick(extras.Where(candidate => candidate.Value <= otherTarget + overdraft), profile, otherTarget,
+                random, maySkip: true);
             if (extra == null)
                 break;
             parts.Add(extra);
             otherTarget -= extra.Value;
             var chosen = extra.Effects![0];
-            extras = extras.Where(candidate => candidate.Effects![0].Kind != chosen.Kind &&
-                (!chosen.IsSpecialDebuff || !candidate.Effects[0].IsSpecialDebuff)).ToArray();
+            extras.RemoveAll(candidate => candidate.Effects![0].Kind == chosen.Kind ||
+                (chosen.IsSpecialDebuff && candidate.Effects[0].IsSpecialDebuff));
         }
 
         var action = Compose(parts);
@@ -159,6 +199,28 @@ public sealed class ActionPlanner(PoolSettings settings)
     private static bool CanAttach(ActionEffect effect) => !effect.IsHardCardLimit && effect.Kind != EffectKind.Intangible &&
         !ActionEffect.IsRareBuff(effect.Kind);
 
+    private List<ActionCandidate> Shortlist(IEnumerable<ActionCandidate> options, MonsterProfile profile, double budget,
+        double overdraft, bool twoSlots, Random random)
+    {
+        var shortlist = new List<ActionCandidate>();
+        if (budget <= 0)
+            return shortlist;
+
+        var available = options.Where(candidate => candidate.Value <= budget + overdraft).ToList();
+        while (shortlist.Count < settings.NonAttackCandidates && available.Count > 0)
+        {
+            double target = twoSlots && shortlist.Count % 2 == 1 ? budget * 0.5 : budget;
+            var chosen = Pick(available, profile, target, random);
+            if (chosen == null)
+                break;
+            var kind = chosen.Effects![0].Kind;
+            double familyWeight = available.Where(candidate => candidate.Effects![0].Kind == kind).Sum(candidate => candidate.Weight);
+            shortlist.Add(chosen with { Weight = familyWeight });
+            available.RemoveAll(candidate => candidate.Effects![0].Kind == kind);
+        }
+        return shortlist;
+    }
+
     private static double Jitter(double target, double volatility, Random random)
     {
         double spread = Math.Min(volatility, 1);
@@ -176,14 +238,18 @@ public sealed class ActionPlanner(PoolSettings settings)
     {
         double scale = Math.Max(1e-6, Math.Max(settings.MinimumSelectionSpread * settings.ChaosMultiplier,
             target * profile.Volatility));
-        var candidates = eligible.Select(candidate => (Candidate: candidate,
-            Preference: candidate.Weight * profile.IntentWeights.GetValueOrDefault(candidate.Style))).Where(x => x.Preference > 0).ToArray();
+        var candidates = eligible.GroupBy(candidate => candidate.Style)
+            .Where(group => profile.IntentWeights.GetValueOrDefault(group.Key) > 0)
+            .SelectMany(group =>
+            {
+                double categoryWeight = profile.IntentWeights[group.Key] / group.Sum(candidate => candidate.Weight);
+                return group.Select(candidate => (Candidate: candidate,
+                    Weight: candidate.Weight * categoryWeight * MatchingWeight(candidate.Value, target, scale)));
+            }).ToArray();
         if (candidates.Length == 0)
             return null;
-        var weighted = candidates.Select(x => (x.Candidate, x.Preference * MatchingWeight(x.Candidate.Value, target, scale)));
-        var weights = weighted.ToArray();
-        double skip = maySkip ? weights.Sum(x => x.Item2) * candidates.Min(x => x.Candidate.Value) / target : 0;
-        return Draw(weights, skip, random);
+        double skip = maySkip ? candidates.Sum(x => x.Weight) * candidates.Min(x => x.Candidate.Value) / target : 0;
+        return Draw(candidates, skip, random);
     }
 
     private static ActionCandidate Compose(List<ActionCandidate> parts)

@@ -7,7 +7,11 @@ public sealed record PlayerTurnValues(double Act1 = 10, double Act2 = 17, double
 
 public sealed class ActionValuation
 {
-    private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers, PlayerTurnValue, PlayerActionValue }
+    private enum Factor
+    {
+        Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers,
+        PlayerTurnValue, PlayerActionValue, HpPerSurvivalTurn, InverseAmount
+    }
 
     internal static IReadOnlyList<string> FactorNames { get; } = Enum.GetNames<Factor>();
 
@@ -52,6 +56,8 @@ public sealed class ActionValuation
                     Factor.Triggers => triggers,
                     Factor.PlayerTurnValue => playerTurnValue ?? playerTurns.ForAct(act),
                     Factor.PlayerActionValue => profile.PlayerActionValue,
+                    Factor.HpPerSurvivalTurn => profile.HpPerSurvivalTurn,
+                    Factor.InverseAmount => amount > 0 ? 1.0 / amount : 0,
                     _ => throw new ArgumentOutOfRangeException(nameof(factor))
                 };
             }

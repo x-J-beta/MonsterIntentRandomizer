@@ -26,12 +26,24 @@ internal sealed class RuleConfiguration
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
         if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0)
             throw new ArgumentException("全局行动力倍率须为正数，混沌程度倍率须为非负数。");
+        if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
+            PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
+            PoolSettings.FullChaosBudgetAt <= 1 ||
+            PoolSettings.ChaosBudgetWeights is { } chaosWeights &&
+            (chaosWeights.Any(entry => !Enum.IsDefined(entry.Key) || entry.Value < 0) || chaosWeights.Values.Sum() <= 0))
+            throw new ArgumentException("抽取预算、候选数量或混沌分配参数无效。");
         var maximums = actions.TryGetProperty("maxAmounts", out var maxAmounts)
             ? Read<Dictionary<EffectKind, int>>(maxAmounts)
             : Read<Dictionary<EffectKind, int[]>>(actions.GetProperty("amounts"))
                 .ToDictionary(entry => entry.Key, entry => entry.Value.DefaultIfEmpty(0).Max());
-        if (maximums.Values.Any(max => max < 0))
-            throw new ArgumentException("出招状态的层数上限须为非负数。");
+        var minimums = actions.TryGetProperty("minAmounts", out var minAmounts)
+            ? Read<Dictionary<EffectKind, int>>(minAmounts) : null;
+        var hpCaps = actions.TryGetProperty("hpPerSurvivalTurnCaps", out var caps)
+            ? Read<Dictionary<EffectKind, double>>(caps) : null;
+        if (maximums.Values.Any(max => max < 0) || (minimums?.Values.Any(min => min < 1) ?? false) ||
+            (hpCaps?.Values.Any(cap => cap < 0) ?? false) ||
+            (minimums?.Any(entry => maximums.TryGetValue(entry.Key, out int max) && max > 0 && max < entry.Value) ?? false))
+            throw new ArgumentException("出招状态的层数下限或上限无效。");
         Actions = new ActionValuationSettings(
             new ActionValuation(Read<Dictionary<EffectKind, Dictionary<string, double>>>(actions.GetProperty("valuation")), PlayerTurns),
             actions.GetProperty("weakDamageReduction").GetDouble(),
@@ -42,7 +54,8 @@ internal sealed class RuleConfiguration
             actions.GetProperty("handBurnDamageChance").GetDouble(),
             actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
-            actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null);
+            actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
+            minimums, hpCaps);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
@@ -65,6 +78,8 @@ internal sealed class RuleConfiguration
     public HashSet<string> KeepVanilla { get; }
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
+    internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
+        monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key)).Distinct();
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
     {
         JsonElement Setting(string name) => entry.TryGetProperty(name, out var value) ? value : defaults.GetProperty(name);

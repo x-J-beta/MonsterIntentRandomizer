@@ -134,9 +134,10 @@ internal static class SimulationPage
         var profile = rules.PoolSettings.Adjust(monster.AtAscension(highAscension)) with
         {
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
-            PlayerActionValue = rules.PlayerAction.At(rooms)
+            PlayerActionValue = rules.PlayerAction.At(rooms),
+            CurrentHp = hp
         };
-        var candidates = monster.OpeningStates.Where(key => rules.OpeningValues[key].MinAct <= act &&
+        var candidates = rules.OpeningStatesFor(monster).Where(key => rules.OpeningValues[key].MinAct <= act &&
             (key != "STUN" || !monster.FixedOpening))
             .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms,
                 rules.PlayerTurns.ForAct(act))).ToArray();

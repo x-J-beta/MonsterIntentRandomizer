@@ -9,13 +9,19 @@ public enum OpeningBasis { ActionValue, Flat, SurvivalTurns, AttackFrequency, At
 
 public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amounts = null, double Weight = 1,
     int MinAct = 1, OpeningBasis Basis = OpeningBasis.ActionValue, int? MaxAmount = null,
-    double WeightPerRoom = 0, Dictionary<string, double>? Formula = null)
+    double WeightPerRoom = 0, Dictionary<string, double>? Formula = null, int MinAmount = 1,
+    double? HpPerSurvivalTurnCap = null, bool Common = false)
 {
     internal ActionValuation? CompiledFormula { get; } = Formula == null ? null :
         new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>> { [EffectKind.Attack] = Formula });
 
-    internal int[] Doses() => Enumerable.Range(1, MaxAmount ?? Amounts?.Select(Math.Abs).DefaultIfEmpty(0).Max()
-        ?? Math.Abs(Amount)).Select(level => level * Math.Sign(Amount)).ToArray();
+    internal IEnumerable<int> Doses(MonsterProfile profile)
+    {
+        int configured = MaxAmount ?? (HpPerSurvivalTurnCap.HasValue ? int.MaxValue :
+            Amounts?.Select(Math.Abs).DefaultIfEmpty(0).Max() ?? Math.Abs(Amount));
+        int maximum = profile.CapAmount(configured, HpPerSurvivalTurnCap);
+        return Enumerable.Range(MinAmount, Math.Max(0, maximum - MinAmount + 1)).Select(level => level * Math.Sign(Amount));
+    }
 }
 
 public static class OpeningValuation
@@ -36,7 +42,7 @@ public static class OpeningValuation
     public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
         double? playerTurnValue = null)
     {
-        var doses = state.Doses().Select(amount =>
+        var doses = state.Doses(profile).Select(amount =>
             new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount, playerTurnValue))).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);

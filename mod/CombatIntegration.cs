@@ -88,7 +88,7 @@ internal static class CombatIntegration
                     continue;
 
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
-                candidates[id] = state.Rules.OpeningStates
+                candidates[id] = rules.OpeningStatesFor(state.Rules)
                     .Where(key => (key != "STUN" || !state.Rules.FixedOpening) && rules.OpeningValues[key].MinAct <= Act(combat))
                     .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms, rules.PlayerTurns.ForAct(Act(combat))))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
@@ -298,7 +298,8 @@ internal static class CombatIntegration
         {
             BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp,
                 combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp), encounter.Rooms),
-            PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms)
+            PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms),
+            CurrentHp = self.CurrentHp
         };
 
     private static int Act(ICombatState combat) => Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3);

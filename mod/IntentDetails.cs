@@ -104,6 +104,8 @@ internal static class IntentDetails
             EffectKind.Attack => ("攻击", "Attack"), EffectKind.Block => ("格挡", "Block"), EffectKind.Heal => ("回复", "Heal"),
             EffectKind.Strength => ("力量", "Strength"), EffectKind.Ritual => ("仪式", "Ritual"),
             EffectKind.Regen => ("再生", "Regeneration"),
+            EffectKind.Plating => ("甲覆", "Plating"),
+            EffectKind.HardenedShell => ("坚硬外壳", "Hardened Shell"), EffectKind.HardToKill => ("难以杀灭", "Hard to Kill"),
             EffectKind.Wait => ("准备", "Wait"),
             EffectKind.Intangible => ("无实体", "Intangible"), EffectKind.Thorns => ("荆棘", "Thorns"),
             EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
@@ -119,6 +121,13 @@ internal static class IntentDetails
             EffectKind.WitheringPresence => ("凋萎存在", "Withering Presence"), EffectKind.Envenom => ("涂毒", "Envenom"),
             EffectKind.PaperCuts => ("纸伤难愈", "Paper Cuts"), EffectKind.Dazed => ("晕眩", "Dazed"),
             EffectKind.Wound => ("伤口", "Wound"), EffectKind.Burn => ("灼伤", "Burn"),
-            EffectKind.Beckon => ("呼唤", "Beckon"), _ => (kind.ToString(), kind.ToString())
+            EffectKind.Beckon => ("呼唤", "Beckon"), EffectKind.Wither => ("凋萎", "Wither"),
+            EffectKind.Amnesia => ("失忆", "Amnesia"), EffectKind.MindRot => ("心灵腐化", "Mind Rot"),
+            EffectKind.Sadness => ("悲伤", "Sadness"), EffectKind.Infection => ("感染", "Infection"),
+            EffectKind.Sloth => ("懒惰", "Sloth"), EffectKind.Toxic => ("毒素", "Toxic"),
+            EffectKind.Soot => ("煤灰", "Soot"), EffectKind.Disintegration => ("瓦解", "Disintegration"),
+            EffectKind.Debris => ("碎屑", "Debris"), EffectKind.Void => ("虚空", "Void"),
+            EffectKind.WasteAway => ("衰朽", "Waste Away"), EffectKind.Slimed => ("黏液", "Slimed"),
+            _ => (kind.ToString(), kind.ToString())
         };
 }

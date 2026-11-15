@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
 using MegaCrit.Sts2.Core.ValueProps;
+using VoidCard = MegaCrit.Sts2.Core.Models.Cards.Void;
 
 namespace MonsterIntentRandomizer;
 
@@ -25,10 +26,10 @@ internal static class NativeActions
         EffectKind.Attack => effect.Hits == 1 ? new SingleAttackIntent(effect.Amount) :
             new MultiAttackIntent(effect.Amount, effect.Hits),
         EffectKind.Wait => new UnknownIntent(),
-        EffectKind.Block or EffectKind.Intangible => new DefendIntent(),
+        EffectKind.Block or EffectKind.Intangible or EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
         EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns => new BuffIntent(),
-        EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon => new StatusIntent(effect.Amount),
+        _ when effect.IsStatusCard => new StatusIntent(effect.Amount),
         _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
     });
 
@@ -68,6 +69,15 @@ internal static class NativeActions
                     break;
                 case EffectKind.Regen:
                     await PowerCmd.Apply<RegenPower>(choice, self, amount, self, null);
+                    break;
+                case EffectKind.Plating:
+                    await PowerCmd.Apply<PlatingPower>(choice, self, amount, self, null);
+                    break;
+                case EffectKind.HardenedShell:
+                    await ApplyOpening(self, new OpeningState("HARDENED_SHELL", amount));
+                    break;
+                case EffectKind.HardToKill:
+                    await ApplyOpening(self, new OpeningState("HARD_TO_KILL", amount));
                     break;
                 case EffectKind.Thorns:
                     await PowerCmd.Apply<ThornsPower>(choice, self, amount, self, null);
@@ -124,21 +134,34 @@ internal static class NativeActions
                     or EffectKind.Envenom or EffectKind.PaperCuts:
                     await ApplyRareBuff(self, new OpeningState(OpeningId(effect.Kind), amount));
                     break;
-                case EffectKind.Dazed:
-                    await Insert<Dazed>(living, effect);
-                    break;
-                case EffectKind.Wound:
-                    await Insert<Wound>(living, effect);
-                    break;
-                case EffectKind.Burn:
-                    await Insert<Burn>(living, effect);
-                    break;
-                case EffectKind.Beckon:
-                    await Insert<Beckon>(living, effect);
+                case var card when ActionEffect.IsCard(card):
+                    await InsertStatus(living, effect);
                     break;
             }
         }
     }
+
+    private static Task InsertStatus(IReadOnlyList<Creature> targets, ActionEffect effect) => effect.Kind switch
+    {
+        EffectKind.Dazed => Insert<Dazed>(targets, effect),
+        EffectKind.Wound => Insert<Wound>(targets, effect),
+        EffectKind.Burn => Insert<Burn>(targets, effect),
+        EffectKind.Beckon => Insert<Beckon>(targets, effect),
+        EffectKind.Wither => Insert<Wither>(targets, effect),
+        EffectKind.Amnesia => Insert<Amnesia>(targets, effect),
+        EffectKind.MindRot => Insert<MindRot>(targets, effect),
+        EffectKind.Sadness => Insert<Sadness>(targets, effect),
+        EffectKind.Infection => Insert<Infection>(targets, effect),
+        EffectKind.Sloth => Insert<Sloth>(targets, effect),
+        EffectKind.Toxic => Insert<Toxic>(targets, effect),
+        EffectKind.Soot => Insert<Soot>(targets, effect),
+        EffectKind.Disintegration => Insert<Disintegration>(targets, effect),
+        EffectKind.Debris => Insert<Debris>(targets, effect),
+        EffectKind.Void => Insert<VoidCard>(targets, effect),
+        EffectKind.WasteAway => Insert<WasteAway>(targets, effect),
+        EffectKind.Slimed => Insert<Slimed>(targets, effect),
+        _ => throw new ArgumentOutOfRangeException(nameof(effect))
+    };
 
     private static Task Insert<T>(IReadOnlyList<Creature> targets, ActionEffect effect) where T : CardModel
     {
@@ -160,6 +183,8 @@ internal static class NativeActions
         "RITUAL" => Get<RitualPower>,
         "REGEN" => Get<RegenPower>,
         "PLATING" => Get<PlatingPower>,
+        "HARDENED_SHELL" => Get<HardenedShellPower>,
+        "HARD_TO_KILL" => Get<HardToKillPower>,
         "THORNS" or "TEMPORARY_THORNS" => Get<ThornsPower>,
         "ARTIFACT" => Get<ArtifactPower>,
         "INTANGIBLE" => Get<IntangiblePower>,
@@ -192,6 +217,10 @@ internal static class NativeActions
     internal static HashSet<EffectKind> ActiveEffects(Creature self, Creature player, IEnumerable<Creature> enemies)
     {
         var active = RareBuffs.Where(effect => HasRareBuff(self, effect.Id, enemies)).Select(effect => effect.Kind).ToHashSet();
+        if (self.HasPower<HardenedShellPower>())
+            active.Add(EffectKind.HardenedShell);
+        if (self.HasPower<HardToKillPower>())
+            active.Add(EffectKind.HardToKill);
         if (player.HasPower<TenderPower>())
             active.Add(EffectKind.Tender);
         if (player.HasPower<ShrinkPower>())
@@ -226,6 +255,8 @@ internal static class NativeActions
 
         if (RareBuffs.Any(effect => effect.Id == state.Id))
             return await ApplyRareBuff(target, state);
+        if ((state.Id is "HARDENED_SHELL" or "HARD_TO_KILL") && OpeningPower(state.Id)!(target) != null)
+            return 0;
 
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
@@ -234,6 +265,8 @@ internal static class NativeActions
             "RITUAL" => await Apply<RitualPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
+            "HARDENED_SHELL" => await Apply<HardenedShellPower>(),
+            "HARD_TO_KILL" => await Apply<HardToKillPower>(),
             "THORNS" => await Apply<ThornsPower>(),
             "TEMPORARY_THORNS" => await ApplyTemporaryThorns(target, state.Amount),
             "ARTIFACT" => await Apply<ArtifactPower>(),

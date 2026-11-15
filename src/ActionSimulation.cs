@@ -17,7 +17,8 @@ internal static class ActionSimulation
         var specialDebuffRandom = new Random(seed ^ 0x0BC16431);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
-        var activeEffects = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsRareBuff(kind) &&
+        var activeEffects = Enum.GetValues<EffectKind>().Where(kind =>
+            (ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind)) &&
             opening.Any(pick => pick.State.Id.Replace("_", "").Equals(kind.ToString(), StringComparison.OrdinalIgnoreCase)))
             .ToHashSet();
         var prior = rules.TurnPrior with { Act = act, Rooms = rooms, ActiveEffects = activeEffects,
@@ -62,7 +63,8 @@ internal static class ActionSimulation
             if (plan.Action is { } action)
             {
                 history = history.Record(action);
-                activeEffects.UnionWith(action.Effects!.Select(effect => effect.Kind).Where(ActionEffect.IsRareBuff));
+                activeEffects.UnionWith(action.Effects!.Select(effect => effect.Kind)
+                    .Where(kind => ActionEffect.IsRareBuff(kind) || ActionEffect.IsNonStackingDefense(kind)));
                 specialDebuffSpent |= action.Effects!.Any(effect => effect.IsSpecialDebuff);
             }
             else

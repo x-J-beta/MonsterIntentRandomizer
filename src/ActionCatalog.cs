@@ -5,7 +5,9 @@ public enum EffectKind
     Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled,
     Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon,
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
-    Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait
+    Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
+    HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
+    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed
 }
 
 public enum EffectTarget { Self, Player }
@@ -14,9 +16,15 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
 {
     public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or
-        EffectKind.Intangible or EffectKind.Thorns or EffectKind.TemporaryThorns
+        EffectKind.Intangible or EffectKind.Thorns or EffectKind.TemporaryThorns or EffectKind.Plating
+        || IsNonStackingDefense(Kind)
         || IsRareBuff(Kind) ? EffectTarget.Self : EffectTarget.Player;
-    public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
+    public bool IsStatusCard => IsCard(Kind);
+    public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
+        EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
+        EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
+        EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
+    public static bool IsNonStackingDefense(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
@@ -24,7 +32,8 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public bool IsSpecialDebuff => IsRareDebuff(Kind);
     public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
         EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown or
-        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
+        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.MindRot or EffectKind.WasteAway or
+        EffectKind.Sloth or EffectKind.Disintegration;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts;
@@ -56,14 +65,16 @@ public sealed record ActionContext(
     double BurnDraws = 0.6, bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0, bool AlreadyIntangible = false, double BeckonDraws = 0.6,
     int Act = 1, IReadOnlySet<EffectKind>? ActiveEffects = null, double RareBuffRoll = 0,
-    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0, int Rooms = 0);
+    bool SpecialDebuffAvailable = true, double SpecialDebuffRoll = 0, int Rooms = 0, double OtherStatusDraws = 0.6);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
     IReadOnlyDictionary<EffectKind, int[]> Amounts,
     StatusPlacementValues? PlacementValues = null,
     int MaxHardCardLimits = 1, double HandBurnDamageChance = 1, IReadOnlyDictionary<EffectKind, int>? MinActs = null,
-    double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null);
+    double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
+    IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
+    IReadOnlyDictionary<EffectKind, double>? HpPerSurvivalTurnCaps = null);
 
 public sealed record ActionHistory(
     int AddedStrength = 0, int AddedRitual = 0, int RitualStrength = 0,
@@ -89,7 +100,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var actions = profile.EffectWeights;
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
-        foreach (var (kind, doses) in settings.Amounts)
+        foreach (var kind in settings.Amounts.Keys.Union(settings.HpPerSurvivalTurnCaps?.Keys ?? []))
         {
             double preference = actions?.GetValueOrDefault(kind, IsCommon(kind) ? 1 : 0) ?? (IsCommon(kind) ? 1 : 0);
             if (preference <= 0 || (settings.Weights?.GetValueOrDefault(kind)?.At(context.Rooms) ?? 1) <= 0)
@@ -100,7 +111,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 context.SpecialDebuffRoll >= settings.SpecialDebuffChance))
                 continue;
 
-            foreach (int amount in doses.Where(value => value > 0).Distinct())
+            foreach (int amount in Amounts(kind, profile))
             {
                 switch (kind)
                 {
@@ -112,6 +123,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
                         break;
                     case EffectKind.Intangible when !context.AlreadyIntangible:
+                    case EffectKind.Plating or EffectKind.HardenedShell or EffectKind.HardToKill:
                         Add(kind, amount, IntentStyle.Defend);
                         break;
                     case EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen:
@@ -148,7 +160,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
-                    case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon:
+                    case var card when ActionEffect.IsCard(card):
                         var placements = profile.CardPlacements?.Where(place => place.Card == kind).ToArray();
                         if (placements is not { Length: > 0 })
                             placements = [new StatusPlacement(kind, kind == EffectKind.Wound ? StatusPile.Discard : StatusPile.Draw)];
@@ -156,17 +168,20 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         {
                             if (kind == EffectKind.Dazed && placement.Pile is StatusPile.Hand or StatusPile.Bottom)
                                 continue;
+                            if (placement.Pile == StatusPile.Hand && kind is EffectKind.Void or EffectKind.Amnesia or
+                                EffectKind.MindRot or EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration)
+                                continue;
 
                             double draws = kind switch
                             {
                                 EffectKind.Dazed => context.DazedDraws, EffectKind.Wound => context.WoundDraws,
-                                EffectKind.Beckon => context.BeckonDraws, _ => context.BurnDraws
+                                EffectKind.Beckon => context.BeckonDraws, EffectKind.Burn => context.BurnDraws,
+                                _ => context.OtherStatusDraws
                             };
                             draws *= (settings.PlacementValues ?? new StatusPlacementValues()).For(placement.Pile);
                             if (kind == EffectKind.Dazed)
                                 draws = Math.Clamp(draws, 0, 1);
-                            double triggers = kind == EffectKind.Burn && placement.Pile == StatusPile.Hand
-                                ? settings.HandBurnDamageChance : draws;
+                            double triggers = placement.Pile == StatusPile.Hand ? settings.HandBurnDamageChance : draws;
                             Add(kind, amount, IntentStyle.PlayerDebuff, placement.Pile, placement.Weight,
                                 draws: draws, triggers: triggers);
                         }
@@ -208,9 +223,22 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         return cost > 0 ? attack with { Value = cost } : null;
     }
 
+    private IEnumerable<int> Amounts(EffectKind kind, MonsterProfile profile)
+    {
+        int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;
+        var declared = settings.Amounts.GetValueOrDefault(kind);
+        if (settings.HpPerSurvivalTurnCaps?.TryGetValue(kind, out double hpFactor) == true)
+        {
+            int maximum = profile.CapAmount(declared?.DefaultIfEmpty(0).Max() ?? int.MaxValue, hpFactor);
+            return Enumerable.Range(minimum, Math.Max(0, maximum - minimum + 1));
+        }
+        return (declared ?? []).Where(amount => amount >= minimum).Distinct();
+    }
+
     private static bool IsCommon(EffectKind kind) => kind is EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or
         EffectKind.Thorns or EffectKind.TemporaryThorns or EffectKind.Block or EffectKind.Heal or EffectKind.Weak or
-        EffectKind.Vulnerable or EffectKind.Frail or EffectKind.Dazed or EffectKind.Wound;
+        EffectKind.Vulnerable or EffectKind.Frail or EffectKind.Plating ||
+        ActionEffect.IsCard(kind) || ActionEffect.IsNonStackingDefense(kind);
 
     private static string EffectName(ActionEffect effect) =>
         $"{effect.Kind} {effect.Amount}" + (effect.Pile is { } pile ? $" @{pile}" : "");

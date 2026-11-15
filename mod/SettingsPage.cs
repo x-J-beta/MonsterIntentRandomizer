@@ -107,6 +107,13 @@ internal static class SettingsPage
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
         AddNumber("余额对出招花费的系数", 0, 5, 0.01, "pools", "balanceTargetWeight");
+        AddNumber("抽取预算倍率", 0.01, 5, 0.01, "pools", "drawBudgetMultiplier");
+        AddNumber("局部透支占基础行动力比例", 0, 1, 0.01, "pools", "localOverdraftShare");
+        AddNumber("非攻击候选数", 1, 20, 1, "pools", "nonAttackCandidates");
+        AddNumber("无攻击时转给其他行动的比例", 0, 1, 0.01, "pools", "unusedAttackBudgetShare");
+        AddNumber("预算达到混沌目标的倍率", 1.01, 10, 0.01, "pools", "fullChaosBudgetAt");
+        foreach (var (id, label) in new[] { ("attack", "攻击"), ("buff", "强化"), ("defend", "防御"), ("playerDebuff", "减益") })
+            AddNumber($"高混沌{label}分配权重", 0, 100, 0.01, "pools", "chaosBudgetWeights", id);
         AddNumber("玩家行动力基础值", 0.001, 100, 0.001, "playerAction", "base");
         AddNumber("玩家行动力房间除数", 0.001, 100, 0.001, "playerAction", "roomsPerStep");
         AddNumber("玩家行动力指数", 0.0001, 5, 0.0001, "playerAction", "exponent");

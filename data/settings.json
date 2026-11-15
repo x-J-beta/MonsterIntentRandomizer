@@ -7,7 +7,13 @@
     "initialActionValueShare": 0.5,
     "initialAttackDesire": 0,
     "balanceTargetWeight": 0.5,
-    "minimumSelectionSpread": 0.5
+    "minimumSelectionSpread": 0.5,
+    "drawBudgetMultiplier": 1.3,
+    "localOverdraftShare": 0.2,
+    "nonAttackCandidates": 5,
+    "unusedAttackBudgetShare": 0.5,
+    "fullChaosBudgetAt": 5,
+    "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 }
   },
   "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },
   "actions": {
@@ -18,6 +24,9 @@
       "Block": { "effectiveAmount": 0.4 },
       "Heal": { "effectiveAmount": 0.45 },
       "Regen": { "amount*survivalTurns": 0.225 },
+      "Plating": { "amount*survivalTurns": 0.2 },
+      "HardenedShell": { "actionValue*hpPerSurvivalTurn*inverseAmount": 1 },
+      "HardToKill": { "actionValue*hpPerSurvivalTurn*inverseAmount": 0.4 },
       "Strength": { "amount*attackFrequency": 1.2 },
       "Ritual": { "amount*attackFrequency*survivalTurns": 0.8 },
       "Intangible": { "amount*actionValue": 0.9 },
@@ -45,7 +54,20 @@
       "Dazed": { "amount*draws": 1.5 },
       "Wound": { "amount*draws": 2.5 },
       "Burn": { "amount*draws": 2.5, "amount*triggers": 2 },
-      "Beckon": { "amount*draws": 2.5, "amount*triggers": 3 }
+      "Beckon": { "amount*draws": 2.5, "amount*triggers": 3 },
+      "Wither": { "amount*draws": 2.5, "amount*triggers": 3 },
+      "Amnesia": { "amount*draws*playerTurnValue": 0.7 },
+      "MindRot": { "amount*draws*playerTurnValue": 0.6 },
+      "Sadness": { "amount*draws": 3.5 },
+      "Infection": { "amount*draws": 2.5, "amount*triggers": 3 },
+      "Sloth": { "amount*draws*playerTurnValue": 0.85 },
+      "Toxic": { "amount*draws": 2, "amount*triggers": 5 },
+      "Soot": { "amount*draws": 2.5 },
+      "Disintegration": { "amount*draws": 8 },
+      "Debris": { "amount*draws": 1.8 },
+      "Void": { "amount*draws": 1.5, "amount*draws*playerTurnValue": 0.33 },
+      "WasteAway": { "amount*draws*playerTurnValue": 0.9 },
+      "Slimed": { "amount*draws": 1.5 }
     },
     "maxHardCardLimits": 1,
     "hardCardLimitFirstTurn": 2,
@@ -57,8 +79,27 @@
     "weights": {
       "Strength": { "base": 1, "perRoom": 0 },
       "Ritual": { "base": 1, "perRoom": 0 },
-      "Regen": { "base": 1, "perRoom": 0 }
+      "Regen": { "base": 1, "perRoom": 0 },
+      "HardenedShell": { "base": 0.15, "perRoom": 0 },
+      "HardToKill": { "base": 0.12, "perRoom": 0 },
+      "Burn": { "base": 0.5, "perRoom": 0 },
+      "Beckon": { "base": 0.35, "perRoom": 0 },
+      "Wither": { "base": 0.5, "perRoom": 0 },
+      "Amnesia": { "base": 0.3, "perRoom": 0 },
+      "MindRot": { "base": 0.2, "perRoom": 0 },
+      "Sadness": { "base": 0.45, "perRoom": 0 },
+      "Infection": { "base": 0.5, "perRoom": 0 },
+      "Sloth": { "base": 0.15, "perRoom": 0 },
+      "Toxic": { "base": 0.35, "perRoom": 0 },
+      "Soot": { "base": 0.6, "perRoom": 0 },
+      "Disintegration": { "base": 0.12, "perRoom": 0 },
+      "Debris": { "base": 0.5, "perRoom": 0 },
+      "Void": { "base": 0.45, "perRoom": 0 },
+      "WasteAway": { "base": 0.15, "perRoom": 0 },
+      "Slimed": { "base": 0.6, "perRoom": 0 }
     },
+    "minAmounts": { "Regen": 5, "Plating": 6 },
+    "hpPerSurvivalTurnCaps": { "HardenedShell": 1, "HardToKill": 0.5 },
     "maxAmounts": {
       "Block": 20,
       "Heal": 12,
@@ -90,7 +131,21 @@
       "Wound": 1,
       "Burn": 1,
       "Beckon": 2,
-      "Regen": 4
+      "Regen": 8,
+      "Plating": 10,
+      "Wither": 1,
+      "Amnesia": 1,
+      "MindRot": 1,
+      "Sadness": 1,
+      "Infection": 1,
+      "Sloth": 1,
+      "Toxic": 1,
+      "Soot": 1,
+      "Disintegration": 1,
+      "Debris": 1,
+      "Void": 1,
+      "WasteAway": 1,
+      "Slimed": 1
     }
   },
   "opening": {
@@ -101,8 +156,10 @@
     "states": {
       "STRENGTH": {"maxAmount": 3, "formula": {"amount*attackFrequency": 1.2}},
       "RITUAL": {"maxAmount": 1, "formula": {"amount*attackFrequency*survivalTurns": 0.8}},
-      "REGEN": {"maxAmount": 4, "formula": {"amount*survivalTurns": 0.225}},
-      "PLATING": {"maxAmount": 4, "formula": {"amount*survivalTurns": 0.2}},
+      "REGEN": {"minAmount": 5, "maxAmount": 8, "formula": {"amount*survivalTurns": 0.225}},
+      "PLATING": {"minAmount": 6, "maxAmount": 10, "formula": {"amount*survivalTurns": 0.2}},
+      "HARDENED_SHELL": {"common": true, "hpPerSurvivalTurnCap": 1, "formula": {"actionValue*hpPerSurvivalTurn*inverseAmount": 1}, "weight": 0.15},
+      "HARD_TO_KILL": {"common": true, "hpPerSurvivalTurnCap": 0.5, "formula": {"actionValue*hpPerSurvivalTurn*inverseAmount": 0.4}, "weight": 0.12},
       "INTANGIBLE": {"maxAmount": 1, "formula": {"amount*actionValue": 0.9}},
       "STRENGTH_DOWN": {"maxAmount": 3, "formula": {"amount*attackFrequency": -1.2}, "amount": -1},
       "WEAK": {"maxAmount": 3, "formula": {"amount*actionValue": -0.15}},
@@ -146,6 +203,7 @@
       "woundDraws": 0.8,
       "burnDraws": 0.6,
       "beckonDraws": 0.6,
+      "otherStatusDraws": 0.6,
       "missingHp": 6
     }
   }
