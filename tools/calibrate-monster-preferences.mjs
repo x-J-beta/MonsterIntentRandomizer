@@ -112,9 +112,10 @@ for (const monster of archive.monsters) {
     const stage = profile.stage ?? ({ 'Act 2 - Hive': 'act2', 'Act 3 - Glory': 'act3' }[monster.encounters?.[0]?.act]) ?? 'act1';
     const rooms = references[stage] ?? references.act1;
     const player = Math.pow(settings.playerAction.base + rooms / settings.playerAction.roomsPerStep, settings.playerAction.exponent);
+    const survivalTurns = profile.hp / player;
     const factors = {
-        actionvalue: profile.actionValue, attackfrequency: profile.attackFrequency, survivalturns: profile.hp / player,
-        playeractionvalue: player, hppersurvivalturn: player, roomsentered: rooms + 1, hits: 1
+        actionvalue: profile.actionValue, attackfrequency: profile.attackFrequency, survivalturns: survivalTurns,
+        playeractionvalue: player, hppersurvivalturn: profile.hp / (survivalTurns + 1), roomsentered: rooms + 1, hits: 1
     };
     const costs = Object.fromEntries(styles.map(style => [style, 0]));
     const approximations = [];

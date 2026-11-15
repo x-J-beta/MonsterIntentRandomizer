@@ -404,7 +404,7 @@ internal static class ValuationPage
             "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
             "hits" => "攻击段数",
             "playeractionvalue" => "玩家行动力", "roomsentered" => "进入房间数",
-            "hppersurvivalturn" => "当前血量／预期生存回合", "inverseamount" => "1／层数", _ => factor
+            "hppersurvivalturn" => "当前血量／（预期生存回合＋1）", "inverseamount" => "1／层数", _ => factor
         }));
 
     internal static string OpeningName(string id) => id switch

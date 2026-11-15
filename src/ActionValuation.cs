@@ -44,7 +44,7 @@ public sealed class ActionValuation
                     Factor.EffectiveAmount => effectiveAmount,
                     Factor.Hits => hits,
                     Factor.PlayerActionValue => profile.PlayerActionValue,
-                    Factor.HpPerSurvivalTurn => profile.HpPerSurvivalTurn,
+                    Factor.HpPerSurvivalTurn => profile.CurrentHp / (profile.BaseExpectedSurvivalTurns + 1),
                     Factor.InverseAmount => amount > 0 ? 1.0 / amount : 0,
                     Factor.RoomsEntered => profile.RoomsEntered,
                     _ => throw new ArgumentOutOfRangeException(nameof(factor))
