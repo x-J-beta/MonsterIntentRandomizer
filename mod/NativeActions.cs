@@ -19,16 +19,16 @@ internal static class NativeActions
         new(MoveId, targets => Execute(monster, candidate.Effects!, targets),
             candidate.Effects!.Select(CreateIntent).ToArray());
 
-    private static AbstractIntent CreateIntent(ActionEffect effect) => effect.Kind switch
+    private static AbstractIntent CreateIntent(ActionEffect effect) => IntentDetails.Register(effect, effect.Kind switch
     {
         EffectKind.Attack => effect.Hits == 1 ? new SingleAttackIntent(effect.Amount) :
             new MultiAttackIntent(effect.Amount, effect.Hits),
         EffectKind.Block or EffectKind.Intangible => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
-        EffectKind.Strength or EffectKind.Ritual => new BuffIntent(),
+        EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns => new BuffIntent(),
         EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon => new StatusIntent(effect.Amount),
         _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
-    };
+    });
 
     private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets)
     {
@@ -64,6 +64,12 @@ internal static class NativeActions
                 case EffectKind.Ritual:
                     await PowerCmd.Apply<RitualPower>(choice, self, amount, self, null);
                     break;
+                case EffectKind.Thorns:
+                    await PowerCmd.Apply<ThornsPower>(choice, self, amount, self, null);
+                    break;
+                case EffectKind.TemporaryThorns:
+                    await ApplyTemporaryThorns(self, amount);
+                    break;
                 case EffectKind.Intangible:
                     await PowerCmd.Apply<IntangiblePower>(choice, self, amount, self, null);
                     break;
@@ -86,20 +92,10 @@ internal static class NativeActions
                     await PowerCmd.Apply<DexterityPower>(choice, living, -amount, self, null);
                     break;
                 case EffectKind.Smoggy:
-                    foreach (var player in living.Where(target => !target.HasPower<SmoggyPower>()))
-                    {
-                        var smog = await PowerCmd.Apply<SmoggyPower>(choice, player, 1, self, null);
-                        if (smog != null)
-                            CombatIntegration.TrackOneTurnDebuff(combat, smog);
-                    }
+                    await PowerCmd.Apply<SmoggyPower>(choice, living.Where(target => !target.HasPower<SmoggyPower>()), 1, self, null);
                     break;
                 case EffectKind.Tender:
-                    foreach (var player in living.Where(target => !target.HasPower<TenderPower>()))
-                    {
-                        var tender = await PowerCmd.Apply<TenderPower>(choice, player, amount, self, null);
-                        if (tender != null)
-                            CombatIntegration.TrackOneTurnDebuff(combat, tender);
-                    }
+                    await PowerCmd.Apply<TenderPower>(choice, living.Where(target => !target.HasPower<TenderPower>()), amount, self, null);
                     break;
                 case EffectKind.Frail:
                     await PowerCmd.Apply<FrailPower>(choice, living, amount, self, null);
@@ -107,8 +103,8 @@ internal static class NativeActions
                 case EffectKind.Poison:
                     await PowerCmd.Apply<PoisonPower>(choice, living, amount, self, null);
                     break;
-                case EffectKind.PlayerDoom:
-                    await PowerCmd.Apply<DoomPower>(choice, living, amount, self, null);
+                case EffectKind.Shrink:
+                    await PowerCmd.Apply<ShrinkPower>(choice, living.Where(target => !target.HasPower<ShrinkPower>()), -1, self, null);
                     break;
                 case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
                     or EffectKind.Envenom or EffectKind.PaperCuts:
@@ -150,7 +146,7 @@ internal static class NativeActions
         "RITUAL" => Get<RitualPower>,
         "REGEN" => Get<RegenPower>,
         "PLATING" => Get<PlatingPower>,
-        "THORNS" => Get<ThornsPower>,
+        "THORNS" or "TEMPORARY_THORNS" => Get<ThornsPower>,
         "ARTIFACT" => Get<ArtifactPower>,
         "INTANGIBLE" => Get<IntangiblePower>,
         "WEAK" => Get<WeakPower>,
@@ -184,6 +180,8 @@ internal static class NativeActions
         var active = RareBuffs.Where(effect => HasRareBuff(self, effect.Id, enemies)).Select(effect => effect.Kind).ToHashSet();
         if (player.HasPower<TenderPower>())
             active.Add(EffectKind.Tender);
+        if (player.HasPower<ShrinkPower>())
+            active.Add(EffectKind.Shrink);
         return active;
     }
 
@@ -217,6 +215,7 @@ internal static class NativeActions
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
             "THORNS" => await Apply<ThornsPower>(),
+            "TEMPORARY_THORNS" => await ApplyTemporaryThorns(target, state.Amount),
             "ARTIFACT" => await Apply<ArtifactPower>(),
             "INTANGIBLE" => await Apply<IntangiblePower>(),
             "WEAK" => await Apply<WeakPower>(),
@@ -234,6 +233,19 @@ internal static class NativeActions
             await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
             return (target.GetPower<T>()?.Amount ?? 0) - before;
         }
+    }
+
+    private static async Task<int> ApplyTemporaryThorns(Creature target, int amount)
+    {
+        if (target.CombatState is not { } combat)
+            return 0;
+
+        int previous = target.GetPower<ThornsPower>()?.Amount ?? 0;
+        var power = await PowerCmd.Apply<ThornsPower>(new ThrowingPlayerChoiceContext(), target, amount, target, null);
+        int granted = Math.Max(0, (power?.Amount ?? previous) - previous);
+        if (power != null && granted > 0)
+            CombatIntegration.TrackTemporaryThorns(combat, power, granted);
+        return granted;
     }
 
     private static async Task<int> ApplyRareBuff(Creature owner, OpeningState state)

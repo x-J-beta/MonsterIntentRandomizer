@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Combat.History;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
@@ -31,7 +32,7 @@ internal static class CombatIntegration
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Queue<Dictionary<Creature, double>> RecentDamage { get; } = new();
         public Dictionary<Creature, double> PlayerDamage { get; } = new();
-        public HashSet<PowerModel> OneTurnDebuffs { get; } = new();
+        public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public Creature? SpecialDebuffOwner { get; set; }
         public int SpecialDebuffRound { get; set; }
         public bool SpecialDebuffSpent { get; set; }
@@ -130,7 +131,7 @@ internal static class CombatIntegration
         {
             var enemy = Register(encounter, creature);
             if (enemy == null || !original.CanTransitionAway || creature.IsStunned ||
-                KeepsNativeMove(enemy, original, combat.RoundNumber) || !IsOrdinaryMove(original))
+                KeepsNativeMove(creature, enemy, original, combat.RoundNumber) || !IsOrdinaryMove(original))
                 return;
             int round = combat.RoundNumber;
             if (enemy.SettledRound >= round)
@@ -175,7 +176,7 @@ internal static class CombatIntegration
             state.History = state.History.Record(action, __0.RoundNumber);
             state.Balance = plan.After;
         }
-        else if (!IsOrdinaryMove(__2) || KeepsNativeMove(state, __2, __0.RoundNumber))
+        else if (!IsOrdinaryMove(__2) || KeepsNativeMove(__1.Creature, state, __2, __0.RoundNumber))
         {
             state.Balance = encounter.Planner.Plan(state.Balance, state.Profile, [], new Random(0), canRandomize: false).After;
         }
@@ -210,10 +211,10 @@ internal static class CombatIntegration
             __result = FinishDamageRound(__result, encounter);
     }
 
-    internal static void TrackOneTurnDebuff(ICombatState combat, PowerModel power)
+    internal static void TrackTemporaryThorns(ICombatState combat, ThornsPower power, int amount)
     {
         if (Encounters.TryGetValue(combat, out var encounter))
-            encounter.OneTurnDebuffs.Add(power);
+            encounter.TemporaryThorns[power] = encounter.TemporaryThorns.GetValueOrDefault(power) + amount;
     }
 
     internal static bool SpendSpecialDebuff(ICombatState combat)
@@ -227,12 +228,13 @@ internal static class CombatIntegration
     private static async Task FinishDamageRound(Task original, EncounterRules encounter)
     {
         await original;
-        foreach (var power in encounter.OneTurnDebuffs)
+        foreach (var (power, amount) in encounter.TemporaryThorns)
         {
-            if (power.Owner.Powers.Contains(power))
-                await PowerCmd.Remove(power);
+            if (power.Owner.IsAlive && power.Owner.Powers.Contains(power))
+                await PowerCmd.ModifyAmount(new ThrowingPlayerChoiceContext(), power, -Math.Min(amount, power.Amount),
+                    power.Owner, null);
         }
-        encounter.OneTurnDebuffs.Clear();
+        encounter.TemporaryThorns.Clear();
         int recentRounds = Math.Max(0, encounter.Rules.Forecast.GetProperty("recentPlayerRoundLimit").GetInt32());
         encounter.RecentDamage.Enqueue(new Dictionary<Creature, double>(encounter.PlayerDamage));
         encounter.PlayerDamage.Clear();
@@ -249,7 +251,7 @@ internal static class CombatIntegration
             encounter.Rules.KeepVanilla.Contains(monster.Id.Entry) ||
             FindProfile(encounter.Rules, monster) is not { Rules.Enabled: true } configured ||
             monster.MoveStateMachine is not { } machine ||
-            machine.States.Values.OfType<MoveState>().Any(move => !IsOrdinaryMove(move)))
+            machine.States.Values.OfType<MoveState>().Any(move => !configured.Rules.KeepMoves.Contains(move.Id) && !IsOrdinaryMove(move)))
             return null;
 
         var state = new EnemyRules(configured.Rules, configured.Profile)
@@ -270,8 +272,15 @@ internal static class CombatIntegration
         move.Intents.All(intent => intent.IntentType is IntentType.Attack or IntentType.Buff or IntentType.Debuff or
             IntentType.DebuffStrong or IntentType.Defend or IntentType.Heal or IntentType.StatusCard or IntentType.CardDebuff);
 
-    private static bool KeepsNativeMove(EnemyRules enemy, MoveState move, int round) =>
-        (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id);
+    private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
+        (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id) ||
+        (enemy.Rules.RandomizeWhenPower?.Trim() is { Length: > 0 } id &&
+            !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));
+
+    private static bool MatchesPower(string entry, string required) =>
+        entry.Equals(required, StringComparison.OrdinalIgnoreCase) ||
+        (entry.EndsWith("_POWER", StringComparison.OrdinalIgnoreCase) &&
+            entry.AsSpan(0, entry.Length - "_POWER".Length).Equals(required, StringComparison.OrdinalIgnoreCase));
 
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {

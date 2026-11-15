@@ -4,7 +4,8 @@ public enum EffectKind
 {
     Attack, Block, Heal, Strength, Ritual, Intangible, Weak, Vulnerable, Tangled,
     Ringing, StrengthDown, DexterityDown, Dazed, Wound, Burn, Beckon,
-    PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, PlayerDoom
+    PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
+    Thorns, TemporaryThorns
 }
 
 public enum EffectTarget { Self, Player }
@@ -12,16 +13,17 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
 {
-    public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Strength or EffectKind.Ritual or EffectKind.Intangible
+    public EffectTarget Target => Kind is EffectKind.Block or EffectKind.Heal or EffectKind.Strength or EffectKind.Ritual or
+        EffectKind.Intangible or EffectKind.Thorns or EffectKind.TemporaryThorns
         || IsRareBuff(Kind) ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => Kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Frail or EffectKind.Poison or EffectKind.PlayerDoom;
+        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink;
     public bool IsHardCardLimit => Kind is EffectKind.Ringing or EffectKind.Smoggy;
     public bool IsSpecialDebuff => IsRareDebuff(Kind);
     public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
-        EffectKind.Tender or EffectKind.PlayerDoom or EffectKind.StrengthDown or EffectKind.DexterityDown;
+        EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts;
@@ -130,6 +132,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Ritual when amount <= settings.MaxAddedRitual - history.AddedRitual:
                         Add(kind, amount, IntentStyle.Buff);
                         break;
+                    case EffectKind.Thorns or EffectKind.TemporaryThorns:
+                        Add(kind, amount, IntentStyle.Buff);
+                        break;
                     case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
                         or EffectKind.Envenom or EffectKind.PaperCuts when turn > 1 && context.RareBuffRoll < weight:
                         Add(kind, amount, IntentStyle.Buff);
@@ -153,7 +158,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.StrengthDown or EffectKind.DexterityDown when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
-                    case EffectKind.Frail or EffectKind.Poison or EffectKind.PlayerDoom when canDebuff:
+                    case EffectKind.Frail or EffectKind.Poison when canDebuff:
+                    case EffectKind.Shrink when canDebuff && amount == 1:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon

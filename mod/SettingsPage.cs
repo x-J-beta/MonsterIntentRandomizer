@@ -58,7 +58,9 @@ internal static class SettingsPage
 
         var enabled = new CheckButton { Text = "启用单人怪物意图随机", ButtonPressed = ModSettings.Current.Enabled };
         body.AddChild(enabled);
-        body.AddChild(new Label { Text = "保存后从下一场战斗生效。专属行动由怪物画像的 keepVanilla 列表控制。" });
+        var intentDetails = new CheckButton { Text = "显示意图的具体效果", ButtonPressed = ModSettings.Current.ShowIntentDetails };
+        body.AddChild(intentDetails);
+        body.AddChild(new Label { Text = "战斗参数从下一场战斗生效。" });
         var tabs = new TabContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         body.AddChild(tabs);
 
@@ -70,9 +72,11 @@ internal static class SettingsPage
         var fields = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         fields.AddThemeConstantOverride("separation", 8);
         quick.AddChild(fields);
-        var monsters = new VBoxContainer { Name = "逐怪参数" };
+        var monsterScroll = new ScrollContainer { Name = "逐怪参数", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        tabs.AddChild(monsterScroll);
+        var monsters = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         monsters.AddThemeConstantOverride("separation", 8);
-        tabs.AddChild(monsters);
+        monsterScroll.AddChild(monsters);
         var settings = AddEditor(tabs, "全局参数", ModSettings.Current.Settings);
         var profiles = AddEditor(tabs, "画像 JSON", ModSettings.Current.Profiles);
 
@@ -117,6 +121,7 @@ internal static class SettingsPage
         defaults.Pressed += () =>
         {
             enabled.ButtonPressed = ModSettings.Defaults.Enabled;
+            intentDetails.ButtonPressed = ModSettings.Defaults.ShowIntentDetails;
             settings.Text = ModSettings.Format(ModSettings.Defaults.Settings);
             profiles.Text = ModSettings.Format(ModSettings.Defaults.Profiles);
             RefreshNumbers();
@@ -130,8 +135,11 @@ internal static class SettingsPage
             {
                 using var settingsJson = JsonDocument.Parse(settings.Text);
                 using var profilesJson = JsonDocument.Parse(profiles.Text);
+                bool refreshIntent = intentDetails.ButtonPressed != ModSettings.Current.ShowIntentDetails;
                 ModSettings.Save(new StoredSettings(enabled.ButtonPressed,
-                    settingsJson.RootElement.Clone(), profilesJson.RootElement.Clone()));
+                    settingsJson.RootElement.Clone(), profilesJson.RootElement.Clone(), ShowIntentDetails: intentDetails.ButtonPressed));
+                if (refreshIntent)
+                    IntentDetails.Refresh();
                 message.Text = "已保存。";
             }
             catch (Exception error)
@@ -200,6 +208,11 @@ internal static class SettingsPage
         panel.AddChild(list);
         var availability = new Label();
         panel.AddChild(availability);
+        var randomize = new CheckButton { Text = "启用该怪物的随机出招" };
+        panel.AddChild(randomize);
+        var requiredPower = new LineEdit { PlaceholderText = "留空则不限状态，例如 BURROWED" };
+        panel.AddChild(new Label { Text = "仅拥有此状态时随机（状态 ID）" });
+        panel.AddChild(requiredPower);
         var values = new[]
         {
             (Group: "", Key: "actionValue", Label: "基础行动力"),
@@ -219,21 +232,17 @@ internal static class SettingsPage
             var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, 100, 0.01);
             inputs.Add(input);
             input.ValueChanged += value =>
-            {
-                try
-                {
-                    var document = JsonNode.Parse(profiles.Text)!;
-                    var monster = document["monsters"]![selected!]!;
-                    (group.Length == 0 ? monster : monster[group]!)[key] = value;
-                    profiles.Text = document.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-                    message.Text = "";
-                }
-                catch (Exception error)
-                {
-                    message.Text = $"无法同步怪物画像。{error.Message}";
-                }
-            };
+                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value);
         }
+        randomize.Toggled += value => EditMonster(monster => monster["enabled"] = value, refresh: true);
+        requiredPower.TextChanged += value => EditMonster(monster =>
+        {
+            string id = value.Trim().ToUpperInvariant();
+            if (id.Length == 0)
+                monster.AsObject().Remove("randomizeWhenPower");
+            else
+                monster["randomizeWhenPower"] = id;
+        });
         list.ItemSelected += i =>
         {
             selected = ids[(int)i];
@@ -249,6 +258,8 @@ internal static class SettingsPage
                 ids = monsters.OrderBy(pair => pair.Value?["name"]?.GetValue<string>())
                     .Select(pair => pair.Key).ToArray();
                 list.Clear();
+                randomize.Disabled = true;
+                requiredPower.Editable = false;
                 foreach (var id in ids)
                     list.AddItem($"{monsters[id]?["name"]?.GetValue<string>() ?? id}  ·  {id}");
                 int index = Array.IndexOf(ids, selected);
@@ -269,16 +280,39 @@ internal static class SettingsPage
         void RefreshValues(JsonNode document)
         {
             var monster = selected != null ? document["monsters"]?[selected] : null;
-            bool skipped = monster?["enabled"]?.GetValue<bool>() == false ||
-                (document["keepVanilla"]?.AsArray().Any(id => id?.GetValue<string>() == selected) ?? false);
-            availability.Text = monster == null ? "" : skipped ? "保留原版行动" : "参与随机";
+            bool excluded = document["keepVanilla"]?.AsArray().Any(id => id?.GetValue<string>() == selected) ?? false;
+            bool active = monster != null && !excluded && monster["enabled"]?.GetValue<bool>() != false;
+            randomize.Disabled = monster == null || excluded;
+            randomize.SetPressedNoSignal(active);
+            requiredPower.Editable = active;
+            requiredPower.Text = monster?["randomizeWhenPower"]?.GetValue<string>() ?? "";
+            availability.Text = excluded ? "专属行为保留原版" : "";
             for (int i = 0; i < values.Length; i++)
             {
                 var (group, key, _) = values[i];
                 var value = group.Length == 0 ? monster?[key] ?? document["defaults"]?[key] : monster?[group]?[key];
                 bool present = value is JsonValue number && number.TryGetValue<double>(out _);
-                inputs[i].Editable = present && monster != null && !skipped;
+                inputs[i].Editable = present && active;
                 inputs[i].SetValueNoSignal(present ? value!.GetValue<double>() : 0);
+            }
+        }
+
+        void EditMonster(Action<JsonNode> edit, bool refresh = false)
+        {
+            try
+            {
+                var document = JsonNode.Parse(profiles.Text)!;
+                if (selected == null || document["monsters"]?[selected] is not { } monster)
+                    return;
+                edit(monster);
+                profiles.Text = document.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                if (refresh)
+                    RefreshValues(document);
+                message.Text = "";
+            }
+            catch (Exception error)
+            {
+                message.Text = $"无法同步怪物画像。{error.Message}";
             }
         }
     }

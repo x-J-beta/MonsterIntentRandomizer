@@ -72,14 +72,15 @@ internal sealed class RuleConfiguration
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
             entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),
             Read<string[]>(Setting("openingStates")),
-            entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : []);
+            entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
+            entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
 internal sealed record MonsterRules(MonsterProfile Profile, double? DeadlyEnemies, bool Enabled,
-    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves)
+    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower)
 {
     public MonsterProfile AtAscension(bool deadly) =>
         deadly && DeadlyEnemies is double higher ? Profile with { ActionValue = higher } : Profile;

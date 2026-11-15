@@ -18,13 +18,14 @@ public static class ModEntry
     }
 }
 
-internal sealed record StoredSettings(bool Enabled, JsonElement Settings, JsonElement Profiles, int Revision = 0);
+internal sealed record StoredSettings(bool Enabled, JsonElement Settings, JsonElement Profiles, int Revision = 0,
+    bool ShowIntentDetails = true);
 
 internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 1;
+    private const int SettingsRevision = 2;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -70,16 +71,16 @@ internal static class ModSettings
         var defaults = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         FillMissing(settings.AsObject(), defaults.AsObject());
         var opening = settings["opening"]!;
-        if (opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
+        if (stored.Revision == 0 && opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
             opening["maxEncounterValueMultiplier"] = 1;
 
-        foreach (var (id, oldCoefficient) in OldOpeningCoefficients)
+        foreach (var (id, oldCoefficient) in OldOpeningCoefficients.Where(_ => stored.Revision == 0))
         {
             var state = opening["states"]![id]!;
             if (state["turns"]?.GetValue<double>() == oldCoefficient)
                 state["turns"] = defaults["opening"]!["states"]![id]!["turns"]!.DeepClone();
         }
-        foreach (var (id, defaultState) in defaults["opening"]!["states"]!.AsObject())
+        foreach (var (id, defaultState) in defaults["opening"]!["states"]!.AsObject().Where(_ => stored.Revision == 0))
         {
             var state = opening["states"]![id]!;
             if (state["amount"]?.GetValue<int>() != defaultState!["amount"]?.GetValue<int>())
@@ -106,11 +107,41 @@ internal static class ModSettings
         if (profiles["keepVanilla"] is JsonArray exclusions)
         {
             foreach (var entry in exclusions.Where(value => value != null &&
-                NewlyEligible.Contains(value.GetValue<string>())).ToArray())
+                (value.GetValue<string>() == "TUNNELER" ||
+                    stored.Revision == 0 && NewlyEligible.Contains(value.GetValue<string>()))).ToArray())
                 exclusions.Remove(entry);
         }
+        foreach (string section in new[] { "valuation", "amounts", "minActs" })
+            (settings["actions"]?[section] as JsonObject)?.Remove("PlayerDoom");
+        var doom = opening["states"]!["DOOM"]!;
+        if (JsonNode.DeepEquals(doom["amounts"], JsonNode.Parse("[2,3,5,7]")))
+            doom["amounts"] = defaults["opening"]!["states"]!["DOOM"]!["amounts"]!.DeepClone();
+        var monsters = profiles["monsters"]!;
+        foreach (string id in new[] { "EXOSKELETON", "MYTE", "NIBBIT" })
+            (monsters[id] as JsonObject)?.Remove("fixedOpening");
+        RemoveKeptMove("SHRINKER_BEETLE", "SHRINKER_MOVE");
+        RemoveKeptMove("FROG_KNIGHT", "BEETLE_CHARGE");
+        foreach (var (_, profile) in monsters.AsObject())
+            (profile?["effects"] as JsonObject)?.Remove("PlayerDoom");
+        UpdatePreference("SHRINKER_BEETLE", "attackFrequency", "1");
+        UpdatePreference("SHRINKER_BEETLE", "preferences", """{"attack":100,"buff":0,"defend":0,"playerDebuff":0}""");
+        UpdatePreference("TUNNELER", "attackFrequency", "0.67");
+        UpdatePreference("TUNNELER", "preferences", """{"attack":66.67,"buff":16.67,"defend":16.67,"playerDebuff":0}""");
         return new StoredSettings(stored.Enabled, JsonSerializer.SerializeToElement(settings),
-            JsonSerializer.SerializeToElement(profiles), SettingsRevision);
+            JsonSerializer.SerializeToElement(profiles), SettingsRevision, stored.ShowIntentDetails);
+
+        void RemoveKeptMove(string id, string move)
+        {
+            if (monsters[id]?["keepMoves"] is JsonArray list)
+                foreach (var entry in list.Where(entry => entry?.GetValue<string>() == move).ToArray())
+                    list.Remove(entry);
+        }
+
+        void UpdatePreference(string id, string key, string previous)
+        {
+            if (monsters[id] is JsonObject monster && JsonNode.DeepEquals(monster[key], JsonNode.Parse(previous)))
+                monster[key] = defaultProfiles["monsters"]![id]![key]!.DeepClone();
+        }
     }
 
     private static readonly Dictionary<string, double> OldOpeningCoefficients = new()
