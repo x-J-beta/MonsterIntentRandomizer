@@ -19,6 +19,7 @@ internal static class ActionSimulation
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
         var activeEffects = new Dictionary<EffectKind, int>();
         var usedEffects = new HashSet<EffectKind>();
+        int vigor = 0;
         foreach (var pick in opening)
             if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
@@ -26,7 +27,6 @@ internal static class ActionSimulation
         var prior = rules.TurnPrior with { Act = act, Rooms = rooms,
             ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
-        int vigor = opening.Where(pick => pick.State.Id == "VIGOR").Sum(pick => pick.State.Amount);
         bool previousAttack = false;
         bool specialDebuffSpent = false;
         bool imbalanced = opening.Any(pick => pick.State.Id == "IMBALANCED");
@@ -63,6 +63,12 @@ internal static class ActionSimulation
             balances = fallback ? planner.Settle(plan.Granted, cost, hits) : plan.After;
             turns.Add(new SimulatedTurn(turn, plan, balances, skipFromImbalance, plan.CanRandomize && plan.Action is null, cost, hits));
 
+            previousAttack = hits > 0;
+            if (previousAttack)
+            {
+                vigor = 0;
+                activeEffects.Remove(EffectKind.Vigor);
+            }
             if (plan.Action is { } action)
             {
                 history = history.Record(action);
@@ -72,15 +78,14 @@ internal static class ActionSimulation
             }
             else
                 history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
-            previousAttack = hits > 0;
-            if (previousAttack)
-                vigor = 0;
         }
         return turns;
 
         void RecordEffect(EffectKind kind, int amount, int round)
         {
             usedEffects.Add(kind);
+            if (kind == EffectKind.Vigor)
+                vigor += amount;
             if (rules.Actions.PolicyFor(kind).Stackable)
                 return;
             if (kind is EffectKind.Block or EffectKind.Heal or EffectKind.Attack)

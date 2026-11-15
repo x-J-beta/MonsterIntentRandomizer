@@ -14,6 +14,7 @@ public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amount
 {
     internal ActionValuation? CompiledFormula { get; } = Formula == null ? null :
         new ActionValuation(new Dictionary<EffectKind, Dictionary<string, double>> { [EffectKind.Attack] = Formula });
+    internal RoomWeight RoomWeight => new(Weight, WeightPerRoom);
 
     internal IEnumerable<int> Doses(MonsterProfile profile)
     {
@@ -27,7 +28,7 @@ public sealed record StatusValue(int Amount = 1, double Turns = 0, int[]? Amount
 public static class OpeningValuation
 {
     public static double Evaluate(StatusValue state, MonsterProfile profile, int amount) =>
-        amount == 0 ? 0 : state.CompiledFormula?.Evaluate(EffectKind.Attack, profile, Math.Abs(amount)) ??
+        amount == 0 ? 0 : state.CompiledFormula?.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), effectiveAmount: Math.Abs(amount)) ??
         Math.Abs((double)amount) * state.Turns * (state.Basis switch
         {
             OpeningBasis.Flat => 1,
@@ -43,7 +44,7 @@ public static class OpeningValuation
             new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount))).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);
-        return representative with { Weight = new RoomWeight(state.Weight, state.WeightPerRoom).At(rooms), Doses = doses,
+        return representative with { Weight = state.RoomWeight.At(rooms), Doses = doses,
             Stackable = state.Stackable, Unique = state.Unique };
     }
 
@@ -114,6 +115,5 @@ public static class OpeningValuation
     private static bool Conflicts(string existing, string added, bool stackable) =>
         existing == added ? !stackable :
         ((existing is "THORNS" or "TEMPORARY_THORNS") && (added is "THORNS" or "TEMPORARY_THORNS")) ||
-        ((existing is "STRENGTH" or "STRENGTH_DOWN") && (added is "STRENGTH" or "STRENGTH_DOWN")) ||
-        ((existing is "DEXTERITY" or "DEXTERITY_DOWN") && (added is "DEXTERITY" or "DEXTERITY_DOWN"));
+        ((existing is "STRENGTH" or "STRENGTH_DOWN") && (added is "STRENGTH" or "STRENGTH_DOWN"));
 }

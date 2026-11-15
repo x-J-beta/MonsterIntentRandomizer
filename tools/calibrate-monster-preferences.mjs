@@ -22,6 +22,7 @@ const effectAliases = {
 };
 const normalize = value => value.replaceAll('_', '').toLowerCase();
 const valuation = new Map(Object.entries(settings.actions.valuation).map(([id, formula]) => [normalize(id), formula]));
+const buffValuation = new Map(Object.entries(settings.buffs).map(([id, buff]) => [normalize(id), buff.formula]));
 const round = value => Math.round(value * 100) / 100;
 const midpoint = range => Array.isArray(range) && range.every(Number.isFinite)
     ? (range[0] + range[1]) / 2 : null;
@@ -69,9 +70,10 @@ function moveValues(move, profile, factors) {
         const action = player && ['STRENGTH', 'DEXTERITY'].includes(id) && effect.amount < 0
             ? (id === 'STRENGTH' ? 'StrengthDown' : 'DexterityDown')
             : effectAliases[id] ?? (effect.kind === 'block' ? 'Block' : effect.kind === 'heal' ? 'Heal' : id);
-        const formula = valuation.get(normalize(action));
+        const buff = player ? undefined : buffValuation.get(normalize(action));
+        const formula = buff ?? valuation.get(normalize(action));
         const amount = Number.isFinite(effect.amount) ? Math.abs(effect.amount) : 0;
-        const inputs = { ...factors, amount, effectiveamount: Math.min(amount, factors.playeractionvalue),
+        const inputs = { ...factors, amount, effectiveamount: buff ? amount : Math.min(amount, factors.playeractionvalue),
             inverseamount: amount > 0 ? 1 / amount : 0 };
         const estimated = formula ? Object.entries(formula).reduce((sum, [term, coefficient]) =>
             sum + (term === 'fixed' ? coefficient :

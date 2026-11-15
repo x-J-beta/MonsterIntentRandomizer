@@ -11,17 +11,22 @@ internal static class ValuationPage
         var navigation = new HBoxContainer { Name = "估值分类" };
         page.AddChild(navigation);
         var actions = AddScroll("出招效果");
+        var buffs = AddScroll("怪物强化");
         var opening = AddScroll("开场状态");
         var group = new ButtonGroup();
         AddCategory(actions, true);
+        AddCategory(buffs, false);
         AddCategory(opening, false);
         string? selectedAction = null;
+        string? selectedBuff = null;
         string? selectedOpening = null;
         return () =>
         {
             var actionList = actions.GetChild<VBoxContainer>(0);
+            var buffList = buffs.GetChild<VBoxContainer>(0);
             var openingList = opening.GetChild<VBoxContainer>(0);
             Clear(actionList);
+            Clear(buffList);
             Clear(openingList);
             try
             {
@@ -38,7 +43,13 @@ internal static class ValuationPage
                     OpeningName, selectedOpening, (detail, id) =>
                     {
                         selectedOpening = id;
-                        RenderOpening(detail, JsonNode.Parse(settings.Text)!["opening"]!["states"]![id]!, id);
+                        RenderState(detail, root => root["opening"]!["states"]![id]!, shared: false);
+                    });
+                AddSelector(buffList, document["buffs"]!.AsObject().Select(entry => entry.Key),
+                    ActionName, selectedBuff, (detail, id) =>
+                    {
+                        selectedBuff = id;
+                        RenderState(detail, root => root["buffs"]![id]!, shared: true);
                     });
             }
             catch (Exception error)
@@ -112,11 +123,14 @@ internal static class ValuationPage
                     (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
         }
 
-        void RenderOpening(VBoxContainer content, JsonNode state, string id)
+        void RenderState(VBoxContainer content, Func<JsonNode, JsonNode> At, bool shared)
         {
-            JsonNode At(JsonNode root) => root["opening"]!["states"]![id]!;
-            content.AddChild(new Label { Text = "目标：自身" });
+            var state = At(JsonNode.Parse(settings.Text)!);
+            content.AddChild(new Label { Text = shared ? "目标：自身 · 开场和出招共用" : "目标：自身" });
             AddFormula(content, root => At(root)["formula"]!.AsObject(), state["formula"]!.AsObject(), openingFormula: true);
+            if (shared)
+                AddCheck(content, "通用候选", state["common"]?.GetValue<bool>() ?? false,
+                    (root, value) => At(root)["common"] = value);
             AddCheck(content, "可叠加", state["stackable"]?.GetValue<bool>() ?? false,
                 (root, value) => At(root)["stackable"] = value);
             AddCheck(content, "战斗中独特", state["unique"]?.GetValue<bool>() ?? false,
@@ -125,13 +139,13 @@ internal static class ValuationPage
                 (root, number) => At(root)["weight"] = number);
             AddNumber(content, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
                 (root, number) => At(root)["weightPerRoom"] = number);
-            AddNumber(content, "开场层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
+            AddNumber(content, "每次层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
                 (root, number) => At(root)["minAmount"] = (int)number, minimum: 1);
             if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
                 AddNumber(content, "动态层数上限系数", cap, 0.01,
                     (root, number) => At(root)["hpPerSurvivalTurnCap"] = number, minimum: 0);
             else
-                AddNumber(content, "开场层数上限", state["maxAmount"]?.GetValue<int>() ?? 0, 1,
+                AddNumber(content, "每次层数上限", state["maxAmount"]?.GetValue<int>() ?? 1, 1,
                     (root, number) => At(root)["maxAmount"] = (int)number);
         }
 
@@ -184,6 +198,7 @@ internal static class ValuationPage
             button.Pressed += () =>
             {
                 actions.Visible = scroll == actions;
+                buffs.Visible = scroll == buffs;
                 opening.Visible = scroll == opening;
             };
         }
@@ -215,7 +230,7 @@ internal static class ValuationPage
             content.AddChild(terms);
             var factors = ActionValuation.FactorNames.Where(name => !openingFormula ||
                 name is "Amount" or "ActionValue" or "AttackFrequency" or "SurvivalTurns"
-                    or "PlayerActionValue" or "HpPerSurvivalTurn" or "InverseAmount" or "RoomsEntered").ToArray();
+                    or "PlayerActionValue" or "HpPerSurvivalTurn" or "InverseAmount" or "RoomsEntered" or "EffectiveAmount").ToArray();
             foreach (var (term, value) in initial)
                 AddTerm(terms, getFormula, factors, term, value!.GetValue<double>());
             var add = new Button { Text = "新增估值项", SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin };
@@ -356,8 +371,7 @@ internal static class ValuationPage
     {
         "STRENGTH_DOWN" => "负力量", "REGEN" => "再生", "PLATING" => "甲覆", "ARTIFACT" => "人工制品",
         "DEMISE" => "消亡", "DOOM" => "灾厄", "IMBALANCED" => "失衡", "STUN" => "眩晕",
-        "DEXTERITY" => "敏捷", "DEXTERITY_DOWN" => "负敏捷", "VIGOR" => "活力",
-        "ENRAGE" => "激怒", "FLUTTER" => "振翅", "SLOW" => "迟缓",
+        "SLOW" => "迟缓",
         _ => Enum.TryParse<EffectKind>(id.Replace("_", ""), ignoreCase: true, out var kind)
             ? IntentDetails.Names(kind).Chinese : id
     };

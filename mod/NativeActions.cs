@@ -30,7 +30,7 @@ internal static class NativeActions
             or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Slippery => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
         EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns
-            or EffectKind.Artifact => new BuffIntent(),
+            or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage => new BuffIntent(),
         _ when effect.IsStatusCard => new StatusIntent(effect.Amount),
         _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
     });
@@ -66,35 +66,8 @@ internal static class NativeActions
                 case EffectKind.Heal:
                     await CreatureCmd.Heal(self, amount);
                     break;
-                case EffectKind.Strength:
-                    await PowerCmd.Apply<StrengthPower>(choice, self, amount, self, null);
-                    break;
-                case EffectKind.Ritual:
-                    await PowerCmd.Apply<RitualPower>(choice, self, amount, self, null);
-                    break;
-                case EffectKind.Regen:
-                    await PowerCmd.Apply<RegenPower>(choice, self, amount, self, null);
-                    break;
-                case EffectKind.Plating:
-                    await PowerCmd.Apply<PlatingPower>(choice, self, amount, self, null);
-                    break;
-                case EffectKind.HardenedShell:
-                    await ApplyOpening(self, new OpeningState("HARDENED_SHELL", amount));
-                    break;
-                case EffectKind.HardToKill:
-                    await ApplyOpening(self, new OpeningState("HARD_TO_KILL", amount));
-                    break;
-                case EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Slippery:
-                    await ApplyOpening(self, new OpeningState(EffectPolicy.Id(effect.Kind), amount));
-                    break;
-                case EffectKind.Thorns:
-                    await PowerCmd.Apply<ThornsPower>(choice, self, amount, self, null);
-                    break;
-                case EffectKind.TemporaryThorns:
-                    await ApplyTemporaryThorns(self, amount);
-                    break;
-                case EffectKind.Intangible:
-                    await PowerCmd.Apply<IntangiblePower>(choice, self, amount, self, null);
+                case var buff when ActionEffect.IsMonsterBuff(buff):
+                    await ApplyOpening(self, new OpeningState(EffectPolicy.Id(buff), amount));
                     break;
                 case EffectKind.Weak:
                     await PowerCmd.Apply<WeakPower>(choice, living, amount, self, null);
@@ -137,10 +110,6 @@ internal static class NativeActions
                     break;
                 case EffectKind.EnergyDown:
                     await PowerCmd.Apply<WasteAwayPower>(choice, living, amount, self, null);
-                    break;
-                case EffectKind.PersonalHive or EffectKind.VitalSpark or EffectKind.WitheringPresence
-                    or EffectKind.Envenom or EffectKind.PaperCuts:
-                    await ApplyRareBuff(self, new OpeningState(OpeningId(effect.Kind), amount));
                     break;
                 case var card when ActionEffect.IsCard(card):
                     await InsertStatus(living, effect);
@@ -188,11 +157,9 @@ internal static class NativeActions
     private static Func<Creature, PowerModel?>? OpeningPower(string id) => id switch
     {
         "STRENGTH" or "STRENGTH_DOWN" => Get<StrengthPower>,
-        "DEXTERITY" or "DEXTERITY_DOWN" => Get<DexterityPower>,
         "RITUAL" => Get<RitualPower>,
         "VIGOR" => Get<VigorPower>,
         "ENRAGE" => Get<EnragePower>,
-        "FLUTTER" => Get<FlutterPower>,
         "SLIPPERY" => Get<SlipperyPower>,
         "REGEN" => Get<RegenPower>,
         "PLATING" => Get<PlatingPower>,
@@ -204,7 +171,6 @@ internal static class NativeActions
         "CURL_UP" => Get<CurlUpPower>,
         "INTANGIBLE" => Get<IntangiblePower>,
         "WEAK" => Get<WeakPower>,
-        "FRAIL" => Get<FrailPower>,
         "POISON" => Get<PoisonPower>,
         "SLOW" => Get<SlowPower>,
         "VULNERABLE" => Get<VulnerablePower>,
@@ -222,15 +188,6 @@ internal static class NativeActions
     private static PowerModel? Get<T>(Creature target) where T : PowerModel => target.GetPower<T>();
 
     internal static bool SupportsOpening(string id) => id == "STUN" || OpeningPower(id) != null;
-
-    private static readonly (EffectKind Kind, string Id)[] RareBuffs =
-    [
-        (EffectKind.PersonalHive, "PERSONAL_HIVE"), (EffectKind.VitalSpark, "VITAL_SPARK"),
-        (EffectKind.WitheringPresence, "WITHERING_PRESENCE"), (EffectKind.Envenom, "ENVENOM"),
-        (EffectKind.PaperCuts, "PAPER_CUTS")
-    ];
-
-    private static string OpeningId(EffectKind kind) => RareBuffs.First(effect => effect.Kind == kind).Id;
 
     internal static bool HasActionEffect(EffectKind kind, Creature target)
     {
@@ -276,17 +233,15 @@ internal static class NativeActions
             return target.IsStunned ? 1 : 0;
         }
 
-        if (RareBuffs.Any(effect => effect.Id == state.Id))
+        if (state.Id is "PERSONAL_HIVE" or "VITAL_SPARK" or "WITHERING_PRESENCE" or "ENVENOM" or "PAPER_CUTS")
             return await ApplyRareBuff(target, state);
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
         {
             "STRENGTH" or "STRENGTH_DOWN" => await Apply<StrengthPower>(),
-            "DEXTERITY" or "DEXTERITY_DOWN" => await Apply<DexterityPower>(),
             "RITUAL" => await Apply<RitualPower>(),
             "VIGOR" => await Apply<VigorPower>(),
             "ENRAGE" => await Apply<EnragePower>(),
-            "FLUTTER" => await Apply<FlutterPower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
@@ -299,7 +254,6 @@ internal static class NativeActions
             "CURL_UP" => await Apply<CurlUpPower>(),
             "INTANGIBLE" => await Apply<IntangiblePower>(),
             "WEAK" => await Apply<WeakPower>(),
-            "FRAIL" => await Apply<FrailPower>(),
             "POISON" => await Apply<PoisonPower>(),
             "SLOW" => await Apply<SlowPower>(),
             "VULNERABLE" => await Apply<VulnerablePower>(),

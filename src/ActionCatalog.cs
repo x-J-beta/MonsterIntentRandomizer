@@ -7,7 +7,7 @@ public enum EffectKind
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
-    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, CurlUp, Slippery
+    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, CurlUp, Slippery, Vigor, Enrage
 }
 
 public enum EffectTarget { Self, Player }
@@ -18,10 +18,12 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public EffectTarget Target => TargetFor(Kind);
     public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or
         EffectKind.Intangible or EffectKind.Thorns or EffectKind.TemporaryThorns or EffectKind.Plating
-        or EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp
+        or EffectKind.Artifact or EffectKind.Barricade or EffectKind.CurlUp or EffectKind.Vigor or EffectKind.Enrage
         || IsNonStackingDefense(kind)
         || IsRareBuff(kind) ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => IsCard(Kind);
+    public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
+        kind is not (EffectKind.Block or EffectKind.Heal);
     public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
@@ -75,10 +77,12 @@ public sealed record ActionValuationSettings(
     double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, double>? HpPerSurvivalTurnCaps = null,
-    IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null)
+    IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
+    IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null)
 {
-    public EffectPolicy PolicyFor(EffectKind kind) =>
-        Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
+    public EffectPolicy PolicyFor(EffectKind kind) => Buffs?.GetValueOrDefault(kind) is { } buff
+        ? new EffectPolicy(buff.Stackable, buff.Unique, EffectTarget.Self)
+        : Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
 }
 
 public sealed record ActionHistory(
@@ -105,8 +109,28 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var actions = profile.EffectWeights;
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
+        foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
+        {
+            double preference = actions?.GetValueOrDefault(kind, buff.Common ? 1 : 0) ?? (buff.Common ? 1 : 0);
+            double weight = preference * buff.RoomWeight.At(context.Rooms);
+            if (weight <= 0 || context.ActiveEffects?.Contains(kind) == true)
+                continue;
+            var style = kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade or EffectKind.CurlUp ||
+                ActionEffect.IsNonStackingDefense(kind) ? IntentStyle.Defend : IntentStyle.Buff;
+            if (profile.IntentWeights.GetValueOrDefault(style) <= 0)
+                continue;
+            var doses = buff.Doses(profile).Select(amount => (Amount: amount, Value: OpeningValuation.Evaluate(buff, profile, amount)))
+                .Where(dose => dose.Value > 0).ToArray();
+            foreach (var dose in doses)
+            {
+                var effect = new ActionEffect(kind, dose.Amount);
+                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight / doses.Length, Effects: [effect]);
+            }
+        }
         foreach (var kind in settings.Amounts.Keys.Union(settings.HpPerSurvivalTurnCaps?.Keys ?? []))
         {
+            if (settings.Buffs?.ContainsKey(kind) == true)
+                continue;
             double preference = actions?.GetValueOrDefault(kind, IsCommon(kind) ? 1 : 0) ?? (IsCommon(kind) ? 1 : 0);
             if (preference <= 0 || (settings.Weights?.GetValueOrDefault(kind)?.At(context.Rooms) ?? 1) <= 0)
                 continue;

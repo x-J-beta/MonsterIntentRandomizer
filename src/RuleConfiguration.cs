@@ -16,6 +16,10 @@ internal sealed class RuleConfiguration
         var actions = settings.GetProperty("actions");
         var opening = settings.GetProperty("opening");
         var weights = opening.GetProperty("weights");
+        var buffs = settings.TryGetProperty("buffs", out var buffConfig)
+            ? Read<Dictionary<EffectKind, StatusValue>>(buffConfig) : [];
+        if (buffs.Any(entry => !ActionEffect.IsMonsterBuff(entry.Key) || entry.Value.Formula == null || entry.Value.Amount != 1))
+            throw new ArgumentException("共用强化须为怪物自身的正面状态，并配置估值公式。");
         PlayerAction = settings.TryGetProperty("playerAction", out var curve) ? Read<PlayerActionCurve>(curve) : new();
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
@@ -64,11 +68,13 @@ internal sealed class RuleConfiguration
             actions.TryGetProperty("minActs", out var minActs) ? Read<Dictionary<EffectKind, int>>(minActs) : null,
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, hpCaps, policies);
+            minimums, hpCaps, policies, buffs);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble());
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
+        foreach (var (kind, buff) in buffs)
+            OpeningValues[EffectPolicy.Id(kind)] = buff;
         foreach (var kind in Enum.GetValues<EffectKind>().Where(kind => ActionEffect.TargetFor(kind) == EffectTarget.Self &&
                      Actions.PolicyFor(kind).Unique))
         {
@@ -95,6 +101,8 @@ internal sealed class RuleConfiguration
     public int HardCardLimitFirstTurn { get; }
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
+            .Concat((Actions.Buffs?.Keys ?? []).Where(kind => monster.Profile.EffectWeights?.GetValueOrDefault(kind) > 0)
+                .Select(EffectPolicy.Id))
             .Distinct().Where(id => id != "STUN" || !monster.FixedOpening);
 
     internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique ||

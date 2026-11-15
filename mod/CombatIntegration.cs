@@ -318,7 +318,7 @@ internal static class CombatIntegration
             Rooms = encounter.Rooms,
             ExistingBlock = 0, // This action's Block and the next player attack follow the enemy block reset.
             MissingHp = self.MaxHp - self.CurrentHp,
-            Strength = self.GetPower<StrengthPower>()?.Amount ?? 0,
+            Strength = (self.GetPower<StrengthPower>()?.Amount ?? 0) + (self.GetPower<VigorPower>()?.Amount ?? 0),
             Weakened = self.HasPower<WeakPower>(),
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),

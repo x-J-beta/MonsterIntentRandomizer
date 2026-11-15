@@ -25,7 +25,8 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 11;
+    private const int SettingsRevision = 12;
+    private static readonly HashSet<string> RetiredOpeningStates = ["DEXTERITY", "DEXTERITY_DOWN", "FRAIL", "FLUTTER"];
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -93,11 +94,16 @@ internal static class ModSettings
         ApplyEffectCalibration(settings);
         UpgradeStatusCardPrices(settings, existingCardPrices);
         UpgradeOpeningAmounts(settings, defaults);
+        UpgradeSharedBuffs(settings);
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        RemoveRetiredOpeningStates(profiles["defaults"]);
         (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
         foreach (var (_, profile) in profiles["monsters"]!.AsObject())
+        {
+            RemoveRetiredOpeningStates(profile);
             (profile as JsonObject)?.Remove("survivalTurns");
+        }
         if (stored.Revision < 5)
             ApplyActionCalibration(profiles);
         UpgradeMixedProfiles(profiles);
@@ -209,8 +215,12 @@ internal static class ModSettings
                     "attacksoverlifetime" => "amount*attackFrequency*survivalTurns",
                     _ => "amount*actionValue"
                 };
+                var defaultFormula = defaultState?["formula"];
+                if (defaultFormula == null && Enum.TryParse<EffectKind>(id.Replace("_", ""), true, out var kind))
+                    defaultFormula = defaults["buffs"]?[kind.ToString()]?["formula"];
                 state["formula"] = revision == 0 && OldOpeningCoefficients.TryGetValue(id, out var previous) &&
-                    coefficient == previous ? defaultState!["formula"]!.DeepClone() : new JsonObject { [factor] = coefficient };
+                    coefficient == previous && defaultFormula != null
+                        ? defaultFormula.DeepClone() : new JsonObject { [factor] = coefficient };
             }
             if (state["formula"] != null)
                 defaultState?.Remove("formula");
@@ -258,12 +268,13 @@ internal static class ModSettings
     {
         var actions = settings["actions"]!;
         UpgradeMaximum(actions["maxAmounts"]!.AsObject(), "Regen", 4,
-            defaults["actions"]!["maxAmounts"]!["Regen"]!.GetValue<int>(), actions["minAmounts"]!["Regen"]!.GetValue<int>());
-        foreach (string id in new[] { "REGEN", "PLATING" })
+            8, actions["minAmounts"]?["Regen"]?.GetValue<int>() ?? 5);
+        foreach (var (id, buffId) in new[] { ("REGEN", "Regen"), ("PLATING", "Plating") })
         {
-            var state = settings["opening"]!["states"]![id]!.AsObject();
-            var fallback = defaults["opening"]!["states"]![id]!;
-            UpgradeMaximum(state, "maxAmount", 4, fallback["maxAmount"]!.GetValue<int>(), state["minAmount"]!.GetValue<int>());
+            var fallback = defaults["buffs"]![buffId]!;
+            if (settings["opening"]!["states"]![id] is JsonObject state)
+                UpgradeMaximum(state, "maxAmount", 4, fallback["maxAmount"]!.GetValue<int>(),
+                    state["minAmount"]?.GetValue<int>() ?? fallback["minAmount"]!.GetValue<int>());
         }
 
         static void UpgradeMaximum(JsonObject owner, string key, int oldMaximum, int defaultMaximum, int minimum)
@@ -320,9 +331,9 @@ internal static class ModSettings
         {
             string id = change.GetProperty("id").GetString()!;
             bool action = change.GetProperty("scope").GetString() == "action";
-            var owner = (action ? settings["actions"]!["valuation"] : settings["opening"]!["states"]![id])!.AsObject();
+            var owner = action ? settings["actions"]!["valuation"] : settings["opening"]!["states"]![id];
             string key = action ? id : "formula";
-            if (owner[key] is not JsonObject current)
+            if (owner?[key] is not JsonObject current)
                 continue;
             var previous = change.GetProperty("before").EnumerateObject().ToArray();
             if (previous.Length == current.Count && previous.All(term => current.Any(entry =>
@@ -383,8 +394,80 @@ internal static class ModSettings
             ["STRENGTH"] = 3, ["RITUAL"] = 1, ["REGEN"] = 8, ["PLATING"] = 10, ["WEAK"] = 3,
             ["VULNERABLE"] = 3, ["DEMISE"] = 2, ["DOOM"] = 14, ["ARTIFACT"] = 2, ["THORNS"] = 3
         })
-            if (states[id]?["maxAmount"]?.GetValue<int>() == oldAmount)
-                states[id]!["maxAmount"] = newStates[id]!["maxAmount"]!.DeepClone();
+            if (states[id]?["maxAmount"]?.GetValue<int>() == oldAmount && newStates[id]?["maxAmount"] is { } next)
+                states[id]!["maxAmount"] = next.DeepClone();
+    }
+
+    private static void UpgradeSharedBuffs(JsonNode settings)
+    {
+        var actions = settings["actions"]!;
+        var opening = settings["opening"]!["states"]!.AsObject();
+        foreach (var (id, buff) in settings["buffs"]!.AsObject())
+        {
+            string openingId = EffectPolicy.Id(Enum.Parse<EffectKind>(id));
+            var previous = opening[openingId];
+            var oldWeight = actions["weights"]?[id];
+            var oldPolicy = actions["policies"]?[id];
+            var shared = buff!.AsObject();
+            Copy("formula", actions["valuation"]?[id] ?? previous?["formula"]);
+            Copy("minAmount", actions["minAmounts"]?[id] ?? previous?["minAmount"]);
+            Copy("hpPerSurvivalTurnCap", actions["hpPerSurvivalTurnCaps"]?[id] ?? previous?["hpPerSurvivalTurnCap"]);
+            Copy("stackable", oldPolicy?["stackable"] ?? previous?["stackable"]);
+            Copy("unique", oldPolicy?["unique"] ?? previous?["unique"]);
+            if (previous?["common"]?.GetValue<bool>() == true)
+                shared["common"] = true;
+            if (shared["maxAmount"] != null)
+            {
+                int? actionCap = actions["maxAmounts"]?[id]?.GetValue<int>();
+                int? openingCap = previous?["maxAmount"]?.GetValue<int>();
+                if (actionCap.HasValue || openingCap.HasValue)
+                {
+                    int cap = Math.Max(actionCap ?? 0, openingCap ?? 0);
+                    shared["maxAmount"] = cap == 0 ? 0 : Math.Max(cap, shared["minAmount"]?.GetValue<int>() ?? 1);
+                }
+            }
+
+            double? oldBase = oldWeight?["base"]?.GetValue<double>();
+            double? openingBase = previous?["weight"]?.GetValue<double>();
+            double oldSlope = oldWeight?["perRoom"]?.GetValue<double>() ?? previous?["weightPerRoom"]?.GetValue<double>() ?? 0;
+            if (oldBase == -1 || openingBase == -1)
+                shared["weight"] = -1;
+            else if ((oldBase ?? openingBase) is double weight)
+            {
+                double slope = shared["weightPerRoom"]?.GetValue<double>() ?? 0;
+                double lateWeight = shared["weight"]!.GetValue<double>() + 30 * slope;
+                if (oldSlope == 0 && slope > 0 && weight > 0 && lateWeight > 0)
+                {
+                    double scale = weight / lateWeight;
+                    shared["weight"] = shared["weight"]!.GetValue<double>() * scale;
+                    shared["weightPerRoom"] = slope * scale;
+                }
+                else
+                {
+                    shared["weight"] = weight;
+                    shared["weightPerRoom"] = oldSlope;
+                }
+            }
+
+            foreach (string section in new[] { "valuation", "minAmounts", "maxAmounts", "hpPerSurvivalTurnCaps", "weights", "policies", "minActs" })
+                (actions[section] as JsonObject)?.Remove(id);
+            opening.Remove(openingId);
+
+            void Copy(string key, JsonNode? value)
+            {
+                if (value != null)
+                    shared[key] = value.DeepClone();
+            }
+        }
+        foreach (string id in RetiredOpeningStates)
+            opening.Remove(id);
+    }
+
+    private static void RemoveRetiredOpeningStates(JsonNode? profile)
+    {
+        if (profile?["openingStates"] is JsonArray pool)
+            foreach (var state in pool.Where(state => state != null && RetiredOpeningStates.Contains(state.GetValue<string>())).ToArray())
+                pool.Remove(state);
     }
 
     private static void UpgradeMixedProfiles(JsonNode profiles)
@@ -481,10 +564,10 @@ internal static class ModSettings
 
         foreach (var (id, state) in rules.OpeningValues)
         {
-            if ((state.Common && !NativeActions.SupportsOpening(id)) || state.MaxAmount is < 0 ||
+            if (!NativeActions.SupportsOpening(id) || state.MaxAmount is < 0 ||
                 state.MinAmount < 1 || state.HpPerSurvivalTurnCap is < 0 ||
                 (state.MaxAmount > 0 && state.MaxAmount < state.MinAmount) ||
-                Math.Sign(state.Amount) != (id is "STRENGTH_DOWN" or "DEXTERITY_DOWN" ? -1 : 1) ||
+                Math.Sign(state.Amount) != (id == "STRENGTH_DOWN" ? -1 : 1) ||
                 (id == "STUN" && (state.MinAmount != 1 || state.MaxAmount > 1 || state.HpPerSurvivalTurnCap.HasValue)) ||
                 state.MinAct < 1)
                 throw new ArgumentException($"{id} 的开场层数或幕数无效。");
