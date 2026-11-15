@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 5;
+    private const int SettingsRevision = 6;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -82,11 +82,16 @@ internal static class ModSettings
         foreach (var (id, formula) in defaultValuations.AsObject())
             if (!savedValuations.ContainsKey(id))
                 savedValuations[id] = formula!.DeepClone();
+        UpgradeRoomRules(settings, defaults, stored.Revision);
         defaults["actions"]!.AsObject().Remove("valuation");
         FillMissing(settings.AsObject(), defaults.AsObject());
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
-        ApplyActionCalibration(profiles);
+        (profiles["defaults"] as JsonObject)?.Remove("survivalTurns");
+        foreach (var (_, profile) in profiles["monsters"]!.AsObject())
+            (profile as JsonObject)?.Remove("survivalTurns");
+        if (stored.Revision < 5)
+            ApplyActionCalibration(profiles);
         if (stored.Revision >= 2)
             return stored with
             {
@@ -98,19 +103,6 @@ internal static class ModSettings
         var opening = settings["opening"]!;
         if (stored.Revision == 0 && opening["maxEncounterValueMultiplier"]!.GetValue<double>() == 0.5)
             opening["maxEncounterValueMultiplier"] = 1;
-
-        foreach (var (id, oldCoefficient) in OldOpeningCoefficients.Where(_ => stored.Revision == 0))
-        {
-            var state = opening["states"]![id]!;
-            if (state["turns"]?.GetValue<double>() == oldCoefficient)
-                state["turns"] = defaults["opening"]!["states"]![id]!["turns"]!.DeepClone();
-        }
-        foreach (var (id, defaultState) in defaults["opening"]!["states"]!.AsObject().Where(_ => stored.Revision == 0))
-        {
-            var state = opening["states"]![id]!;
-            if (state["amount"]?.GetValue<int>() != defaultState!["amount"]?.GetValue<int>())
-                state.AsObject().Remove("amounts");
-        }
 
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!;
         foreach (var (id, defaultProfile) in defaultProfiles["monsters"]!.AsObject())
@@ -135,11 +127,8 @@ internal static class ModSettings
                     stored.Revision == 0 && NewlyEligible.Contains(value.GetValue<string>()))).ToArray())
                 exclusions.Remove(entry);
         }
-        foreach (string section in new[] { "valuation", "amounts", "minActs" })
+        foreach (string section in new[] { "valuation", "maxAmounts", "minActs" })
             (settings["actions"]?[section] as JsonObject)?.Remove("PlayerDoom");
-        var doom = opening["states"]!["DOOM"]!;
-        if (JsonNode.DeepEquals(doom["amounts"], JsonNode.Parse("[2,3,5,7]")))
-            doom["amounts"] = defaults["opening"]!["states"]!["DOOM"]!["amounts"]!.DeepClone();
         var monsters = profiles["monsters"]!;
         foreach (string id in new[] { "EXOSKELETON", "MYTE", "NIBBIT" })
             (monsters[id] as JsonObject)?.Remove("fixedOpening");
@@ -165,6 +154,64 @@ internal static class ModSettings
         {
             if (monsters[id] is JsonObject monster && JsonNode.DeepEquals(monster[key], JsonNode.Parse(previous)))
                 monster[key] = defaultProfiles["monsters"]![id]![key]!.DeepClone();
+        }
+    }
+
+    private static void UpgradeRoomRules(JsonNode settings, JsonNode defaults, int revision)
+    {
+        var actions = settings["actions"]!.AsObject();
+        if (actions["amounts"] is JsonObject oldAmounts && actions["maxAmounts"] is not JsonObject)
+        {
+            var maximums = new JsonObject();
+            foreach (var (id, amounts) in oldAmounts)
+            {
+                int max = amounts!.AsArray().Select(amount => amount!.GetValue<int>()).DefaultIfEmpty(0).Max();
+                int oldDefault = id is "Strength" or "Ritual" ? 1 : 8;
+                if ((id is "Strength" or "Ritual" or "Block" or "Heal") && max == oldDefault)
+                    continue;
+                maximums[id] = max;
+            }
+            actions["maxAmounts"] = maximums;
+        }
+        foreach (string key in new[] { "amounts", "maxAddedStrength", "maxAddedRitual", "maxInsertedCards",
+                     "playerDebuffCooldownTurns", "pureBlockCooldownTurns" })
+            actions.Remove(key);
+        settings.AsObject().Remove("forecast");
+
+        var defaultStates = defaults["opening"]!["states"]!.AsObject();
+        foreach (var (id, node) in settings["opening"]!["states"]!.AsObject())
+        {
+            var state = node!.AsObject();
+            var defaultState = defaultStates[id] as JsonObject;
+            int amount = state["amount"]?.GetValue<int>() ?? (id == "STRENGTH_DOWN" ? -1 : 1);
+            if (state["maxAmount"] == null && state["amount"] != null)
+            {
+                var oldDoses = state["amounts"] as JsonArray;
+                state["maxAmount"] = id == "DOOM" && revision < 2 && JsonNode.DeepEquals(oldDoses, JsonNode.Parse("[2,3,5,7]"))
+                    ? defaultState!["maxAmount"]!.GetValue<int>()
+                    : oldDoses?.Select(dose => Math.Abs(dose!.GetValue<int>())).DefaultIfEmpty(0).Max() ?? Math.Abs(amount);
+            }
+            if (state["formula"] == null && state["turns"]?.GetValue<double>() is double coefficient)
+            {
+                string factor = state["basis"]?.GetValue<string>().ToLowerInvariant() switch
+                {
+                    "flat" => "amount", "attackfrequency" => "amount*attackFrequency",
+                    "survivalturns" => "amount*survivalTurns",
+                    "attacksoverlifetime" => "amount*attackFrequency*survivalTurns",
+                    _ => "amount*actionValue"
+                };
+                state["formula"] = revision == 0 && OldOpeningCoefficients.TryGetValue(id, out var previous) &&
+                    coefficient == previous ? defaultState!["formula"]!.DeepClone() : new JsonObject { [factor] = coefficient };
+            }
+            if (state["formula"] != null)
+                defaultState?.Remove("formula");
+            state.Remove("amounts");
+            state.Remove("turns");
+            state.Remove("basis");
+            if (amount < 0)
+                state["amount"] = -1;
+            else
+                state.Remove("amount");
         }
     }
 
@@ -229,16 +276,15 @@ internal static class ModSettings
 
         foreach (var (id, state) in rules.OpeningValues)
         {
-            int[] doses = state.Amounts ?? [state.Amount];
-            if (doses.Length == 0 || doses.Any(amount => Math.Sign(amount) != (id == "STRENGTH_DOWN" ? -1 : 1)) ||
-                (id == "STUN" && doses.Any(amount => amount != 1)) || state.Weight < 0 || state.MinAct < 1)
-                throw new ArgumentException($"{id} 的开场层数、权重或幕数无效。");
+            if (state.MaxAmount is < 0 || Math.Sign(state.Amount) != (id == "STRENGTH_DOWN" ? -1 : 1) ||
+                (id == "STUN" && state.MaxAmount > 1) || state.MinAct < 1)
+                throw new ArgumentException($"{id} 的开场层数或幕数无效。");
         }
 
         foreach (var (id, monster) in rules.Monsters)
         {
             if (monster.Profile.ActionValue <= 0 || monster.DeadlyEnemies is <= 0 ||
-                monster.Profile.AttackFrequency < 0 || monster.Profile.BaseExpectedSurvivalTurns < 0 ||
+                monster.Profile.AttackFrequency < 0 || monster.Profile.AttackSpend is < 0 or > 1 ||
                 monster.Profile.Volatility < 0 || monster.Profile.NonAttackMultiplier < 0)
                 throw new ArgumentException($"{id} 的行动力须为正数，其余怪物参数须为非负数。");
             foreach (string state in monster.OpeningStates)

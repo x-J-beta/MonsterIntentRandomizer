@@ -30,25 +30,30 @@ internal static class ValuationPage
                     string name = Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
                         ? IntentDetails.Names(kind).Chinese : id;
                     Heading(actionList, name, id);
-                    foreach (var (term, value) in formula!.AsObject())
-                        AddTerm(actionList, id, term, value!.GetValue<double>());
+                    AddFormula(actionList, root => root["actions"]!["valuation"]![id]!.AsObject(), formula!.AsObject());
+                    if (id == "Attack")
+                        continue;
+                    var config = document["actions"]!;
+                    var weight = config["weights"]?[id];
+                    AddNumber(actionList, "基础权重", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
+                        (root, number) => SetActionWeight(root, id, "base", number));
+                    AddNumber(actionList, "每房间权重变化", weight?["perRoom"]?.GetValue<double>() ?? 0, 0.001,
+                        (root, number) => SetActionWeight(root, id, "perRoom", number));
+                    AddNumber(actionList, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
+                        (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
                 }
-                openingList.AddChild(new Label { Text = "状态值 = 层数绝对值 × 计价基数 × 系数" });
+                openingList.AddChild(new Label { Text = "总分 = 各项（系数 × 该项因子）的和" });
                 foreach (var (id, state) in document["opening"]!["states"]!.AsObject())
                 {
                     Heading(openingList, OpeningName(id), id);
-                    var basis = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-                    var bases = Enum.GetValues<OpeningBasis>();
-                    foreach (var choice in bases)
-                        basis.AddItem(BasisLabel(choice));
-                    Enum.TryParse(state!["basis"]?.GetValue<string>(), ignoreCase: true, out OpeningBasis current);
-                    basis.Select(Array.IndexOf(bases, current));
-                    basis.ItemSelected += selected => Edit(root =>
-                        root["opening"]!["states"]![id]!["basis"] = bases[(int)selected].ToString());
-                    openingList.AddChild(basis);
-                    var input = Coefficient(openingList, "每层系数", state["turns"]!.GetValue<double>());
-                    input.ValueChanged += coefficient =>
-                        Edit(root => root["opening"]!["states"]![id]!["turns"] = Math.Round(coefficient, 4));
+                    AddFormula(openingList, root => root["opening"]!["states"]![id]!["formula"]!.AsObject(),
+                        state!["formula"]!.AsObject(), openingFormula: true);
+                    AddNumber(openingList, "基础权重", state["weight"]?.GetValue<double>() ?? 1, 0.001,
+                        (root, number) => root["opening"]!["states"]![id]!["weight"] = number);
+                    AddNumber(openingList, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
+                        (root, number) => root["opening"]!["states"]![id]!["weightPerRoom"] = number);
+                    AddNumber(openingList, "开场层数上限", state["maxAmount"]!.GetValue<int>(), 1,
+                        (root, number) => root["opening"]!["states"]![id]!["maxAmount"] = (int)number);
                 }
             }
             catch (Exception error)
@@ -87,7 +92,55 @@ internal static class ValuationPage
             };
         }
 
-        void AddTerm(VBoxContainer content, string id, string term, double value)
+        static void SetActionWeight(JsonNode root, string id, string key, double number)
+        {
+            var actionsConfig = root["actions"]!.AsObject();
+            if (actionsConfig["weights"] is not JsonObject)
+                actionsConfig["weights"] = new JsonObject();
+            var weights = actionsConfig["weights"]!.AsObject();
+            if (weights[id] is not JsonObject)
+                weights[id] = new JsonObject();
+            weights[id]![key] = number;
+        }
+
+        void AddNumber(VBoxContainer content, string caption, double value, double step, Action<JsonNode, double> update)
+        {
+            var input = SettingsPage.NumberRow(content, caption, step == 1 ? 0 : -100, 100, step);
+            input.AllowLesser = step != 1;
+            input.SetValueNoSignal(value);
+            input.ValueChanged += number => Edit(root => update(root, number));
+        }
+
+        void AddFormula(VBoxContainer content, Func<JsonNode, JsonObject> getFormula, JsonObject initial,
+            bool openingFormula = false)
+        {
+            var terms = new VBoxContainer();
+            content.AddChild(terms);
+            var factors = ActionValuation.FactorNames.Where(name => !openingFormula ||
+                name is "Amount" or "ActionValue" or "AttackFrequency" or "SurvivalTurns" or "PlayerTurnValue"
+                    or "PlayerActionValue").ToArray();
+            foreach (var (term, value) in initial)
+                AddTerm(terms, getFormula, factors, term, value!.GetValue<double>());
+            var add = new Button { Text = "新增估值项", SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin };
+            content.AddChild(add);
+            add.Pressed += () =>
+            {
+                string term = "";
+                if (Edit(root =>
+                {
+                    var formula = getFormula(root);
+                    var names = new[] { "fixed" }.Concat(factors).Concat(
+                        factors.SelectMany((first, i) => factors.Skip(i + 1).Select(second => $"{first}*{second}")));
+                    term = names.FirstOrDefault(name => !formula.Any(entry => SameFactors(entry.Key, name))) ??
+                        throw new ArgumentException("请先删除一个估值项。");
+                    formula.Add(term, 0);
+                }))
+                    AddTerm(terms, getFormula, factors, term, 0);
+            };
+        }
+
+        void AddTerm(VBoxContainer content, Func<JsonNode, JsonObject> getFormula, IReadOnlyList<string> factors,
+            string term, double value)
         {
             var input = Coefficient(content, "系数", value);
             var row = input.GetParent<HBoxContainer>();
@@ -100,7 +153,6 @@ internal static class ValuationPage
             row.MoveChild(selector, 0);
 
             var popup = selector.GetPopup();
-            var factors = ActionValuation.FactorNames;
             for (int i = 0; i < factors.Count; i++)
                 popup.AddCheckItem(FactorLabel(factors[i]), i);
             popup.AddSeparator();
@@ -128,7 +180,7 @@ internal static class ValuationPage
 
                 if (Edit(root =>
                 {
-                    var formula = root["actions"]!["valuation"]![id]!.AsObject();
+                    var formula = getFormula(root);
                     if (formula.Any(existing => SameFactors(existing.Key, next)))
                         throw new ArgumentException($"此效果已有「{FactorLabel(next)}」这一项。");
                     var coefficient = formula[term]!.DeepClone();
@@ -140,8 +192,17 @@ internal static class ValuationPage
                     selector.Text = FactorLabel(term);
                 }
             };
-            input.ValueChanged += coefficient => Edit(root =>
-                root["actions"]!["valuation"]![id]![term] = Math.Round(coefficient, 4));
+            input.ValueChanged += coefficient => Edit(root => getFormula(root)[term] = Math.Round(coefficient, 4));
+            var remove = new Button { Text = "删除" };
+            row.AddChild(remove);
+            remove.Pressed += () =>
+            {
+                if (Edit(root => getFormula(root).Remove(term)))
+                {
+                    content.RemoveChild(row);
+                    row.QueueFree();
+                }
+            };
         }
 
         bool Edit(Action<JsonNode> write)
@@ -198,15 +259,8 @@ internal static class ValuationPage
             "fixed" => "固定值", "amount" => "层数／数量", "actionvalue" => "基础行动力",
             "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
             "hits" => "攻击段数", "draws" => "预计抽到次数", "triggers" => "预计触发次数",
-            "playerturnvalue" => "玩家回合价值", _ => factor
+            "playerturnvalue" => "玩家回合价值", "playeractionvalue" => "玩家行动力", _ => factor
         }));
-
-    private static string BasisLabel(OpeningBasis basis) => basis switch
-    {
-        OpeningBasis.ActionValue => "基础行动力", OpeningBasis.Flat => "固定值",
-        OpeningBasis.SurvivalTurns => "预期寿命", OpeningBasis.AttackFrequency => "攻击频率",
-        OpeningBasis.AttacksOverLifetime => "攻击频率 × 预期寿命", _ => basis.ToString()
-    };
 
     internal static string OpeningName(string id) => id switch
     {

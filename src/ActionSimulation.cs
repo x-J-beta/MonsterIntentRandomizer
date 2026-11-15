@@ -8,7 +8,7 @@ internal static class ActionSimulation
     internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, MonsterProfile profile,
         IReadOnlyList<OpeningPick> opening, int act, int seed, int rounds, double fullBlockChance,
         bool fixedOpening = false, bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
-        double? fallbackValue = null, int? fallbackHits = null)
+        double? fallbackValue = null, int? fallbackHits = null, int rooms = 0, int enemyCount = 1)
     {
         var planner = new ActionPlanner(rules.PoolSettings);
         var catalog = new ActionCatalog(rules.Actions);
@@ -20,7 +20,8 @@ internal static class ActionSimulation
         var activeEffects = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsRareBuff(kind) &&
             opening.Any(pick => pick.State.Id.Replace("_", "").Equals(kind.ToString(), StringComparison.OrdinalIgnoreCase)))
             .ToHashSet();
-        var prior = rules.TurnPrior with { Act = act, ActiveEffects = activeEffects };
+        var prior = rules.TurnPrior with { Act = act, Rooms = rooms, ActiveEffects = activeEffects,
+            ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
         int intangibleTurns = opening.Where(pick => pick.State.Id == "INTANGIBLE").Sum(pick => pick.State.Amount);
         bool previousAttack = false;
@@ -51,7 +52,7 @@ internal static class ActionSimulation
                 turn >= firstEnemyAction && !skipFromImbalance && !opening.Any(pick => pick.State.Id == "STUN" &&
                     turn < firstEnemyAction + pick.State.Amount);
             var plan = planner.Plan(balances, profile, catalog.Generate(profile, context, history, turn),
-                actionRandom, canRandomize);
+                actionRandom, canRandomize, (hits, target) => catalog.BuildAttack(profile, context, hits, target));
             bool fallback = plan.CanRandomize && plan.Action is null && fallbackValue.HasValue;
             double cost = plan.Action?.Value ?? (fallback ? fallbackValue!.Value : 0);
             int hits = plan.Action?.AttackHits ?? (fallback ? fallbackHits.GetValueOrDefault() : 0);
@@ -60,7 +61,7 @@ internal static class ActionSimulation
 
             if (plan.Action is { } action)
             {
-                history = history.Record(action, turn);
+                history = history.Record(action);
                 activeEffects.UnionWith(action.Effects!.Select(effect => effect.Kind).Where(ActionEffect.IsRareBuff));
                 specialDebuffSpent |= action.Effects!.Any(effect => effect.IsSpecialDebuff);
             }

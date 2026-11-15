@@ -32,7 +32,7 @@ internal static class IntentDetails
         if (ModSettings.Current.ShowIntentDetails && ____intent != null && Effects.TryGetValue(____intent, out var effect))
         {
             var (name, _) = Describe(effect);
-            ____valueLabel.Text = effect.Kind is EffectKind.Shrink or EffectKind.Smoggy or EffectKind.Tender or EffectKind.Ringing
+            ____valueLabel.Text = effect.Kind is EffectKind.Shrink or EffectKind.Smoggy or EffectKind.Tender or EffectKind.Ringing or EffectKind.Wait
                 ? name : $"{name} {effect.Amount}";
         }
     }
@@ -77,6 +77,7 @@ internal static class IntentDetails
 
         return effect.Kind switch
         {
+            EffectKind.Wait => chinese ? (zh, "本回合准备，保留剩余行动力。") : (en, "Waits this turn and retains unspent action value."),
             EffectKind.TemporaryThorns => chinese ? (zh, $"获得 {n} 层荆棘，持续到下个玩家回合结束。") :
                 (en, $"Gains {n} Thorns through the next player turn."),
             EffectKind.Smoggy or EffectKind.Tender => chinese ? (zh, $"对玩家施加{zh}，持续到战斗结束。") :
@@ -102,6 +103,8 @@ internal static class IntentDetails
         {
             EffectKind.Attack => ("攻击", "Attack"), EffectKind.Block => ("格挡", "Block"), EffectKind.Heal => ("回复", "Heal"),
             EffectKind.Strength => ("力量", "Strength"), EffectKind.Ritual => ("仪式", "Ritual"),
+            EffectKind.Regen => ("再生", "Regeneration"),
+            EffectKind.Wait => ("准备", "Wait"),
             EffectKind.Intangible => ("无实体", "Intangible"), EffectKind.Thorns => ("荆棘", "Thorns"),
             EffectKind.TemporaryThorns => ("临时荆棘", "Temporary Thorns"),
             EffectKind.Weak => ("虚弱", "Weak"), EffectKind.Vulnerable => ("易伤", "Vulnerable"),

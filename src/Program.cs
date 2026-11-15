@@ -30,42 +30,30 @@ if (!configured.Enabled)
     return;
 }
 
-var forecast = rules.Forecast;
-var scenarios = forecast.GetProperty("scenarios").EnumerateArray().Select(scenario => new TargetingScenario(
-    scenario.GetProperty("weight").GetDouble(), scenario.GetProperty("singleTargetFocusShare").GetDouble(),
-    scenario.GetProperty("areaDamageMultiplier").GetDouble(),
-    scenario.TryGetProperty("damageMultiplier", out var roll) ? roll.GetDouble() : 1)).ToArray();
-int horizon = forecast.GetProperty("maxEnemyWindows").GetInt32();
+int rooms = args.Length > 5 ? int.Parse(args[5], CultureInfo.InvariantCulture) :
+    sample.TryGetProperty("rooms", out var roomCount) ? roomCount.GetInt32() : 0;
 double hp = entry.GetProperty("hp").GetDouble();
 var allyInputs = sample.GetProperty("allies").EnumerateArray().ToArray();
-var enemies = new[]
+var enemies = new[] { new EnemySnapshot(monsterId, hp, hp, 0, 0,
+    FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32(), FixedOpening: configured.FixedOpening) }
+    .Concat(allyInputs.Select(ally => ally.Deserialize<EnemySnapshot>(inputs)!)).ToArray();
+double allyHp = enemies.Skip(1).Sum(enemy => enemy.Hp);
+profile = profile with
 {
-    new EnemySnapshot(monsterId, hp, hp, sample.GetProperty("targetBlock").GetDouble(),
-        sample.GetProperty("targetPriority").GetDouble(),
-        FirstPlayerWindow: sample.GetProperty("targetFirstPlayerWindow").GetInt32(),
-        FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32(),
-        FixedOpening: entry.TryGetProperty("fixedOpening", out var opening) && opening.GetBoolean())
-}.Concat(allyInputs.Select(ally => ally.Deserialize<EnemySnapshot>(inputs)!)).ToArray();
-// A live encounter adapter can supply recent observations on top of the stage prior.
+    BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
+    PlayerActionValue = rules.PlayerAction.At(rooms)
+};
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
-var damage = SurvivalForecast.BlendDamage(forecast.GetProperty("playerDamageByStage").GetProperty(stage)
-    .Deserialize<DamageEstimate>(inputs)!,
-    sample.GetProperty("recentPlayerDamage").Deserialize<DamageEstimate[]>(inputs)!
-        .TakeLast(forecast.GetProperty("recentPlayerRoundLimit").GetInt32()),
-    forecast.GetProperty("stagePriorWeightInPlayerRounds").GetDouble());
-double firstPlayerWindow = sample.GetProperty("firstPlayerWindowFraction").GetDouble();
-var baseline = SurvivalForecast.Predict(enemies, monsterId, damage, scenarios, horizon, firstPlayerWindow);
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
-Console.WriteLine($"player damage prior after blending: {damage.SingleTarget:F1} single, {damage.AreaPerTarget:F1} area per target");
-Console.WriteLine($"expected actions: {baseline.Sum(window => window.AliveAtAction):F2}");
+Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
 int act = int.Parse(stage.AsSpan(3), CultureInfo.InvariantCulture);
 OpeningOption[] Options(EnemySnapshot enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
         .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
             !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath) && rules.OpeningValues[id].MinAct <= act)
-        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner)).ToArray();
+        .Select(id => OpeningValuation.Option(id, rules.OpeningValues[id], owner, rooms, rules.PlayerTurns.ForAct(act))).ToArray();
 }
 var options = Options(enemies[0], configured.OpeningStates, profile);
 foreach (var option in options)
@@ -85,7 +73,8 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
             {
                 ActionValue = actionValues[id],
                 AttackFrequency = ally.TryGetProperty("attackFrequency", out var frequency) ? frequency.GetDouble() : 1,
-                BaseExpectedSurvivalTurns = ally.TryGetProperty("survivalTurns", out var survival) ? survival.GetDouble() : 3
+                BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(enemies.Single(enemy => enemy.Id == id).Hp,
+                    enemies.Where(enemy => enemy.Id != id).Sum(enemy => enemy.Hp), rooms)
             });
 }
 var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);
@@ -109,7 +98,7 @@ string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, act, seed,
     sample.GetProperty("traceTurns").GetInt32(), configured.FullBlockChance,
-    firstEnemyAction: enemies[0].FirstEnemyAction, fallbackValue: fallbackActionValue, fallbackHits: fallbackHits))
+    firstEnemyAction: enemies[0].FirstEnemyAction, fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
 {
     var action = turn.Plan;
     string moveName = action.Action?.Id ?? (turn.UsedFallback ? "vanilla fallback" : turn.Imbalanced ? "imbalanced" : "skipped");

@@ -26,6 +26,9 @@ internal static class SimulationPage
         var rounds = SettingsPage.NumberRow(panel, "模拟回合数", 1, 40, 1);
         rounds.AllowGreater = false;
         rounds.Value = 10;
+        var rooms = SettingsPage.NumberRow(panel, "已经历房间", 0, 100, 1);
+        var hp = SettingsPage.NumberRow(panel, "怪物当前血量", 1, 9999, 1);
+        var allyHp = SettingsPage.NumberRow(panel, "其他怪物当前血量之和", 0, 9999, 1);
         var allowPhase = new CheckButton { Text = "假定满足怪物的状态条件", ButtonPressed = true, Visible = false };
         panel.AddChild(allowPhase);
         var run = new Button { Name = "RunSimulation", Text = "按当前参数模拟" };
@@ -62,7 +65,7 @@ internal static class SimulationPage
                 var rules = ModSettings.Parse(new StoredSettings(true, settingsJson.RootElement, profilesJson.RootElement));
                 string id = ids[monster.Selected];
                 output.Text = Run(rules, id, act.Selected + 1, highAscension.ButtonPressed,
-                    (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed);
+                    (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed, (int)rooms.Value, hp.Value, allyHp.Value);
             }
             catch (Exception error)
             {
@@ -105,6 +108,7 @@ internal static class SimulationPage
         void ReadSelectedMonster(JsonElement profilesDocument)
         {
             var entry = profilesDocument.GetProperty("monsters").GetProperty(ids[monster.Selected]);
+            hp.SetValueNoSignal(entry.GetProperty("hp").GetDouble());
             act.Select(entry.TryGetProperty("stage", out var stage) ? stage.GetString() switch
             {
                 "act2" => 1, "act3" => 2, _ => 0
@@ -121,25 +125,33 @@ internal static class SimulationPage
         }
     }
 
-    private static string Run(RuleConfiguration rules, string id, int act, bool highAscension, int seed, int rounds, bool allowPhase)
+    private static string Run(RuleConfiguration rules, string id, int act, bool highAscension, int seed, int rounds,
+        bool allowPhase, int rooms, double hp, double allyHp)
     {
         var monster = rules.Monsters[id];
         if (!monster.Enabled || rules.KeepVanilla.Contains(id))
             return "这个画像保留原版行动。";
-        var profile = rules.PoolSettings.Adjust(monster.AtAscension(highAscension));
+        var profile = rules.PoolSettings.Adjust(monster.AtAscension(highAscension)) with
+        {
+            BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
+            PlayerActionValue = rules.PlayerAction.At(rooms)
+        };
         var candidates = monster.OpeningStates.Where(key => rules.OpeningValues[key].MinAct <= act &&
             (key != "STUN" || !monster.FixedOpening))
-            .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile)).ToArray();
+            .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms,
+                rules.PlayerTurns.ForAct(act))).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
         bool phaseAllowsRandomization = string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase;
         var turns = ActionSimulation.Trace(rules, profile, opening, act, seed, rounds, monster.FullBlockChance,
-            monster.FixedOpening, phaseAllowsRandomization);
+            monster.FixedOpening, phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();
         result.AppendLine($"{id}　　第 {act} 幕　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
+        result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
+            $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");
@@ -151,7 +163,7 @@ internal static class SimulationPage
                 $"{randomized.Average(turn => turn.Plan.Action!.Damage):0.##} 面板伤害、" +
                 $"{randomized.Average(turn => turn.Cost):0.##} 行动分");
         }
-        result.AppendLine("单怪估算，假定怪物存活，玩家战况使用配置里的模拟输入。原版招式只标记回合。");
+        result.AppendLine("模拟所选怪物的连续行动，血量取当前输入。");
         result.AppendLine();
         foreach (var turn in turns)
         {
@@ -165,7 +177,8 @@ internal static class SimulationPage
         return result.ToString();
     }
 
-    private static string FormatAction(ActionCandidate action) => string.Join(" ＋ ", action.Effects!.Select(effect =>
+    private static string FormatAction(ActionCandidate action) => action.Effects!.Count == 0 ? "准备" :
+        string.Join(" ＋ ", action.Effects.Select(effect =>
         effect.Kind == EffectKind.Attack
             ? $"攻击 {action.Damage / effect.Hits:0} × {effect.Hits}"
             : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}"));

@@ -7,7 +7,7 @@ public sealed record PlayerTurnValues(double Act1 = 10, double Act2 = 17, double
 
 public sealed class ActionValuation
 {
-    private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers, PlayerTurnValue }
+    private enum Factor { Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits, Draws, Triggers, PlayerTurnValue, PlayerActionValue }
 
     internal static IReadOnlyList<string> FactorNames { get; } = Enum.GetNames<Factor>();
 
@@ -29,7 +29,7 @@ public sealed class ActionValuation
     }
 
     public double Evaluate(EffectKind kind, MonsterProfile profile, int amount, int hits = 1,
-        double effectiveAmount = 0, double draws = 0, double triggers = 0, int act = 1)
+        double effectiveAmount = 0, double draws = 0, double triggers = 0, int act = 1, double? playerTurnValue = null)
     {
         if (!formulas.TryGetValue(kind, out var terms))
             return 0;
@@ -50,7 +50,8 @@ public sealed class ActionValuation
                     Factor.Hits => hits,
                     Factor.Draws => draws,
                     Factor.Triggers => triggers,
-                    Factor.PlayerTurnValue => playerTurns.ForAct(act),
+                    Factor.PlayerTurnValue => playerTurnValue ?? playerTurns.ForAct(act),
+                    Factor.PlayerActionValue => profile.PlayerActionValue,
                     _ => throw new ArgumentOutOfRangeException(nameof(factor))
                 };
             }

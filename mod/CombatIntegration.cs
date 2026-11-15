@@ -30,14 +30,12 @@ internal static class CombatIntegration
         public ActionPlanner Planner { get; } = new(rules.PoolSettings);
         public ActionCatalog Catalog { get; } = new(rules.Actions);
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
-        public Queue<Dictionary<Creature, double>> RecentDamage { get; } = new();
-        public Dictionary<Creature, double> PlayerDamage { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public Creature? SpecialDebuffOwner { get; set; }
         public int SpecialDebuffRound { get; set; }
         public bool SpecialDebuffSpent { get; set; }
         public bool Ready { get; set; }
-        public double DamagePrior { get; init; }
+        public int Rooms { get; init; }
     }
 
     private sealed class EnemyRules(MonsterRules rules, MonsterProfile profile)
@@ -72,7 +70,8 @@ internal static class CombatIntegration
 
         try
         {
-            var encounter = new EncounterRules(rules) { DamagePrior = StageDamage(combat, rules) };
+            int rooms = Math.Max(0, combat.RunState.MapPointHistory.SelectMany(act => act).Sum(point => point.Rooms.Count) - 1);
+            var encounter = new EncounterRules(rules) { Rooms = rooms };
             Encounters.Add(combat, encounter);
             var candidates = new Dictionary<string, IReadOnlyList<OpeningOption>>();
             var actionValues = new Dictionary<string, double>();
@@ -88,9 +87,10 @@ internal static class CombatIntegration
                 if (state == null)
                     continue;
 
+                var profile = WithSurvival(state.Profile, creature, combat, encounter);
                 candidates[id] = state.Rules.OpeningStates
                     .Where(key => (key != "STUN" || !state.Rules.FixedOpening) && rules.OpeningValues[key].MinAct <= Act(combat))
-                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], state.Profile))
+                    .Select(key => OpeningValuation.Option(key, rules.OpeningValues[key], profile, rooms, rules.PlayerTurns.ForAct(Act(combat))))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -107,7 +107,8 @@ internal static class CombatIntegration
                 var price = rules.OpeningValues[pick.State.Id];
                 state.Balance = state.Balance with
                 {
-                    ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price, state.Profile, applied)
+                    ActionValue = state.Balance.ActionValue - OpeningValuation.Evaluate(price,
+                        WithSurvival(state.Profile, target, combat, encounter), applied, rules.PlayerTurns.ForAct(Act(combat)))
                 };
             }
             encounter.Ready = true;
@@ -139,9 +140,11 @@ internal static class CombatIntegration
             if (enemy.PlannedRound != round)
             {
                 var context = Snapshot(creature, combat, encounter);
-                enemy.Plan = encounter.Planner.Plan(enemy.Balance, enemy.Profile,
-                    encounter.Catalog.Generate(enemy.Profile, context, enemy.History, round),
-                    RandomFor(combat, creature.CombatId ?? 0, round));
+                var profile = WithSurvival(enemy.Profile, creature, combat, encounter);
+                enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
+                    encounter.Catalog.Generate(profile, context, enemy.History, round),
+                    RandomFor(combat, creature.CombatId ?? 0, round),
+                    buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
                 enemy.PlannedRound = round;
                 if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialDebuff) == true)
@@ -173,7 +176,7 @@ internal static class CombatIntegration
         if (state.PlannedRound == __0.RoundNumber && ReferenceEquals(state.RandomMove, __2) &&
             state.Plan is { Action: { } action } plan)
         {
-            state.History = state.History.Record(action, __0.RoundNumber);
+            state.History = state.History.Record(action);
             state.Balance = plan.After;
         }
         else if (!IsOrdinaryMove(__2) || KeepsNativeMove(__1.Creature, state, __2, __0.RoundNumber))
@@ -192,23 +195,11 @@ internal static class CombatIntegration
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(CombatHistory), nameof(CombatHistory.DamageReceived))]
-    private static void RecordDamage(ICombatState __0, Creature __1, Creature? __2, DamageResult __3)
-    {
-        if (__0.CurrentSide == CombatSide.Player && __1.IsEnemy && __2?.Side == CombatSide.Player &&
-            Encounters.TryGetValue(__0, out var encounter))
-        {
-            encounter.PlayerDamage[__1] = encounter.PlayerDamage.GetValueOrDefault(__1) +
-                __3.BlockedDamage + __3.UnblockedDamage;
-        }
-    }
-
-    [HarmonyPostfix]
     [HarmonyPatch(typeof(Hook), nameof(Hook.AfterSideTurnEnd))]
     private static void RecordPlayerTurn(ICombatState __0, CombatSide __1, ref Task __result)
     {
         if (__1 == CombatSide.Player && Encounters.TryGetValue(__0, out var encounter))
-            __result = FinishDamageRound(__result, encounter);
+            __result = ExpireTemporaryThorns(__result, encounter);
     }
 
     internal static void TrackTemporaryThorns(ICombatState combat, ThornsPower power, int amount)
@@ -225,7 +216,7 @@ internal static class CombatIntegration
         return true;
     }
 
-    private static async Task FinishDamageRound(Task original, EncounterRules encounter)
+    private static async Task ExpireTemporaryThorns(Task original, EncounterRules encounter)
     {
         await original;
         foreach (var (power, amount) in encounter.TemporaryThorns)
@@ -235,11 +226,6 @@ internal static class CombatIntegration
                     power.Owner, null);
         }
         encounter.TemporaryThorns.Clear();
-        int recentRounds = Math.Max(0, encounter.Rules.Forecast.GetProperty("recentPlayerRoundLimit").GetInt32());
-        encounter.RecentDamage.Enqueue(new Dictionary<Creature, double>(encounter.PlayerDamage));
-        encounter.PlayerDamage.Clear();
-        while (encounter.RecentDamage.Count > recentRounds)
-            encounter.RecentDamage.Dequeue();
     }
 
     private static EnemyRules? Register(EncounterRules encounter, Creature creature)
@@ -285,21 +271,16 @@ internal static class CombatIntegration
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
         var player = combat.PlayerCreatures[0];
-        double priorWeight = encounter.Rules.Forecast.GetProperty("stagePriorWeightInPlayerRounds").GetDouble();
-        double pressure = encounter.RecentDamage.Sum(round => round.GetValueOrDefault(self));
-        double prior = encounter.DamagePrior / Math.Max(1, combat.Enemies.Count(enemy => enemy.IsAlive));
-        double sampleWeight = priorWeight + encounter.RecentDamage.Count;
-        double damage = sampleWeight > 0 ? (priorWeight * prior + pressure) / sampleWeight : prior;
         return encounter.Rules.TurnPrior with
         {
-            ExpectedDamageAgainstMonster = damage,
+            ExpectedDamageAgainstMonster = encounter.Rules.PlayerAction.At(encounter.Rooms) /
+                Math.Max(1, combat.Enemies.Count(enemy => enemy.IsAlive)),
+            Rooms = encounter.Rooms,
             ExistingBlock = 0, // This action's Block and the next player attack follow the enemy block reset.
             MissingHp = self.MaxHp - self.CurrentHp,
             Strength = self.GetPower<StrengthPower>()?.Amount ?? 0,
             Weakened = self.HasPower<WeakPower>(),
             AlreadyIntangible = self.HasPower<IntangiblePower>(),
-            PlayerAlreadyWeak = player.HasPower<WeakPower>(),
-            PlayerAlreadyVulnerable = player.HasPower<VulnerablePower>(),
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
             AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
@@ -312,11 +293,13 @@ internal static class CombatIntegration
         };
     }
 
-    private static double StageDamage(ICombatState combat, RuleConfiguration rules)
-    {
-        var stage = rules.Forecast.GetProperty("playerDamageByStage").GetProperty($"act{Act(combat)}");
-        return stage.GetProperty("singleTarget").GetDouble() + stage.GetProperty("areaPerTarget").GetDouble();
-    }
+    private static MonsterProfile WithSurvival(MonsterProfile profile, Creature self, ICombatState combat, EncounterRules encounter) =>
+        profile with
+        {
+            BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp,
+                combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp), encounter.Rooms),
+            PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms)
+        };
 
     private static int Act(ICombatState combat) => Math.Clamp(combat.RunState.CurrentActIndex + 1, 1, 3);
 

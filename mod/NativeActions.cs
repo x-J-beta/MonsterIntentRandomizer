@@ -17,15 +17,17 @@ internal static class NativeActions
 
     internal static MoveState Build(MonsterModel monster, ActionCandidate candidate) =>
         new(MoveId, targets => Execute(monster, candidate.Effects!, targets),
-            candidate.Effects!.Select(CreateIntent).ToArray());
+            candidate.Effects!.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] :
+                candidate.Effects.Select(CreateIntent).ToArray());
 
     private static AbstractIntent CreateIntent(ActionEffect effect) => IntentDetails.Register(effect, effect.Kind switch
     {
         EffectKind.Attack => effect.Hits == 1 ? new SingleAttackIntent(effect.Amount) :
             new MultiAttackIntent(effect.Amount, effect.Hits),
+        EffectKind.Wait => new UnknownIntent(),
         EffectKind.Block or EffectKind.Intangible => new DefendIntent(),
         EffectKind.Heal => new HealIntent(),
-        EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns => new BuffIntent(),
+        EffectKind.Strength or EffectKind.Ritual or EffectKind.Regen or EffectKind.Thorns or EffectKind.TemporaryThorns => new BuffIntent(),
         EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon => new StatusIntent(effect.Amount),
         _ => ActionEffect.IsRareBuff(effect.Kind) ? new BuffIntent() : new DebuffIntent()
     });
@@ -63,6 +65,9 @@ internal static class NativeActions
                     break;
                 case EffectKind.Ritual:
                     await PowerCmd.Apply<RitualPower>(choice, self, amount, self, null);
+                    break;
+                case EffectKind.Regen:
+                    await PowerCmd.Apply<RegenPower>(choice, self, amount, self, null);
                     break;
                 case EffectKind.Thorns:
                     await PowerCmd.Apply<ThornsPower>(choice, self, amount, self, null);

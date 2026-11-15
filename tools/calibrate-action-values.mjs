@@ -125,7 +125,8 @@ function calibrate(monster, profile) {
         return { method: 'cycle', ...route, values: cycleValues };
 
     const sample = encounterSamples[monster.id];
-    const turns = Math.min(sample ? Math.round(sample.turns) : profile.survivalTurns ?? profiles.defaults.survivalTurns, maxGrowthTurns);
+    const turns = Math.min(sample ? Math.round(sample.turns) :
+        previousAudit[monster.id]?.turns ?? profile.survivalTurns ?? profiles.defaults.survivalTurns ?? 3, maxGrowthTurns);
     const windows = difficulties.map(difficulty => growthWindow(opening, loop, difficulty, turns));
     return {
         method: 'growthCycle', ...route, turns, ...(sample ? { encounterSample: sample } : {}),

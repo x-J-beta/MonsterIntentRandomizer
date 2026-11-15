@@ -106,6 +106,10 @@ internal static class SettingsPage
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
+        AddNumber("余额对出招花费的系数", 0, 5, 0.01, "pools", "balanceTargetWeight");
+        AddNumber("玩家行动力基础值", 0.001, 100, 0.001, "playerAction", "base");
+        AddNumber("玩家行动力房间除数", 0.001, 100, 0.001, "playerAction", "roomsPerStep");
+        AddNumber("玩家行动力指数", 0.0001, 5, 0.0001, "playerAction", "exponent");
         AddNumber("开场抽取次数", 0, 20, 1, "opening", "attempts");
         AddNumber("单怪开场状态数量", 0, 10, 1, "opening", "maxPerMonster");
         AddNumber("开场净值上限倍率", 0, 3, 0.01, "opening", "maxEncounterValueMultiplier");
@@ -231,7 +235,7 @@ internal static class SettingsPage
         {
             (Group: "", Key: "actionValue", Label: "基础行动力"),
             (Group: "", Key: "attackFrequency", Label: "每回合目标攻击段数"),
-            (Group: "", Key: "survivalTurns", Label: "基础预期生存回合"),
+            (Group: "", Key: "attackSpend", Label: "攻击花费比例"),
             (Group: "", Key: "volatility", Label: "行动力波动"),
             (Group: "preferences", Key: "attack", Label: "纯攻击权重"),
             (Group: "preferences", Key: "buff", Label: "强化权重"),
@@ -243,10 +247,12 @@ internal static class SettingsPage
         string? selected = null;
         foreach (var (group, key, label) in values)
         {
-            var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, 100, 0.01);
+            var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, key == "attackSpend" ? 1 : 100, 0.01);
+            input.AllowGreater = key != "attackSpend";
             inputs.Add(input);
             input.ValueChanged += value =>
-                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value);
+                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value,
+                    refresh: key == "attackFrequency");
         }
         randomize.Toggled += value => EditMonster(monster => monster["enabled"] = value, refresh: true);
         requiredPower.TextChanged += value => EditMonster(monster =>
@@ -305,6 +311,9 @@ internal static class SettingsPage
             {
                 var (group, key, _) = values[i];
                 var value = group.Length == 0 ? monster?[key] ?? document["defaults"]?[key] : monster?[group]?[key];
+                if (key == "attackSpend" && value == null && monster != null)
+                    value = JsonValue.Create(RuleConfiguration.ReadMonster(JsonSerializer.SerializeToElement(monster),
+                        JsonSerializer.SerializeToElement(document["defaults"])).Profile.BudgetedAttackShare);
                 bool present = value is JsonValue number && number.TryGetValue<double>(out _);
                 inputs[i].Editable = present && active;
                 inputs[i].SetValueNoSignal(present ? value!.GetValue<double>() : 0);

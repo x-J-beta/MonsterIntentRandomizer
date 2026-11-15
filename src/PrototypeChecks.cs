@@ -82,10 +82,11 @@ internal static class PrototypeChecks
         var choices = new[]
         {
             new ActionCandidate("attack", IntentStyle.Attack, true, 6, 6),
-            new ActionCandidate("defend", IntentStyle.Defend, false, 2, 0)
+            new ActionCandidate("defend", IntentStyle.Defend, false, 2, 0, Effects: [new(EffectKind.Block, 5)])
         };
         var amplified = ActionCandidate.Attack("multi", 3, 3, 2, weak: false, 1);
-        var boosted = planner.Plan(new Pools(8, 2), profile, [amplified], random);
+        var multiProfile = profile with { AttackFrequency = 1.5, HitWeights = new Dictionary<int, double> { [3] = 1 } };
+        var boosted = planner.Plan(new Pools(8, 4), multiProfile, [amplified], random);
         Equal(15, boosted.Action?.Damage ?? 0, "actual damage is not capped");
         Equal(3, boosted.Granted.AttackDesire - boosted.After.AttackDesire, "each segment spends one desire");
         var composite = amplified with { Effects = [amplified.Effects![0], new ActionEffect(EffectKind.Block, 3)] };
@@ -112,10 +113,8 @@ internal static class PrototypeChecks
         var uncapped = planner.Plan(new Pools(100, 0), profile, [], new Random(7));
         if (uncapped.Granted.ActionValue < 75)
             throw new InvalidOperationException("Large balances hit a capacity limit.");
-        var overdrawn = planner.Plan(new Pools(-25, 0), profile, [choices[1]], new Random(7));
-        if (overdrawn.Action is null || overdrawn.After.ActionValue >= 0)
-            throw new InvalidOperationException("A negative balance blocked a valid action.");
-        Equal(overdrawn.Granted.ActionValue - 2, overdrawn.After.ActionValue, "overspending is recorded");
+        var overdrawn = planner.Settle(new Pools(1, 0), 2, 0);
+        Equal(-1, overdrawn.ActionValue, "overspending puts the balance into debt");
         var differentValues = new[] { choices[1], choices[1] with { Id = "heavy defend", Value = 9 } };
         int HeavySelections(double initialValue)
         {
@@ -126,9 +125,8 @@ internal static class PrototypeChecks
         if (HeavySelections(20) <= HeavySelections(-10))
             throw new InvalidOperationException("Action balances did not influence selection weights.");
         var cheap = planner.Plan(planner.Start(profile, -2), profile, [choices[1]], new Random(7));
-        Equal(cheap.Granted.ActionValue - 2, cheap.After.ActionValue, "unused refund carries forward");
+        Equal(cheap.Granted.ActionValue - cheap.Action!.Value, cheap.After.ActionValue, "unused refund carries forward");
 
-        var multiProfile = profile with { AttackFrequency = 1.5, HitWeights = new Dictionary<int, double> { [3] = 1 } };
         double totalHits = 0;
         Pools multiPools = default;
         for (int i = 0; i < 2000; i++)
@@ -170,7 +168,7 @@ internal static class PrototypeChecks
             [EffectKind.Wound] = new() { ["amount*draws"] = 2.5 },
             [EffectKind.Beckon] = new() { ["amount*draws"] = 2.5, ["amount*triggers"] = 3 }
         }, new PlayerTurnValues(10, 20, 30));
-        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 2, 2, 1, 1, 1, amounts);
+        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts);
         var catalog = new ActionCatalog(catalogSettings);
         var varied = profile with
         {
@@ -207,10 +205,12 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Special debuffs bypassed the first-turn, chance or encounter restriction.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
-        var mixed = generated.First(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]);
-        Equal(mixed.Damage + Pure(EffectKind.Weak).Value, mixed.ActualScore, "compound score includes its debuff");
-        var weakenedMixed = catalog.Generate(varied, context with { Weakened = true }, new ActionHistory(), 1)
-            .First(action => action.Id == "1x4 + Weak 1");
+        var mixedProfile = varied with { AttackSpend = 0.5, Volatility = 0,
+            HitWeights = new Dictionary<int, double> { [1] = 1 } };
+        var weakenedMixed = Enumerable.Range(0, 50).Select(seed => planner.Plan(new Pools(0, 2), mixedProfile,
+            [Pure(EffectKind.Weak)], new Random(seed),
+            buildAttack: (hits, target) => catalog.BuildAttack(mixedProfile, context with { Weakened = true }, hits, target)))
+            .First(plan => plan.Action?.Effects is [_, { Kind: EffectKind.Weak }]).Action!;
         Equal(3, weakenedMixed.Damage, "panel reflects weak");
         Equal(3 + Pure(EffectKind.Weak).Value, weakenedMixed.ActualScore, "resolved score reflects weak and the side effect");
         Equal(4 + Pure(EffectKind.Weak).Value, weakenedMixed.Value, "pool cost retains base attack value");
@@ -230,15 +230,13 @@ internal static class PrototypeChecks
             .ToArray();
         Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
         Equal(2 * 0.15 * profile.ActionValue, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
-        if (tuned.Any(action => action.Effects!.Any(effect =>
-                (effect.Kind == EffectKind.Strength && effect.Amount == 2) ||
-                (effect.Kind == EffectKind.Attack && effect.Amount < 2))))
-            throw new InvalidOperationException("Configured dosages bypassed generation limits.");
+        if (!tuned.Any(action => action.Id == "Strength 2") ||
+            tunedCatalog.BuildAttack(varied, context, 1, 1)?.Effects?[0].Amount != 2)
+            throw new InvalidOperationException("Configured dosages or minimum base damage were ignored.");
         Equal(9, new ActionPlanner(new PoolSettings(0.75, 0.9, 1, 3)).Start(profile, -1).ActionValue,
             "configured starting pool");
         if (Pure(EffectKind.Dazed).Effects![0].Pile != StatusPile.Draw ||
-            Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard ||
-            !generated.Any(action => action.IsAttack && action.Effects is [_, { Kind: EffectKind.Weak }]))
+            Pure(EffectKind.Wound).Effects![0].Pile != StatusPile.Discard)
             throw new InvalidOperationException("Generated effects or ordering are incomplete.");
         var cardPositions = varied with
         {
@@ -251,16 +249,12 @@ internal static class PrototypeChecks
         if (!dazedPiles.SetEquals([StatusPile.Top, StatusPile.Draw, StatusPile.Discard]) ||
             !placed.Any(action => action.Id == "Wound 1 @Bottom"))
             throw new InvalidOperationException("Dazed placement restrictions should only affect Dazed.");
-        if (!generated.Any(action => action.IsAttack && action.Effects is [{ Amount: 1, Hits: 1 }]))
+        if (catalog.BuildAttack(varied, context, 1, 0)?.Effects is not [{ Amount: 1, Hits: 1 }])
             throw new InvalidOperationException("The catalog omitted the lowest positive base damage.");
-        var exhausted = new ActionHistory(2, 2, 1, 1);
+        var exhausted = new ActionHistory(AddedStrength: 5, HardCardLimits: 1);
         var limited = catalog.Generate(varied, context, exhausted, 2).ToArray();
-        if (limited.Any(action => action.Effects!.Any(effect => effect.Kind is
-                EffectKind.Strength or EffectKind.Dazed or EffectKind.Wound or EffectKind.Weak or EffectKind.Vulnerable)) ||
-            limited.Any(action => !action.IsAttack && action.Effects!.Any(effect => effect.Kind == EffectKind.Block)))
-        {
-            throw new InvalidOperationException("Repeat or encounter caps were ignored.");
-        }
+        if (!limited.Any(action => action.Id == "Strength 1") || !limited.Any(action => action.Id == "Dazed 1 @Draw"))
+            throw new InvalidOperationException("Repeatable actions were removed from future turns.");
 
         var protectedPlayer = catalog.Generate(varied, context with { PlayerHasArtifact = true }, new ActionHistory(), 1);
         if (protectedPlayer.Any(action => action.Effects!.Any(effect => effect.IsPlayerDebuff)))
@@ -280,10 +274,10 @@ internal static class PrototypeChecks
         var ritual = specializedActions.Single(action => !action.IsAttack && action.Effects![0].Kind == EffectKind.Ritual);
         Equal(0.8 * specialized.AttackFrequency * specialized.BaseExpectedSurvivalTurns, ritual.Value,
             "ritual uses attack frequency and expected survival");
-        var history = new ActionHistory().Record(ritual, 2);
+        var history = new ActionHistory().Record(ritual);
         Equal(0, history.RitualStrength, "newly cast ritual does not trigger immediately");
         var ringing = specializedActions.Single(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
-        Equal(1, history.Record(ringing, 3).RitualStrength, "ritual triggers after later turns");
+        Equal(1, history.Record(ringing).RitualStrength, "ritual triggers after later turns");
         if (specializedActions.Single(action => action.Id == "Wound 1 @Top").Value <=
             specializedActions.Single(action => action.Id == "Wound 1 @Discard").Value ||
             specializedActions.Any(action => action.IsAttack && action.Effects!.Any(effect => effect.Kind == EffectKind.Ringing)))
