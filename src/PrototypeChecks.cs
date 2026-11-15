@@ -93,8 +93,8 @@ internal static class PrototypeChecks
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
         var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, ChaosMultiplier: 0).Adjust(profile);
         Equal(16, adjusted.ActionValue, "global action value multiplier");
-        Equal(10, new PoolSettings(0.75, 0.9).Adjust(profile, highAscension: true).ActionValue,
-            "high ascension adds a global action value bonus");
+        Equal(9.2, new PoolSettings(0.75, 0.9).Adjust(profile, highAscension: true).ActionValue,
+            "high ascension scales the same monster profile");
         Equal(0, adjusted.Volatility, "zero chaos removes grant jitter");
         Equal(profile.AttackFrequency, adjusted.AttackFrequency, "multipliers preserve the configured attack cadence");
         var random = new Random(2026);
@@ -223,6 +223,9 @@ internal static class PrototypeChecks
         Equal(3 * 0.45, Pure(EffectKind.Heal).Value, "heal coefficient exceeds block");
         Equal(6.5, Pure(EffectKind.Beckon).Value, "beckon in draw pile");
         Equal(1.5, Pure(EffectKind.Dazed).Value, "flat dazed value");
+        var highPlayerAction = catalog.Generate(varied with { PlayerActionValue = 40 }, context, new ActionHistory(), 1);
+        Equal(2 * 1.33, highPlayerAction.Single(action => action.Id == "Dazed 1 @Top").Value,
+            "player action value floors card price before pile placement");
         Equal(2.5 * 0.75, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound value in the discard pile");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
         Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),

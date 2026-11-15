@@ -15,7 +15,7 @@
     "fullChaosBudgetAt": 5,
     "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 },
     "openingStrengthAtMax": 1.5,
-    "highAscensionActionValueBonus": 2
+    "highAscensionActionValueMultiplier": 1.15
   },
   "actions": {
     "weakDamageReduction": 0.25,
@@ -104,6 +104,7 @@
       "Toxic": 4.4, "Soot": 1.5, "Debris": 1.3, "Void": 4, "Slimed": 1.25, "Amnesia": 4.5,
       "MindRot": 5, "Sadness": 3.5, "Sloth": 8, "Disintegration": 6, "WasteAway": 9
     },
+    "statusCardPlayerActionValueRatios": { "Dazed": 0.05 },
     "policies": {
       "Attack": { "target": "player" },
       "Block": { "target": "self" },
@@ -142,7 +143,7 @@
     }
   },
   "opening": {
-    "weights": { "none": 20, "positive": 50, "negative": 30 },
+    "weights": { "none": 30, "positive": 40, "negative": 30 },
     "attempts": 4,
     "maxPerMonster": 2,
     "maxEncounterValueMultiplier": 1,

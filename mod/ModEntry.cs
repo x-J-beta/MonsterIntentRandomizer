@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 16;
+    private const int SettingsRevision = 17;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -69,6 +69,14 @@ internal static class ModSettings
 
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        var pools = settings["pools"]!.AsObject();
+        pools.Remove("highAscensionActionValueBonus");
+        pools["highAscensionActionValueMultiplier"] ??= defaultSettings["pools"]!["highAscensionActionValueMultiplier"]!.DeepClone();
+        var actions = settings["actions"]!;
+        actions["statusCardPlayerActionValueRatios"] ??= defaultSettings["actions"]!["statusCardPlayerActionValueRatios"]!.DeepClone();
+        if (stored.Revision >= 16)
+            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
+
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         if (settings["buffs"] is not JsonObject buffs)
@@ -79,14 +87,12 @@ internal static class ModSettings
 
         buffs.Remove("CurlUp");
         (settings["opening"]?["states"] as JsonObject)?.Remove("CURL_UP");
-        var actions = settings["actions"]!;
         foreach (var section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
             (actions[section] as JsonObject)?.Remove("CurlUp");
         actions.AsObject().Remove("minActs");
         actions.AsObject().Remove("hpPerSurvivalTurnCaps");
         settings["pools"]!["openingStrengthAtMax"] ??=
             Defaults.Settings.GetProperty("pools").GetProperty("openingStrengthAtMax").GetDouble();
-        settings["pools"]!["highAscensionActionValueBonus"] ??= defaultSettings["pools"]!["highAscensionActionValueBonus"]!.DeepClone();
         actions["valuation"]!["GainSteam"] ??= defaultSettings["actions"]!["valuation"]!["GainSteam"]!.DeepClone();
         actions["maxAmounts"]!["GainSteam"] ??= defaultSettings["actions"]!["maxAmounts"]!["GainSteam"]!.DeepClone();
         buffs["PainfulStabs"] ??= JsonNode.Parse(Defaults.Settings.GetProperty("buffs").GetProperty("PainfulStabs").GetRawText());

@@ -23,8 +23,8 @@ internal sealed class RuleConfiguration
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
-        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0 || PoolSettings.HighAscensionActionValueBonus < 0)
-            throw new ArgumentException("全局行动力倍率须为正数，混沌倍率和高进阶行动力加成须为非负数。");
+        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0 || PoolSettings.HighAscensionActionValueMultiplier < 1)
+            throw new ArgumentException("全局行动力倍率须为正数，混沌倍率须为非负数，高进阶行动力倍率须至少为 1。");
         if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
             PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
             PoolSettings.FullChaosBudgetAt <= 1 || PoolSettings.OpeningStrengthAtMax < 1 ||
@@ -51,6 +51,10 @@ internal sealed class RuleConfiguration
                 valuation[card] = new Dictionary<string, double> { ["amount"] = value };
             }
         }
+        var cardRatios = actions.TryGetProperty("statusCardPlayerActionValueRatios", out var ratioConfig)
+            ? Read<Dictionary<EffectKind, double>>(ratioConfig) : null;
+        if (cardRatios?.Any(entry => !ActionEffect.IsCard(entry.Key) || entry.Value < 0) == true)
+            throw new ArgumentException("状态牌的玩家行动力系数须为非负数。");
         Actions = new ActionValuationSettings(
             new ActionValuation(valuation),
             actions.GetProperty("weakDamageReduction").GetDouble(),
@@ -60,7 +64,7 @@ internal sealed class RuleConfiguration
             actions.GetProperty("maxHardCardLimits").GetInt32(),
             actions.TryGetProperty("specialDebuffChance", out var chance) ? chance.GetDouble() : 0.20,
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, policies, buffs, PoolSettings.ChaosProgress);
+            minimums, policies, buffs, PoolSettings.ChaosProgress, cardRatios);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),
@@ -124,4 +128,7 @@ internal sealed class RuleConfiguration
 
 internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
     bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance,
-    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false);
+    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false)
+{
+    internal bool AllowsMove(string id) => !KeepMoves.Contains(id) && (RandomMoves?.Contains(id) ?? true);
+}

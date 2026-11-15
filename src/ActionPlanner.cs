@@ -36,7 +36,7 @@ public sealed record PoolSettings(
     double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
     IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5,
-    double HighAscensionActionValueBonus = 2)
+    double HighAscensionActionValueMultiplier = 1.15)
 {
     internal double ChaosProgress => Math.Clamp((ChaosMultiplier - 1) / 4, 0, 1);
     internal double SharedNonAttackWeight => 0.25 + 0.75 * ChaosProgress;
@@ -53,7 +53,7 @@ public sealed record PoolSettings(
     {
         var adjusted = profile with
         {
-            ActionValue = (profile.ActionValue + (highAscension ? HighAscensionActionValueBonus : 0)) * ActionValueMultiplier,
+            ActionValue = profile.ActionValue * ActionValueMultiplier * (highAscension ? HighAscensionActionValueMultiplier : 1),
             Volatility = profile.Volatility * ChaosMultiplier
         };
         double mix = BudgetChaos;

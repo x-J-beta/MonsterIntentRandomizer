@@ -1,15 +1,42 @@
 namespace MonsterIntentRandomizer;
 
 internal sealed record SimulatedTurn(int Round, ActionPlan Plan, Pools After, bool Imbalanced,
-    bool UsedFallback, double Cost, int Hits);
+    bool UsedFallback, double Cost, int Hits, SimulationMove? OriginalMove);
+
+internal sealed record SimulationMove(string Id, string Name);
+
+internal sealed record SimulationMoveSequence(SimulationMove[] Opening, SimulationMove[] Loop)
+{
+    private static readonly SimulationMove[] KnowledgeLoop =
+    [
+        new("SLAP_MOVE", "抽打"), new("KNOWLEDGE_OVERWHELMING_MOVE", "知识过载"), new("PONDER_MOVE", "思考")
+    ];
+    private static readonly SimulationMove[] KnowledgeCurseCycle =
+        [new("CURSE_OF_KNOWLEDGE_MOVE", "知识的诅咒"), .. KnowledgeLoop];
+
+    internal static SimulationMoveSequence? For(string id) => id switch
+    {
+        "VANTOM" => new([], [new("INK_BLOT_MOVE", "墨迹"), new("INKY_LANCE_MOVE", "墨水长枪"),
+            new("DISMEMBER_MOVE", "肢解"), new("PREPARE_MOVE", "准备")]),
+        "AEONGLASS" => new([], [new("EBB_MOVE", "消退"), new("EYE_LASERS_MOVE", "眼部激光"),
+            new("INCREASING_INTENSITY_MOVE", "加大力度")]),
+        "KNOWLEDGE_DEMON" => new([.. KnowledgeCurseCycle, .. KnowledgeCurseCycle, .. KnowledgeCurseCycle], KnowledgeLoop),
+        _ => null
+    };
+
+    internal SimulationMove At(int index) => index < Opening.Length
+        ? Opening[index] : Loop[(index - Opening.Length) % Loop.Length];
+}
 
 internal static class ActionSimulation
 {
-    internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, MonsterProfile profile,
-        IReadOnlyList<OpeningPick> opening, int seed, int rounds, double fullBlockChance,
-        bool fixedOpening = false, bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
+    internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, string monsterId, MonsterProfile profile,
+        IReadOnlyList<OpeningPick> opening, int seed, int rounds,
+        bool phaseAllowsRandomization = true, int firstEnemyAction = 1,
         double? fallbackValue = null, int? fallbackHits = null, int rooms = 0, int enemyCount = 1)
     {
+        var monster = rules.Monsters[monsterId];
+        var sequence = SimulationMoveSequence.For(monsterId);
         var planner = new ActionPlanner(rules.PoolSettings);
         var catalog = new ActionCatalog(rules.Actions);
         var actionRandom = new Random(seed ^ 0x649AAB81);
@@ -29,6 +56,7 @@ internal static class ActionSimulation
         bool previousAttack = false;
         bool specialDebuffSpent = false;
         bool imbalanced = opening.Any(pick => pick.State.Id == "IMBALANCED");
+        int completedMoves = 0;
         var turns = new List<SimulatedTurn>(rounds);
         for (int turn = 1; turn <= rounds; turn++)
         {
@@ -39,7 +67,7 @@ internal static class ActionSimulation
                     "RITUAL" => (turn - 1) * pick.State.Amount,
                     _ => 0
                 });
-            bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < fullBlockChance;
+            bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < monster.FullBlockChance;
             var context = prior with
             {
                 Strength = strength + vigor,
@@ -50,16 +78,19 @@ internal static class ActionSimulation
                     .Concat(usedEffects.Where(rules.UniqueAction)).ToHashSet(),
                 AllowHardCardLimit = prior.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn
             };
-            bool canRandomize = phaseAllowsRandomization && !(fixedOpening && turn == 1) &&
-                turn >= firstEnemyAction && !skipFromImbalance && !opening.Any(pick => pick.State.Id == "STUN" &&
+            bool hasMove = turn >= firstEnemyAction && !skipFromImbalance && !opening.Any(pick => pick.State.Id == "STUN" &&
                     turn < firstEnemyAction + pick.State.Amount);
+            var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
+            bool canRandomize = phaseAllowsRandomization && hasMove && !(monster.FixedOpening && turn == 1) &&
+                (originalMove == null || monster.AllowsMove(originalMove.Id));
             var plan = planner.Plan(balances, profile, catalog.Generate(profile, context, history, turn),
                 actionRandom, canRandomize, (hits, target) => catalog.BuildAttack(profile, context, hits, target));
             bool fallback = plan.CanRandomize && plan.Action is null && fallbackValue.HasValue;
             double cost = plan.Action?.Value ?? (fallback ? fallbackValue!.Value : 0);
             int hits = plan.Action?.AttackHits ?? (fallback ? fallbackHits.GetValueOrDefault() : 0);
             balances = fallback ? planner.Settle(plan.Granted, cost, hits) : plan.After;
-            turns.Add(new SimulatedTurn(turn, plan, balances, skipFromImbalance, plan.CanRandomize && plan.Action is null, cost, hits));
+            turns.Add(new SimulatedTurn(turn, plan, balances, skipFromImbalance, plan.CanRandomize && plan.Action is null, cost, hits,
+                originalMove));
 
             previousAttack = hits > 0;
             if (previousAttack)

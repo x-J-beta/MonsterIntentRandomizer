@@ -78,7 +78,8 @@ public sealed record ActionValuationSettings(
     double SpecialDebuffChance = 0.20, IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
-    IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0)
+    IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
+    IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null)
 {
     public EffectPolicy PolicyFor(EffectKind kind) => Buffs?.GetValueOrDefault(kind) is { } buff
         ? new EffectPolicy(buff.Stackable, buff.Unique, EffectTarget.Self)
@@ -107,6 +108,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         MonsterProfile profile, ActionContext context, ActionHistory history, int turn)
     {
         var actions = profile.EffectWeights;
+        double cardBaseline = settings.CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
@@ -210,7 +212,11 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         {
             double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount);
             if (pile is StatusPile position)
-                value *= (settings.PlacementValues ?? new StatusPlacementValues()).For(position);
+            {
+                double ratio = Math.Max(cardBaseline, settings.CardPlayerActionValueRatios?.GetValueOrDefault(kind) ?? 0);
+                value = Math.Max(value, amount * profile.PlayerActionValue * ratio) *
+                    (settings.PlacementValues ?? new StatusPlacementValues()).For(position);
+            }
             if (value > 0 && weight > 0)
                 extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, weight));
         }

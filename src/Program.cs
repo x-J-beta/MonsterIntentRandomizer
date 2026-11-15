@@ -110,13 +110,14 @@ double fallbackActionValue = hasFallback && fallback.TryGetProperty("actionValue
 string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out var resolvedFallback)
     ? resolvedFallback.GetDouble().ToString("F1") : "n/a";
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, seed,
-    sample.GetProperty("traceTurns").GetInt32(), configured.FullBlockChance,
-    fixedOpening: configured.FixedOpening, firstEnemyAction: enemies[0].FirstEnemyAction,
+foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpening, seed,
+    sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
     fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
 {
     var action = turn.Plan;
     string moveName = action.Action?.Id ?? (turn.UsedFallback ? "vanilla fallback" : turn.Imbalanced ? "imbalanced" : "skipped");
+    if (turn.OriginalMove is { } original)
+        moveName = action.Action == null ? $"{original.Id} (vanilla)" : $"{original.Id} -> {moveName}";
     string actualScore = turn.UsedFallback ? fallbackScore : (action.Action?.ActualScore ?? 0).ToString("F1");
     Console.WriteLine(
         $"{turn.Round,2} {moveName,-16} panel {action.Action?.Damage.ToString("F0") ?? (turn.UsedFallback ? "n/a" : "0"),3}  " +

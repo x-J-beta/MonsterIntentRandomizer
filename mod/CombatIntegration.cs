@@ -274,8 +274,8 @@ internal static class CombatIntegration
         if (rules.RandomizeAllMoves)
             return true;
         var moves = machine.States.Values.OfType<MoveState>();
-        return rules.RandomMoves is { } allowed
-            ? moves.Any(move => allowed.Contains(move.Id) && !rules.KeepMoves.Contains(move.Id) && IsOrdinaryMove(move))
+        return rules.RandomMoves != null
+            ? moves.Any(move => rules.AllowsMove(move.Id) && IsOrdinaryMove(move))
             : moves.All(move => rules.KeepMoves.Contains(move.Id) || IsOrdinaryMove(move));
     }
 
@@ -284,8 +284,7 @@ internal static class CombatIntegration
         !KeepsNativeMove(creature, enemy, move, round);
 
     private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
-        (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id) ||
-        (enemy.Rules.RandomMoves is { } allowed && !allowed.Contains(move.Id)) ||
+        (enemy.Rules.FixedOpening && round == 1) || !enemy.Rules.AllowsMove(move.Id) ||
         ProtectedByAlly(creature, enemy.Rules) ||
         (enemy.Rules.RandomizeWhenPower?.Trim() is { Length: > 0 } id &&
             !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));

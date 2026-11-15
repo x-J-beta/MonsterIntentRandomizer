@@ -151,8 +151,8 @@ internal static class SimulationPage
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
         bool phaseAllowsRandomization = !protectedByAlly &&
             (string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase);
-        var turns = ActionSimulation.Trace(rules, profile, opening, seed, rounds, monster.FullBlockChance,
-            monster.FixedOpening, phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
+        var turns = ActionSimulation.Trace(rules, id, profile, opening, seed, rounds,
+            phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();
         result.AppendLine($"{id}　　已经历 {rooms} 个房间　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
@@ -161,8 +161,10 @@ internal static class SimulationPage
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
         if (protectedByAlly)
             result.AppendLine("该同伴仍然存活，当前阶段保留原版行动。");
+        else if (SimulationMoveSequence.For(id) != null)
+            result.AppendLine("按常规战斗的原版招式顺序模拟，每回合标明原招和替换结果。");
         else if (monster.RandomMoves != null)
-            result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下轨迹模拟符合随机条件的回合。");
+            result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下仅模拟可随机回合，未排入保留的原版招式。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");
@@ -178,8 +180,10 @@ internal static class SimulationPage
         result.AppendLine();
         foreach (var turn in turns)
         {
-            string name = turn.Plan.Action is { } action ? FormatAction(action) :
+            string name = turn.Plan.Action is { } action
+                ? (turn.OriginalMove is { } original ? $"{original.Name} → {FormatAction(action)}" : FormatAction(action)) :
                 turn.Imbalanced ? "失衡" : turn.UsedFallback ? "回退原版" :
+                turn.OriginalMove is { } kept ? $"{kept.Name}（原版保留）" :
                 !phaseAllowsRandomization || monster.FixedOpening && turn.Round == 1 ? "原版回合" : "跳过";
             string cost = turn.Plan.Action == null ? "" : $"　消耗 {turn.Cost:0.##}";
             result.AppendLine($"第 {turn.Round,2} 回合　{name}{cost}　　行动力 {turn.Plan.Granted.ActionValue:0.##} → {turn.After.ActionValue:0.##}　" +

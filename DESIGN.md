@@ -23,13 +23,15 @@
 | [monster-profiles.json](data/monster-profiles.json) | 共用默认值，以及逐怪基础行动力、目标攻击频次与行动偏好 |
 | [settings.json](data/settings.json) | 双池、玩家行动力曲线、估值、状态权重和层数上限、开场及模拟输入 |
 
-默认从 `data/` 读取。使用 `dotnet run -- 42 TOADPOLE standard <配置目录>` 可以对照另一套参数，目录中只需放上述两个文件。画像使用统一的 `actionValue`。致命敌人进阶先加全局 `pools.highAscensionActionValueBonus`（默认 2），再乘全局行动力倍率。
+默认从 `data/` 读取。使用 `dotnet run -- 42 TOADPOLE standard <配置目录>` 可以对照另一套参数，目录中只需放上述两个文件。画像使用统一的 `actionValue`。致命敌人进阶额外乘 `pools.highAscensionActionValueMultiplier`（默认 1.15）。
 
 第五个命令行参数可覆盖幕，例如 `dotnet run -- 42 TOADPOLE standard data act3`。通常读取画像的 `stage`，缺省取 `simulation.defaultStage`。第六个参数可覆盖已经历房间数。样例队友可通过 `actionValue` 和 `openingStates` 参与开场抽取，轨迹仍展示所选怪物。
 
 每只怪的 `preferences` 分别填写纯攻击、强化、防御和削弱玩家的相对权重。非攻击抽取将类别偏好和共享权重合并。混沌从 1 升到 5 时，共享部分从 25% 线性增至 100%。想进一步区分同类行动，可在 `effects` 为具体效果填权重，0 可关闭单个效果。填 `"openingStates": []` 可关闭该怪的开场状态随机。
 
 塞牌位置用 `cards` 指定，例如 `{"card":"Wound","pile":"Discard","weight":3}`。位置包括 `Hand`、`Top`、`Draw`、`Bottom`、`Discard`。晕眩只接受堆顶、抽牌堆和弃牌堆。
+
+单张状态牌估值取固定值与玩家行动力下限的较大值，再乘张数和位置倍率。`actions.statusCardPlayerActionValueRatios` 中晕眩的系数是全体牌的基准，默认为 0.05。其余牌可配置更高的系数。
 
 ### 行动力池与攻击欲望池
 

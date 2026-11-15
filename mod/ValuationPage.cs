@@ -97,8 +97,18 @@ internal static class ValuationPage
                 Text = $"目标：{(ActionEffect.TargetFor(kind) == EffectTarget.Self ? "自身" : "玩家")}"
             });
             if (ActionEffect.IsCard(kind))
-                AddNumber(content, "单张状态牌估值", config["statusCardValues"]![id]!.GetValue<double>(), 0.01,
+            {
+                AddNumber(content, "单张固定估值", config["statusCardValues"]![id]!.GetValue<double>(), 0.01,
                     (root, number) => root["actions"]!["statusCardValues"]![id] = number, minimum: 0);
+                var ratios = config["statusCardPlayerActionValueRatios"];
+                double baseline = ratios?["Dazed"]?.GetValue<double>() ?? 0.05;
+                double ratio = Math.Max(baseline, ratios?[id]?.GetValue<double>() ?? 0);
+                AddNumber(content, "玩家行动力下限系数", ratio, 0.001, (root, number) =>
+                {
+                    root["actions"]!["statusCardPlayerActionValueRatios"] ??= new JsonObject { ["Dazed"] = baseline };
+                    root["actions"]!["statusCardPlayerActionValueRatios"]![id] = number;
+                }, minimum: kind == EffectKind.Dazed ? 0 : baseline);
+            }
             else
                 AddFormula(content, root => root["actions"]!["valuation"]![id]!.AsObject(), config["valuation"]![id]!.AsObject());
             if (id == "Attack")
