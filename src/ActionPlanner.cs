@@ -4,7 +4,7 @@ public enum IntentStyle { Attack, Buff, Defend, PlayerDebuff }
 
 public sealed record ActionCandidate(
     string Id, IntentStyle Style, bool IsAttack, double Value, double Damage, double Weight = 1,
-    IReadOnlyList<ActionEffect>? Effects = null, double? ResolvedValue = null)
+    IReadOnlyList<ActionEffect>? Effects = null, double? ResolvedValue = null, double SharedWeightBonus = 0)
 {
     public double ActualScore => ResolvedValue ?? (IsAttack ? Damage : Value);
 
@@ -36,7 +36,8 @@ public sealed record PoolSettings(
     double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
     IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5,
-    double HighAscensionActionValueMultiplier = 1.15)
+    double HighAscensionActionValueMultiplier = 1.15,
+    double FavoriteDirectBaseShare = 0.1, double FavoriteDirectStrengthMultiplier = 0.02)
 {
     internal double ChaosProgress => Math.Clamp((ChaosMultiplier - 1) / 4, 0, 1);
     internal double SharedNonAttackWeight => 0.25 + 0.75 * ChaosProgress;
@@ -64,11 +65,8 @@ public sealed record PoolSettings(
         var styles = Enum.GetValues<IntentStyle>();
         double configuredTotal = styles.Sum(style => Math.Max(0, profile.IntentWeights.GetValueOrDefault(style)));
         double targetTotal = styles.Sum(style => target.GetValueOrDefault(style));
-        double targetAttack = target.GetValueOrDefault(IntentStyle.Attack) / targetTotal;
         return adjusted with
         {
-            AttackSpend = profile.AttackFrequency > 0
-                ? (1 - mix) * profile.BudgetedAttackShare + mix * targetAttack : 0,
             IntentWeights = styles.ToDictionary(style => style, style =>
                 (1 - mix) * Math.Max(0, profile.IntentWeights.GetValueOrDefault(style)) / Math.Max(configuredTotal, double.Epsilon)
                 + mix * target.GetValueOrDefault(style) / targetTotal)
@@ -80,8 +78,9 @@ public sealed record MonsterProfile(
     double ActionValue, double Volatility, double AttackFrequency, double NonAttackMultiplier,
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
     IReadOnlyDictionary<EffectKind, double>? EffectWeights = null,
-    IReadOnlyList<StatusPlacement>? CardPlacements = null, double? AttackSpend = null, double PlayerActionValue = 0,
-    double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1)
+    IReadOnlyList<StatusPlacement>? CardPlacements = null, double PlayerActionValue = 0,
+    double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1,
+    IReadOnlyDictionary<EffectKind, double>? Favorites = null)
 {
     public double HpPerSurvivalTurn => BaseExpectedSurvivalTurns > 0 ? CurrentHp / BaseExpectedSurvivalTurns : 0;
 
@@ -93,8 +92,6 @@ public sealed record MonsterProfile(
     {
         get
         {
-            if (AttackSpend is double fraction)
-                return fraction;
             double total = IntentWeights.Values.Where(weight => weight > 0).Sum();
             return total > 0 && AttackFrequency > 0
                 ? Math.Max(0, IntentWeights.GetValueOrDefault(IntentStyle.Attack)) / total : 0;
@@ -125,7 +122,8 @@ public sealed class ActionPlanner(PoolSettings settings)
         double target = Math.Max(0, profile.ActionValue + retainedAction * settings.BalanceTargetWeight) * settings.DrawBudgetMultiplier;
         double attackFraction = profile.BudgetedAttackShare;
         double attackTarget = Jitter(target * attackFraction, profile.Volatility, random);
-        var eligible = candidates.Where(candidate => candidate.Value > 0 && candidate.Weight > 0).ToArray();
+        var eligible = candidates.Where(candidate => candidate.Value > 0 &&
+            candidate.Weight + candidate.SharedWeightBonus > 0).ToArray();
         var fixedHits = buildAttack == null
             ? eligible.Where(candidate => candidate.IsAttack).Select(candidate => candidate.AttackHits).ToHashSet()
             : null;
@@ -198,8 +196,12 @@ public sealed class ActionPlanner(PoolSettings settings)
             if (chosen == null)
                 break;
             var kind = chosen.Effects![0].Kind;
-            double familyWeight = available.Where(candidate => candidate.Effects![0].Kind == kind).Sum(candidate => candidate.Weight);
-            shortlist.Add(chosen with { Weight = familyWeight });
+            var family = available.Where(candidate => candidate.Effects![0].Kind == kind);
+            shortlist.Add(chosen with
+            {
+                Weight = family.Sum(candidate => candidate.Weight),
+                SharedWeightBonus = family.Sum(candidate => candidate.SharedWeightBonus)
+            });
             available.RemoveAll(candidate => candidate.Effects![0].Kind == kind);
         }
         return shortlist;
@@ -223,20 +225,33 @@ public sealed class ActionPlanner(PoolSettings settings)
         double scale = Math.Max(1e-6, Math.Max(settings.MinimumSelectionSpread * settings.ChaosMultiplier,
             target * profile.Volatility));
         var groups = eligible.GroupBy(candidate => candidate.Style).Select(group =>
-            (Members: group, Weight: group.Sum(candidate => candidate.Weight),
-             IntentWeight: Math.Max(0, profile.IntentWeights.GetValueOrDefault(group.Key)))).ToArray();
+        {
+            double weight = group.Sum(candidate => candidate.Weight);
+            return (Members: group, Weight: weight, Bonus: group.Sum(candidate => candidate.SharedWeightBonus),
+                IntentWeight: weight > 0 ? Math.Max(0, profile.IntentWeights.GetValueOrDefault(group.Key)) : 0);
+        }).ToArray();
         if (groups.Length == 0)
             return null;
-        double totalWeight = groups.Sum(group => group.Weight);
+        double totalBonus = groups.Sum(group => group.Bonus);
+        double totalSharedWeight = groups.Sum(group => group.Weight) + totalBonus;
         double totalIntentWeight = groups.Sum(group => group.IntentWeight);
         double shared = totalIntentWeight > 0 ? settings.SharedNonAttackWeight : 1;
+        double strength = profile.Favorites?.Values.Sum() ?? 0;
+        double direct = totalBonus > 0
+            ? Math.Clamp(settings.FavoriteDirectBaseShare + strength * settings.FavoriteDirectStrengthMultiplier, 0, 1)
+            : 0;
         var candidates = groups.SelectMany(group =>
         {
-            double directional = totalIntentWeight > 0 ? group.IntentWeight / (totalIntentWeight * group.Weight) : 0;
-            double factor = (1 - shared) * directional + shared / totalWeight;
-            return group.Members.Select(candidate => (Candidate: candidate,
-                Weight: candidate.Weight * factor * MatchingWeight(candidate.Value, target, scale)));
-        }).ToArray();
+            double directional = group.IntentWeight > 0 ? group.IntentWeight / (totalIntentWeight * group.Weight) : 0;
+            return group.Members.Select(candidate =>
+            {
+                double regular = (1 - shared) * directional * candidate.Weight +
+                    shared * (candidate.Weight + candidate.SharedWeightBonus) / totalSharedWeight;
+                double priority = direct > 0 ? direct * candidate.SharedWeightBonus / totalBonus : 0;
+                return (Candidate: candidate, Weight: ((1 - direct) * regular + priority) *
+                    MatchingWeight(candidate.Value, target, scale));
+            });
+        }).Where(candidate => candidate.Weight > 0).ToArray();
         double skip = maySkip ? candidates.Sum(x => x.Weight) * candidates.Min(x => x.Candidate.Value) / target : 0;
         return Draw(candidates, skip, random);
     }

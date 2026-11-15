@@ -25,6 +25,8 @@ internal sealed class RuleConfiguration
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
         if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0 || PoolSettings.HighAscensionActionValueMultiplier < 1)
             throw new ArgumentException("全局行动力倍率须为正数，混沌倍率须为非负数，高进阶行动力倍率须至少为 1。");
+        if (PoolSettings.FavoriteDirectBaseShare is < 0 or > 1 || PoolSettings.FavoriteDirectStrengthMultiplier < 0)
+            throw new ArgumentException("偏好直占基础值须在 0 到 1 之间，强度系数须为非负数。");
         if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
             PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
             PoolSettings.FullChaosBudgetAt <= 1 || PoolSettings.OpeningStrengthAtMax < 1 ||
@@ -108,9 +110,9 @@ internal sealed class RuleConfiguration
             Read<Dictionary<IntentStyle, double>>(entry.GetProperty("preferences")),
             entry.TryGetProperty("effects", out var effects) ? Read<Dictionary<EffectKind, double>>(effects) : null,
             entry.TryGetProperty("cards", out var cards) ? Read<StatusPlacement[]>(cards) : null,
-            entry.TryGetProperty("attackSpend", out var spend) ? spend.GetDouble() : null,
             SingleHitPreference: entry.TryGetProperty("singleHitPreference", out var single) ? single.GetDouble() : 1,
-            DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1);
+            DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1,
+            Favorites: entry.TryGetProperty("favorites", out var favorites) ? Read<Dictionary<EffectKind, double>>(favorites) : null);
         return new MonsterRules(profile,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
             entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),

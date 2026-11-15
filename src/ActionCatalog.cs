@@ -13,8 +13,12 @@ public enum EffectKind
 public enum EffectTarget { Self, Player }
 public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 
-public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null)
+public sealed record StatusCardDestination(StatusPile Pile, int Amount);
+
+public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null,
+    IReadOnlyList<StatusCardDestination>? SplitDestinations = null)
 {
+    public IReadOnlyList<StatusCardDestination> CardDestinations => SplitDestinations ?? [new(Pile ?? StatusPile.Discard, Amount)];
     public EffectTarget Target => TargetFor(Kind);
     public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or
         EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns
@@ -104,19 +108,19 @@ public sealed record ActionHistory(
 
 public sealed class ActionCatalog(ActionValuationSettings settings)
 {
+    internal static bool CanFavor(EffectKind kind, string? monsterId) => Enum.IsDefined(kind) &&
+        kind is not (EffectKind.Attack or EffectKind.Wait) && (kind != EffectKind.GainSteam || monsterId == "WATERFALL_GIANT");
+
     public IEnumerable<ActionCandidate> Generate(
         MonsterProfile profile, ActionContext context, ActionHistory history, int turn)
     {
-        var actions = profile.EffectWeights;
         double cardBaseline = settings.CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
-            double defaultPreference = buff.Common ? 1 : 0;
-            double preference = actions?.GetValueOrDefault(kind, defaultPreference) ?? defaultPreference;
-            double weight = Weight(preference, buff.RoomWeight);
-            if (weight <= 0 || context.ActiveEffects?.Contains(kind) == true)
+            var (weight, bonus) = Weights(kind, buff.Common, buff.RoomWeight);
+            if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             var style = ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff;
             var doses = buff.Doses(profile).Select(amount => (Amount: amount, Value: OpeningValuation.Evaluate(buff, profile, amount)))
@@ -124,17 +128,16 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             foreach (var dose in doses)
             {
                 var effect = new ActionEffect(kind, dose.Amount);
-                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight / doses.Length, Effects: [effect]);
+                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight / doses.Length,
+                    Effects: [effect], SharedWeightBonus: bonus / doses.Length);
             }
         }
         foreach (var (kind, levels) in settings.Amounts)
         {
             if (ActionEffect.IsMonsterBuff(kind))
                 continue;
-            double defaultPreference = IsCommon(kind) ? 1 : 0;
-            double preference = actions?.GetValueOrDefault(kind, defaultPreference) ?? defaultPreference;
-            double weight = Weight(preference, settings.Weights?.GetValueOrDefault(kind));
-            if (weight <= 0 || context.ActiveEffects?.Contains(kind) == true)
+            var (weight, bonus) = Weights(kind, IsCommon(kind), settings.Weights?.GetValueOrDefault(kind));
+            if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
             if (ActionEffect.IsRareDebuff(kind) && (!context.SpecialDebuffAvailable || turn <= 1 ||
                 context.SpecialDebuffRoll >= settings.SpecialDebuffChance))
@@ -184,16 +187,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         var placements = profile.CardPlacements?.Where(place => place.Card == kind).ToArray();
                         if (placements is not { Length: > 0 })
                             placements = [new(kind, StatusPile.Top), new(kind, StatusPile.Draw), new(kind, StatusPile.Discard)];
-                        foreach (var placement in placements)
-                        {
-                            if (kind == EffectKind.Dazed && placement.Pile is StatusPile.Hand or StatusPile.Bottom)
-                                continue;
-                            if (placement.Pile == StatusPile.Hand && kind is EffectKind.Void or EffectKind.Amnesia or
-                                EffectKind.MindRot or EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration)
-                                continue;
-
-                            Add(kind, amount, IntentStyle.PlayerDebuff, placement.Pile, placement.Weight);
-                        }
+                        AddCards(kind, amount, placements);
                         break;
                 }
             }
@@ -201,28 +195,69 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             double total = extras.Sum(extra => extra.Weight);
             foreach (var extra in extras)
                 yield return new ActionCandidate(EffectName(extra.Effect), extra.Style, false, extra.Value, 0,
-                    extra.Weight / total * weight, Effects: [extra.Effect]);
+                    extra.Weight / total * weight, Effects: [extra.Effect], SharedWeightBonus: extra.Weight / total * bonus);
         }
 
-        double Weight(double preference, RoomWeight? roomWeight) => preference <= 0 ? 0 :
-            (preference + (1 - preference) * settings.ChaosProgress) * (roomWeight?.At(context.Rooms, settings.ChaosProgress) ?? 1);
+        (double Base, double Bonus) Weights(EffectKind kind, bool common, RoomWeight? roomWeight)
+        {
+            double? configured = profile.EffectWeights != null && profile.EffectWeights.TryGetValue(kind, out double preference)
+                ? preference : null;
+            if (configured is <= 0)
+                return (0, 0);
 
-        void Add(EffectKind kind, int amount, IntentStyle style, StatusPile? pile = null, double weight = 1,
-            double effectiveAmount = 0)
+            double baseWeight = configured ?? (common ? 1 : 0);
+            if (baseWeight > 0)
+                baseWeight += (1 - baseWeight) * settings.ChaosProgress;
+            double roomFactor = roomWeight?.At(context.Rooms, settings.ChaosProgress) ?? 1;
+            return (baseWeight * roomFactor, (profile.Favorites?.GetValueOrDefault(kind) ?? 0) * roomFactor);
+        }
+
+        void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)
         {
             double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount);
-            if (pile is StatusPile position)
+            if (value > 0)
+                extras.Add((new ActionEffect(kind, amount), style, value, 1));
+        }
+
+        void AddCards(EffectKind kind, int amount, StatusPlacement[] placements)
+        {
+            var available = placements.Where(place => place.Weight > 0 && CanPlace(kind, place.Pile))
+                .GroupBy(place => place.Pile)
+                .Select(group => new StatusPlacement(kind, group.Key, group.Sum(place => place.Weight)))
+                .OrderByDescending(place => place.Weight).ToArray();
+            double value = settings.Valuation.Evaluate(kind, profile, amount);
+            double ratio = Math.Max(cardBaseline, settings.CardPlayerActionValueRatios?.GetValueOrDefault(kind) ?? 0);
+            double perCard = Math.Max(0, value / amount - ratio * settings.CardStartingPlayerActionValue)
+                + ratio * profile.PlayerActionValue;
+            if (perCard <= 0)
+                return;
+
+            // Every dose has one set of placement weights, including the split variants.
+            var variants = new List<(ActionEffect Effect, double Value, double Weight)>();
+            var values = settings.PlacementValues ?? new StatusPlacementValues();
+            for (int mask = 1; mask < (1 << available.Length); mask++)
             {
-                double ratio = Math.Max(cardBaseline, settings.CardPlayerActionValueRatios?.GetValueOrDefault(kind) ?? 0);
-                double rate = amount * ratio;
-                double fixedValue = Math.Max(0, value - rate * settings.CardStartingPlayerActionValue);
-                value = (fixedValue + rate * profile.PlayerActionValue) *
-                    (settings.PlacementValues ?? new StatusPlacementValues()).For(position);
+                var selected = available.Where((_, index) => (mask & (1 << index)) != 0).ToArray();
+                if (selected.Length > amount)
+                    continue;
+                var destinations = selected.Select((placement, index) => new StatusCardDestination(placement.Pile,
+                    amount / selected.Length + (index < amount % selected.Length ? 1 : 0))).ToArray();
+                var effect = destinations.Length == 1 ? new ActionEffect(kind, amount, Pile: destinations[0].Pile)
+                    : new ActionEffect(kind, amount, SplitDestinations: destinations);
+                double cost = perCard * destinations.Sum(destination => destination.Amount * values.For(destination.Pile));
+                if (cost > 0)
+                    variants.Add((effect, cost, selected.Average(place => place.Weight)));
             }
-            if (value > 0 && weight > 0)
-                extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, weight));
+            double total = variants.Sum(variant => variant.Weight);
+            foreach (var variant in variants)
+                extras.Add((variant.Effect, IntentStyle.PlayerDebuff, variant.Value, variant.Weight / total));
         }
     }
+
+    private static bool CanPlace(EffectKind kind, StatusPile pile) =>
+        !(kind == EffectKind.Dazed && pile is StatusPile.Hand or StatusPile.Bottom) &&
+        !(pile == StatusPile.Hand && kind is EffectKind.Void or EffectKind.Amnesia or EffectKind.MindRot or
+            EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration);
 
     public ActionCandidate? BuildAttack(MonsterProfile profile, ActionContext context, int hits, double target)
     {
@@ -238,5 +273,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         EffectKind.Vulnerable or EffectKind.Frail || ActionEffect.IsCard(kind);
 
     private static string EffectName(ActionEffect effect) =>
-        $"{effect.Kind} {effect.Amount}" + (effect.Pile is { } pile ? $" @{pile}" : "");
+        $"{effect.Kind} {effect.Amount}" + (effect.SplitDestinations is { } split
+            ? " @" + string.Join("+", split.Select(destination => $"{destination.Pile}:{destination.Amount}"))
+            : effect.Pile is { } pile ? $" @{pile}" : "");
 }

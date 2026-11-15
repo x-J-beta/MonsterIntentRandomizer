@@ -143,17 +143,20 @@ internal static class NativeActions
         _ => throw new ArgumentOutOfRangeException(nameof(effect))
     };
 
-    private static Task Insert<T>(IReadOnlyList<Creature> targets, ActionEffect effect) where T : CardModel
+    private static async Task Insert<T>(IReadOnlyList<Creature> targets, ActionEffect effect) where T : CardModel
     {
-        var (pile, position) = effect.Pile switch
+        foreach (var destination in effect.CardDestinations.OrderBy(destination => destination.Pile is StatusPile.Top or StatusPile.Bottom))
         {
-            StatusPile.Hand => (PileType.Hand, CardPilePosition.Bottom),
-            StatusPile.Top => (PileType.Draw, CardPilePosition.Top),
-            StatusPile.Draw => (PileType.Draw, CardPilePosition.Random),
-            StatusPile.Bottom => (PileType.Draw, CardPilePosition.Bottom),
-            _ => (PileType.Discard, CardPilePosition.Bottom)
-        };
-        return CardPileCmd.AddToCombatAndPreview<T>(targets, pile, effect.Amount, null, position);
+            var (pile, position) = destination.Pile switch
+            {
+                StatusPile.Hand => (PileType.Hand, CardPilePosition.Bottom),
+                StatusPile.Top => (PileType.Draw, CardPilePosition.Top),
+                StatusPile.Draw => (PileType.Draw, CardPilePosition.Random),
+                StatusPile.Bottom => (PileType.Draw, CardPilePosition.Bottom),
+                _ => (PileType.Discard, CardPilePosition.Bottom)
+            };
+            await CardPileCmd.AddToCombatAndPreview<T>(targets, pile, destination.Amount, null, position);
+        }
     }
 
     // Both strength variants map to the same native power.

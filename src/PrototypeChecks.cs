@@ -247,7 +247,13 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Special debuffs bypassed the first-turn, chance or encounter restriction.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
-        var mixedProfile = varied with { AttackSpend = 0.5, Volatility = 0, DesireHitPreference = 0 };
+        var mixedProfile = varied with
+        {
+            IntentWeights = varied.IntentWeights.ToDictionary(entry => entry.Key,
+                entry => entry.Key == IntentStyle.Attack ? 3 : entry.Value),
+            Volatility = 0,
+            DesireHitPreference = 0
+        };
         var weakenedMixed = Enumerable.Range(0, 50).Select(seed => planner.Plan(new Pools(0, 2), mixedProfile,
             [Pure(EffectKind.Weak)], new Random(seed),
             buildAttack: (hits, target) => catalog.BuildAttack(mixedProfile, context with { Weakened = true }, hits, target)))
@@ -262,9 +268,25 @@ internal static class PrototypeChecks
         var preferred = catalog.Generate(preferences, context, new ActionHistory(), 1)
             .Where(action => !action.IsAttack).ToDictionary(action => action.Id);
         Equal(2 * preferred["Vulnerable 1"].Weight, preferred["Weak 1"].Weight, "per-effect preference weights");
+        var favorites = preferences with
+        {
+            AttackFrequency = 0,
+            Favorites = new Dictionary<EffectKind, double> { [EffectKind.Weak] = 5 }
+        };
+        var favored = catalog.Generate(favorites, context, new ActionHistory(), 1).ToArray();
+        Equal(preferred["Weak 1"].Weight, favored.Single(action => action.Id == "Weak 1").Weight,
+            "favorites preserve directional weights");
+        Equal(5, favored.Where(action => action.Effects![0].Kind == EffectKind.Weak).Sum(action => action.SharedWeightBonus),
+            "doses share the configured bonus");
+        var directPlanner = new ActionPlanner(new PoolSettings(0.75, 0.9, NonAttackCandidates: 1,
+            FavoriteDirectBaseShare: 0.25, FavoriteDirectStrengthMultiplier: 0.15));
+        var picked = Enumerable.Range(0, 30).Select(seed => directPlanner.Plan(new Pools(0, 0), favorites,
+            favored, new Random(seed)).Action!).Where(action => action.Effects!.Count > 0).ToArray();
+        if (picked.Length == 0 || picked.Any(action => action.Effects![0].Kind != EffectKind.Weak))
+            throw new InvalidOperationException("A full direct preference share should select available favorites.");
         var customAmounts = new Dictionary<EffectKind, int[]>(amounts)
         {
-            [EffectKind.Block] = [4], [EffectKind.Weak] = [2]
+            [EffectKind.Block] = [4], [EffectKind.Weak] = [2], [EffectKind.Wound] = [3]
         };
         var tunedCatalog = new ActionCatalog(catalogSettings with { Amounts = customAmounts, MinimumBaseDamagePerHit = 2,
             Buffs = new Dictionary<EffectKind, StatusValue>(buffs) { [EffectKind.Strength] = buffs[EffectKind.Strength] with { MaxAmount = 2 } } });
@@ -272,6 +294,11 @@ internal static class PrototypeChecks
             .ToArray();
         Equal(4 * 0.4, tuned.Single(action => action.Id == "Block 4").Value, "configured block dose");
         Equal(2 * 0.15 * profile.ActionValue, tuned.Single(action => action.Id == "Weak 2").Value, "configured debuff duration");
+        var split = tuned.Single(action => action.Id == "Wound 3 @Top:2+Discard:1");
+        Equal(2.5 * (2 * 1.33 + 0.75), split.Value, "split cards use the price of each destination");
+        if (split.Effects is not [{ Amount: 3, CardDestinations: [{ Pile: StatusPile.Top, Amount: 2 },
+                { Pile: StatusPile.Discard, Amount: 1 }] }])
+            throw new InvalidOperationException("Cards should be distributed as one action with multiple destinations.");
         if (!tuned.Any(action => action.Id == "Strength 2") ||
             tunedCatalog.BuildAttack(varied, context, 1, 1)?.Effects?[0].Amount != 2)
             throw new InvalidOperationException("Configured dosages or minimum base damage were ignored.");

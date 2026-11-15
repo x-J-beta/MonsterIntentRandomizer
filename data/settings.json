@@ -11,6 +11,8 @@
     "drawBudgetMultiplier": 1.4000000000000001,
     "localOverdraftShare": 0.3,
     "nonAttackCandidates": 5,
+    "favoriteDirectBaseShare": 0.10,
+    "favoriteDirectStrengthMultiplier": 0.02,
     "unusedAttackBudgetShare": 0.5,
     "fullChaosBudgetAt": 5,
     "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 },

@@ -197,5 +197,5 @@ internal static class SimulationPage
         effect.Kind == EffectKind.Attack
             ? $"攻击 {action.Damage / effect.Hits:0} × {effect.Hits}"
             : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}" +
-                (effect.IsStatusCard ? $"（{IntentDetails.PlacementName(effect.Pile)}）" : "")));
+                (effect.IsStatusCard ? $"（{IntentDetails.DescribeDestinations(effect)}）" : "")));
 }

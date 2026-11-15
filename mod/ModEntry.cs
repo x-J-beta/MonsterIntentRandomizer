@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 17;
+    private const int SettingsRevision = 18;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -70,15 +70,27 @@ internal static class ModSettings
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var pools = settings["pools"]!.AsObject();
+        pools["favoriteDirectBaseShare"] ??= defaultSettings["pools"]!["favoriteDirectBaseShare"]!.DeepClone();
+        pools["favoriteDirectStrengthMultiplier"] ??= defaultSettings["pools"]!["favoriteDirectStrengthMultiplier"]!.DeepClone();
         pools.Remove("highAscensionActionValueBonus");
         pools["highAscensionActionValueMultiplier"] ??= defaultSettings["pools"]!["highAscensionActionValueMultiplier"]!.DeepClone();
         var actions = settings["actions"]!;
         actions["statusCardPlayerActionValueRatios"] ??= defaultSettings["actions"]!["statusCardPlayerActionValueRatios"]!.DeepClone();
-        if (stored.Revision >= 16)
-            return stored with { Settings = JsonSerializer.SerializeToElement(settings), Revision = SettingsRevision };
-
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
+        var monsters = profiles["monsters"]!.AsObject();
+        (profiles["defaults"] as JsonObject)?.Remove("attackSpend");
+        foreach (var (id, profile) in monsters)
+        {
+            if (profile is not JsonObject entry)
+                continue;
+            entry.Remove("attackSpend");
+            if (defaultProfiles[id]?["favorites"] is { } favorites)
+                entry["favorites"] ??= favorites.DeepClone();
+        }
+        if (stored.Revision >= 16)
+            return Updated();
+
         if (settings["buffs"] is not JsonObject buffs)
             throw new ArgumentException("旧配置缺少共用强化池，请先用上一版保存一次。");
 
@@ -98,7 +110,6 @@ internal static class ModSettings
         buffs["PainfulStabs"] ??= JsonNode.Parse(Defaults.Settings.GetProperty("buffs").GetProperty("PainfulStabs").GetRawText());
 
         CleanProfile(profiles["defaults"]);
-        var monsters = profiles["monsters"]!.AsObject();
         foreach (var (_, profile) in monsters)
             CleanProfile(profile);
         var allMoves = defaultProfiles.Where(pair => pair.Value?["randomizeAllMoves"]?.GetValue<bool>() == true)
@@ -147,7 +158,9 @@ internal static class ModSettings
                 excluded.Remove(excludedMonster);
         }
 
-        return stored with
+        return Updated();
+
+        StoredSettings Updated() => stored with
         {
             Settings = JsonSerializer.SerializeToElement(settings),
             Profiles = JsonSerializer.SerializeToElement(profiles),
@@ -204,10 +217,12 @@ internal static class ModSettings
         foreach (var (id, monster) in rules.Monsters)
         {
             if (monster.Profile.ActionValue <= 0 ||
-                monster.Profile.AttackFrequency < 0 || monster.Profile.AttackSpend is < 0 or > 1 ||
+                monster.Profile.AttackFrequency < 0 ||
                 monster.Profile.SingleHitPreference < 0 || monster.Profile.DesireHitPreference < 0 ||
                 monster.Profile.Volatility < 0 || monster.Profile.NonAttackMultiplier < 0)
                 throw new ArgumentException($"{id} 的行动力须为正数，其余怪物参数须为非负数。");
+            if (monster.Profile.Favorites?.Any(entry => !ActionCatalog.CanFavor(entry.Key, id) || entry.Value < 0) == true)
+                throw new ArgumentException($"{id} 的行动偏好须为可用的非攻击行动，权重须为非负数。");
             if (id != "WATERFALL_GIANT" && monster.Profile.EffectWeights?.GetValueOrDefault(EffectKind.GainSteam) > 0)
                 throw new ArgumentException($"{id} 无法获得蒸汽喷发。");
             foreach (string state in monster.OpeningStates)

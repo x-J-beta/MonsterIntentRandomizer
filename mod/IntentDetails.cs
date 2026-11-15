@@ -66,13 +66,8 @@ internal static class IntentDetails
         var (zh, en) = Names(effect.Kind);
         if (effect.IsStatusCard)
         {
-            (string pileZh, string pileEn) = effect.Pile switch
-            {
-                StatusPile.Hand => ("手牌", "the hand"), StatusPile.Top => ("抽牌堆顶", "the top of the draw pile"),
-                StatusPile.Draw => ("抽牌堆（随机位置）", "a random position in the draw pile"), StatusPile.Bottom => ("抽牌堆底", "the bottom of the draw pile"),
-                _ => ("弃牌堆", "the discard pile")
-            };
-            return chinese ? (zh, $"向玩家的{pileZh}加入 {n} 张{zh}。") : (en, $"Adds {n} {en} to {pileEn}.");
+            string destinations = DescribeDestinations(effect, chinese);
+            return chinese ? (zh, $"加入 {n} 张{zh}（{destinations}）。") : (en, $"Adds {n} {en} ({destinations}).");
         }
 
         return effect.Kind switch
@@ -139,9 +134,17 @@ internal static class IntentDetails
             _ => (kind.ToString(), kind.ToString())
         };
 
-    internal static string PlacementName(StatusPile? place) => place switch
-    {
-        StatusPile.Hand => "手牌", StatusPile.Top => "抽牌堆顶", StatusPile.Draw => "洗入抽牌堆",
-        StatusPile.Bottom => "抽牌堆底", _ => "弃牌堆"
-    };
+    internal static string DescribeDestinations(ActionEffect effect, bool chinese = true) =>
+        string.Join(chinese ? "、" : ", ", effect.CardDestinations.Select(destination =>
+        {
+            var (zh, en) = destination.Pile switch
+            {
+                StatusPile.Hand => ("手牌", "the hand"),
+                StatusPile.Top => ("抽牌堆顶", "the top of the draw pile"),
+                StatusPile.Draw => ("洗入抽牌堆", "random positions in the draw pile"),
+                StatusPile.Bottom => ("抽牌堆底", "the bottom of the draw pile"),
+                _ => ("弃牌堆", "the discard pile")
+            };
+            return chinese ? $"{zh} {destination.Amount} 张" : $"{destination.Amount} to {en}";
+        }));
 }

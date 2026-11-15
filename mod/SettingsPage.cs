@@ -111,6 +111,8 @@ internal static class SettingsPage
         AddNumber("抽取预算倍率", 0.01, 5, 0.01, "pools", "drawBudgetMultiplier");
         AddNumber("局部透支占基础行动力比例", 0, 1, 0.01, "pools", "localOverdraftShare");
         AddNumber("非攻击候选数", 1, 20, 1, "pools", "nonAttackCandidates");
+        AddNumber("偏好直占比例基础值（0.10 = 10%）", 0, 1, 0.01, "pools", "favoriteDirectBaseShare");
+        AddNumber("偏好强度对直占比例的系数", 0, 1, 0.01, "pools", "favoriteDirectStrengthMultiplier");
         AddNumber("无攻击时转给其他行动的比例", 0, 1, 0.01, "pools", "unusedAttackBudgetShare");
         AddNumber("预算达到混沌目标的倍率", 1.01, 10, 0.01, "pools", "fullChaosBudgetAt");
         foreach (var (id, label) in new[] { ("attack", "攻击"), ("buff", "强化"), ("defend", "防御"), ("playerDebuff", "减益") })
@@ -233,6 +235,17 @@ internal static class SettingsPage
     {
         var list = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         panel.AddChild(list);
+        var favoriteHeader = new Label { Text = "行动偏好" };
+        favoriteHeader.AddThemeFontSizeOverride("font_size", 22);
+        panel.AddChild(favoriteHeader);
+        var favoritePicker = new HBoxContainer();
+        var effects = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var addFavorite = new Button { Text = "添加偏好" };
+        favoritePicker.AddChild(effects);
+        favoritePicker.AddChild(addFavorite);
+        panel.AddChild(favoritePicker);
+        var favorites = new VBoxContainer();
+        panel.AddChild(favorites);
         var availability = new Label();
         panel.AddChild(availability);
         var randomize = new CheckButton { Text = "启用该怪物的随机出招" };
@@ -244,7 +257,6 @@ internal static class SettingsPage
         {
             (Group: "", Key: "actionValue", Label: "基础行动力"),
             (Group: "", Key: "attackFrequency", Label: "每回合目标攻击段数"),
-            (Group: "", Key: "attackSpend", Label: "攻击花费比例"),
             (Group: "", Key: "singleHitPreference", Label: "单段攻击偏好倍率"),
             (Group: "", Key: "desireHitPreference", Label: "欲望段数偏好倍率"),
             (Group: "", Key: "volatility", Label: "行动力波动"),
@@ -258,13 +270,20 @@ internal static class SettingsPage
         string? selected = null;
         foreach (var (group, key, label) in values)
         {
-            var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, key == "attackSpend" ? 1 : 100, 0.01);
-            input.AllowGreater = key != "attackSpend";
+            var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, 100, 0.01);
             inputs.Add(input);
             input.ValueChanged += value =>
-                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value,
-                    refresh: key == "attackFrequency");
+                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value);
         }
+        addFavorite.Pressed += () =>
+        {
+            string key = ((EffectKind)effects.GetSelectedId()).ToString();
+            EditMonster(monster =>
+            {
+                monster["favorites"] ??= new JsonObject();
+                monster["favorites"]![key] ??= JsonValue.Create(3.0);
+            }, refresh: true);
+        };
         randomize.Toggled += value => EditMonster(monster => monster["enabled"] = value, refresh: true);
         requiredPower.TextChanged += value => EditMonster(monster =>
         {
@@ -302,6 +321,7 @@ internal static class SettingsPage
             catch (Exception)
             {
                 list.Clear();
+                RefreshFavorites(null, false);
                 foreach (var input in inputs)
                     input.Editable = false;
                 availability.Text = "请先修复画像 JSON。";
@@ -324,13 +344,46 @@ internal static class SettingsPage
                 var value = group.Length == 0 ? monster?[key] ?? document["defaults"]?[key] : monster?[group]?[key];
                 if (value == null && key is "singleHitPreference" or "desireHitPreference")
                     value = JsonValue.Create(1.0);
-                if (key == "attackSpend" && value == null && monster != null)
-                    value = JsonValue.Create(RuleConfiguration.ReadMonster(JsonSerializer.SerializeToElement(monster),
-                        JsonSerializer.SerializeToElement(document["defaults"])).Profile.BudgetedAttackShare);
                 bool present = value is JsonValue number && number.TryGetValue<double>(out _);
                 inputs[i].Editable = present && active;
                 inputs[i].SetValueNoSignal(present ? value!.GetValue<double>() : 0);
             }
+            RefreshFavorites(monster?["favorites"] as JsonObject, active);
+        }
+
+        void RefreshFavorites(JsonObject? configured, bool active)
+        {
+            effects.Clear();
+            foreach (var child in favorites.GetChildren())
+            {
+                favorites.RemoveChild(child);
+                child.QueueFree();
+            }
+
+            foreach (var (key, value) in configured?.AsEnumerable() ?? [])
+            {
+                string label = Enum.TryParse(key, true, out EffectKind kind) ? IntentDetails.Names(kind).Chinese : key;
+                var row = new HBoxContainer();
+                favorites.AddChild(row);
+                var input = NumberRow(row, label, 0, 100, 0.01);
+                ((Control)input.GetParent()).SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                input.Editable = active;
+                input.SetValueNoSignal(value?.GetValue<double>() ?? 0);
+                input.ValueChanged += weight => EditMonster(monster => monster["favorites"]![key] = weight);
+                var remove = new Button { Text = "移除", Disabled = !active };
+                remove.Pressed += () => EditMonster(monster => monster["favorites"]!.AsObject().Remove(key), refresh: true);
+                row.AddChild(remove);
+            }
+
+            foreach (var kind in Enum.GetValues<EffectKind>().OrderBy(kind => IntentDetails.Names(kind).Chinese))
+                if (ActionCatalog.CanFavor(kind, selected) &&
+                    configured?.Any(pair => string.Equals(pair.Key, kind.ToString(), StringComparison.OrdinalIgnoreCase)) != true)
+                    effects.AddItem(IntentDetails.Names(kind).Chinese, (int)kind);
+            if (effects.ItemCount > 0)
+                effects.Select(0);
+            effects.Disabled = !active || effects.ItemCount == 0;
+            effects.TooltipText = "选中招式后点击添加。数值增加该招式的共享权重和直占权重。";
+            addFavorite.Disabled = effects.Disabled;
         }
 
         void EditMonster(Action<JsonNode> edit, bool refresh = false)
