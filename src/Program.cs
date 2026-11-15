@@ -35,7 +35,7 @@ var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
 var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
     throw new ArgumentException($"Unknown action value tier: {ascension}.");
-var profile = rules.PoolSettings.Adjust(configured.AtAscension(ascension == "deadlyEnemies"));
+var profile = rules.PoolSettings.Adjust(configured.Profile, ascension == "deadlyEnemies");
 if (!configured.Enabled)
 {
     Console.WriteLine($"{monsterId}: original actions retained (enabled is false).");
@@ -112,7 +112,8 @@ string fallbackScore = hasFallback && fallback.TryGetProperty("actualScore", out
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 foreach (var turn in ActionSimulation.Trace(rules, profile, ownOpening, seed,
     sample.GetProperty("traceTurns").GetInt32(), configured.FullBlockChance,
-    firstEnemyAction: enemies[0].FirstEnemyAction, fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
+    fixedOpening: configured.FixedOpening, firstEnemyAction: enemies[0].FirstEnemyAction,
+    fallbackValue: fallbackActionValue, fallbackHits: fallbackHits, rooms: rooms, enemyCount: enemies.Length))
 {
     var action = turn.Plan;
     string moveName = action.Action?.Id ?? (turn.UsedFallback ? "vanilla fallback" : turn.Imbalanced ? "imbalanced" : "skipped");

@@ -4,6 +4,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models;
 
 namespace MonsterIntentRandomizer;
 
@@ -13,6 +14,7 @@ public static class ModEntry
     public static void Initialize()
     {
         ModSettings.Load();
+        ModelDb.Inject(typeof(RandomizedPainfulStabsPower));
         new Harmony("MonsterIntentRandomizer").PatchAll(typeof(ModEntry).Assembly);
         Log.Info("[MonsterIntentRandomizer] Loaded.");
     }
@@ -25,7 +27,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 14;
+    private const int SettingsRevision = 16;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -68,12 +70,14 @@ internal static class ModSettings
             return stored;
 
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
+        var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         if (settings["buffs"] is not JsonObject buffs)
             throw new ArgumentException("旧配置缺少共用强化池，请先用上一版保存一次。");
 
         if (stored.Revision <= 12)
-            UpgradeBuffPrices(settings, JsonNode.Parse(Defaults.Settings.GetRawText())!);
+            UpgradeBuffPrices(settings, defaultSettings);
 
         buffs.Remove("CurlUp");
         (settings["opening"]?["states"] as JsonObject)?.Remove("CURL_UP");
@@ -84,10 +88,60 @@ internal static class ModSettings
         actions.AsObject().Remove("hpPerSurvivalTurnCaps");
         settings["pools"]!["openingStrengthAtMax"] ??=
             Defaults.Settings.GetProperty("pools").GetProperty("openingStrengthAtMax").GetDouble();
+        settings["pools"]!["highAscensionActionValueBonus"] ??= defaultSettings["pools"]!["highAscensionActionValueBonus"]!.DeepClone();
+        actions["valuation"]!["GainSteam"] ??= defaultSettings["actions"]!["valuation"]!["GainSteam"]!.DeepClone();
+        actions["maxAmounts"]!["GainSteam"] ??= defaultSettings["actions"]!["maxAmounts"]!["GainSteam"]!.DeepClone();
+        buffs["PainfulStabs"] ??= JsonNode.Parse(Defaults.Settings.GetProperty("buffs").GetProperty("PainfulStabs").GetRawText());
 
         CleanProfile(profiles["defaults"]);
-        foreach (var (_, profile) in profiles["monsters"]!.AsObject())
+        var monsters = profiles["monsters"]!.AsObject();
+        foreach (var (_, profile) in monsters)
             CleanProfile(profile);
+        var allMoves = defaultProfiles.Where(pair => pair.Value?["randomizeAllMoves"]?.GetValue<bool>() == true)
+            .Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (string id in allMoves)
+        {
+            if (monsters[id] is not JsonObject profile)
+                continue;
+            profile["randomizeAllMoves"] = true;
+            if (profile["enabled"]?.GetValue<bool>() == false)
+                profile["enabled"] = true;
+            foreach (string key in new[] { "fixedOpening", "randomMoves", "keepMoves", "randomizeWhenPower" })
+                profile.Remove(key);
+        }
+        foreach (string id in new[] { "LAGAVULIN_MATRIARCH", "SLUMBERING_BEETLE", "WATERFALL_GIANT", "AEONGLASS", "VANTOM", "KNOWLEDGE_DEMON" })
+        {
+            if (monsters[id] is not JsonObject profile)
+                continue;
+            profile.Remove("randomizeAllMoves");
+            profile["randomMoves"] = defaultProfiles[id]!["randomMoves"]!.DeepClone();
+            if (id is "LAGAVULIN_MATRIARCH" or "SLUMBERING_BEETLE")
+            {
+                profile.Remove("fixedOpening");
+                profile["openingStates"] = new JsonArray();
+            }
+        }
+        if (monsters["WATERFALL_GIANT"] is JsonObject giant)
+        {
+            giant["fixedOpening"] = true;
+            giant["effects"] ??= new JsonObject();
+            giant["effects"]!["GainSteam"] ??= defaultProfiles["WATERFALL_GIANT"]!["effects"]!["GainSteam"]!.DeepClone();
+        }
+        if (monsters["AEONGLASS"] is JsonObject aeonglass)
+        {
+            aeonglass["keepMoves"] ??= new JsonArray();
+            var moves = aeonglass["keepMoves"]!.AsArray();
+            if (!moves.Any(move => move?.GetValue<string>() == "INCREASING_INTENSITY_MOVE"))
+                moves.Add("INCREASING_INTENSITY_MOVE");
+        }
+        if (monsters["QUEEN"] is JsonObject queen)
+            queen["keepVanillaWhileAllyAlive"] ??= "TORCH_HEAD_AMALGAM";
+        if (profiles["keepVanilla"] is JsonArray excluded)
+        {
+            allMoves.UnionWith(["TORCH_HEAD_AMALGAM", "WATERFALL_GIANT", "LAGAVULIN_MATRIARCH", "SLUMBERING_BEETLE"]);
+            foreach (var excludedMonster in excluded.Where(entry => entry != null && allMoves.Contains(entry.GetValue<string>())).ToArray())
+                excluded.Remove(excludedMonster);
+        }
 
         return stored with
         {
@@ -99,6 +153,7 @@ internal static class ModSettings
         static void CleanProfile(JsonNode? profile)
         {
             (profile as JsonObject)?.Remove("hitWeights");
+            (profile as JsonObject)?.Remove("deadlyEnemies");
             (profile?["effects"] as JsonObject)?.Remove("CurlUp");
             if (profile?["openingStates"] is JsonArray pool)
                 foreach (var entry in pool.Where(entry => entry?.GetValue<string>() == "CURL_UP").ToArray())
@@ -144,11 +199,13 @@ internal static class ModSettings
 
         foreach (var (id, monster) in rules.Monsters)
         {
-            if (monster.Profile.ActionValue <= 0 || monster.DeadlyEnemies is <= 0 ||
+            if (monster.Profile.ActionValue <= 0 ||
                 monster.Profile.AttackFrequency < 0 || monster.Profile.AttackSpend is < 0 or > 1 ||
                 monster.Profile.SingleHitPreference < 0 || monster.Profile.DesireHitPreference < 0 ||
                 monster.Profile.Volatility < 0 || monster.Profile.NonAttackMultiplier < 0)
                 throw new ArgumentException($"{id} 的行动力须为正数，其余怪物参数须为非负数。");
+            if (id != "WATERFALL_GIANT" && monster.Profile.EffectWeights?.GetValueOrDefault(EffectKind.GainSteam) > 0)
+                throw new ArgumentException($"{id} 无法获得蒸汽喷发。");
             foreach (string state in monster.OpeningStates)
             {
                 if (!rules.OpeningValues.ContainsKey(state) || !NativeActions.SupportsOpening(state))

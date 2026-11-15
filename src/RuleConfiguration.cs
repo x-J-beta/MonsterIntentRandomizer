@@ -23,8 +23,8 @@ internal sealed class RuleConfiguration
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
-        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0)
-            throw new ArgumentException("全局行动力倍率须为正数，混沌程度倍率须为非负数。");
+        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0 || PoolSettings.HighAscensionActionValueBonus < 0)
+            throw new ArgumentException("全局行动力倍率须为正数，混沌倍率和高进阶行动力加成须为非负数。");
         if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
             PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
             PoolSettings.FullChaosBudgetAt <= 1 || PoolSettings.OpeningStrengthAtMax < 1 ||
@@ -108,23 +108,20 @@ internal sealed class RuleConfiguration
             SingleHitPreference: entry.TryGetProperty("singleHitPreference", out var single) ? single.GetDouble() : 1,
             DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1);
         return new MonsterRules(profile,
-            entry.TryGetProperty("deadlyEnemies", out var higher) ? higher.GetDouble() : null,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
             entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),
             Read<string[]>(Setting("openingStates")),
             entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
             entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null,
             entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0,
-            entry.TryGetProperty("randomMoves", out var randomMoves) ? Read<string[]>(randomMoves).ToHashSet(StringComparer.Ordinal) : null);
+            entry.TryGetProperty("randomMoves", out var randomMoves) ? Read<string[]>(randomMoves).ToHashSet(StringComparer.Ordinal) : null,
+            entry.TryGetProperty("keepVanillaWhileAllyAlive", out var ally) ? ally.GetString() : null,
+            entry.TryGetProperty("randomizeAllMoves", out var all) && all.GetBoolean());
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
-internal sealed record MonsterRules(MonsterProfile Profile, double? DeadlyEnemies, bool Enabled,
+internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
     bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance,
-    HashSet<string>? RandomMoves = null)
-{
-    public MonsterProfile AtAscension(bool deadly) =>
-        deadly && DeadlyEnemies is double higher ? Profile with { ActionValue = higher } : Profile;
-}
+    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false);

@@ -7,7 +7,7 @@ public enum EffectKind
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
-    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage
+    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage, PainfulStabs, GainSteam
 }
 
 public enum EffectTarget { Self, Player }
@@ -18,11 +18,11 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public EffectTarget Target => TargetFor(Kind);
     public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or
         EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns
-        or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage || IsDefensiveBuff(kind) || IsRareBuff(kind)
+        or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage or EffectKind.GainSteam || IsDefensiveBuff(kind) || IsRareBuff(kind)
         ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => IsCard(Kind);
     public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
-        kind is not (EffectKind.Block or EffectKind.Heal);
+        kind is not (EffectKind.Block or EffectKind.Heal or EffectKind.GainSteam);
     public static bool IsDefensiveBuff(EffectKind kind) => IsNonStackingDefense(kind) ||
         kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade;
     public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
@@ -41,7 +41,7 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Sloth or EffectKind.Disintegration;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
-        EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts;
+        EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
 }
 
 public sealed record StatusPlacement(EffectKind Card, StatusPile Pile, double Weight = 1)
@@ -150,6 +150,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         break;
                     case EffectKind.Heal:
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
+                        break;
+                    case EffectKind.GainSteam:
+                        Add(kind, amount, IntentStyle.Buff);
                         break;
                     case EffectKind.Weak when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);

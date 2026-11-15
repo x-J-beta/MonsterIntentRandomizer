@@ -1,22 +1,22 @@
 {
   "pools": {
-    "actionValueMultiplier": 1,
-    "chaosMultiplier": 2.5,
-    "actionValueRetention": 0.85,
-    "attackDesireRetention": 0.9,
-    "initialActionValueShare": 0.6,
+    "actionValueRetention": 0.9,
+    "attackDesireRetention": 1.03,
+    "initialActionValueShare": 0.65,
     "initialAttackDesire": 0,
     "balanceTargetWeight": 0.5,
     "minimumSelectionSpread": 0.5,
-    "drawBudgetMultiplier": 1.4,
+    "actionValueMultiplier": 1.05,
+    "chaosMultiplier": 2.5,
+    "drawBudgetMultiplier": 1.4000000000000001,
     "localOverdraftShare": 0.3,
     "nonAttackCandidates": 5,
     "unusedAttackBudgetShare": 0.5,
     "fullChaosBudgetAt": 5,
+    "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 },
     "openingStrengthAtMax": 1.5,
-    "chaosBudgetWeights": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 }
+    "highAscensionActionValueBonus": 2
   },
-  "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },
   "actions": {
     "weakDamageReduction": 0.25,
     "valuation": {
@@ -36,40 +36,15 @@
       "Poison": { "amount": 1.25 },
       "Shrink": { "amount*actionValue": 0.3 },
       "StrengthDown": { "amount": 2.8, "amount*roomsEntered": 0.045 },
-      "DexterityDown": { "amount": 2.3, "amount*roomsEntered": 0.04 }
+      "DexterityDown": { "amount": 2.3, "amount*roomsEntered": 0.04 },
+      "GainSteam": { "amount": 1 }
     },
     "maxHardCardLimits": 1,
     "hardCardLimitFirstTurn": 2,
-    "statusCardValues": {
-      "Dazed": 0.85, "Wound": 1.4, "Burn": 2.8, "Beckon": 6.5, "Wither": 4.2, "Infection": 3.9,
-      "Toxic": 4.4, "Soot": 1.5, "Debris": 1.3, "Void": 4, "Slimed": 1.25, "Amnesia": 4.5,
-      "MindRot": 5, "Sadness": 3.5, "Sloth": 8, "Disintegration": 6, "WasteAway": 9
-    },
-    "cardPlacementValues": { "hand": 0.35, "top": 1.33, "draw": 1, "bottom": 0.45, "discard": 0.75 },
+    "cardPlacementValues": { "hand": 0.35, "top": 1.6, "draw": 1.05, "bottom": 0.45, "discard": 0.75 },
     "minimumBaseDamagePerHit": 1,
     "specialDebuffChance": 0.2,
-    "weights": {
-      "Burn": { "base": 0.5, "perRoom": 0 },
-      "Beckon": { "base": 0.35, "perRoom": 0 },
-      "Wither": { "base": 0.5, "perRoom": 0 },
-      "Amnesia": { "base": -1, "perRoom": 0 },
-      "MindRot": { "base": -1, "perRoom": 0 },
-      "Sadness": { "base": -1, "perRoom": 0 },
-      "Infection": { "base": 0.5, "perRoom": 0 },
-      "Sloth": { "base": -1, "perRoom": 0 },
-      "Toxic": { "base": 0.35, "perRoom": 0 },
-      "Soot": { "base": 0.6, "perRoom": 0 },
-      "Disintegration": { "base": -1, "perRoom": 0 },
-      "Debris": { "base": 0.5, "perRoom": 0 },
-      "Void": { "base": 0.45, "perRoom": 0 },
-      "WasteAway": { "base": -1, "perRoom": 0 },
-      "Slimed": { "base": 0.6, "perRoom": 0 },
-      "Soulbind": { "base": 0, "perRoom": 0.01 }
-    },
-    "minAmounts": { "Dazed": 2 },
     "maxAmounts": {
-      "Block": 20,
-      "Heal": 12,
       "Weak": 1,
       "Vulnerable": 1,
       "Tangled": 1,
@@ -88,6 +63,8 @@
       "Wound": 3,
       "Burn": 2,
       "Beckon": 2,
+      "Block": 20,
+      "Heal": 12,
       "Wither": 1,
       "Amnesia": 1,
       "MindRot": 1,
@@ -100,7 +77,32 @@
       "Debris": 3,
       "Void": 1,
       "WasteAway": 1,
-      "Slimed": 4
+      "Slimed": 4,
+      "GainSteam": 5
+    },
+    "weights": {
+      "Burn": { "base": 0.5, "perRoom": 0 },
+      "Beckon": { "base": 0.35, "perRoom": 0 },
+      "Wither": { "base": 0.5, "perRoom": 0 },
+      "Amnesia": { "base": -1, "perRoom": 0 },
+      "MindRot": { "base": -1, "perRoom": 0 },
+      "Sadness": { "base": -1, "perRoom": 0 },
+      "Infection": { "base": 0.5, "perRoom": 0 },
+      "Sloth": { "base": -1, "perRoom": 0 },
+      "Toxic": { "base": 0.35, "perRoom": 0 },
+      "Soot": { "base": 0.6, "perRoom": 0 },
+      "Disintegration": { "base": -1, "perRoom": 0 },
+      "Debris": { "base": 0.5, "perRoom": 0 },
+      "Void": { "base": 0.45, "perRoom": 0 },
+      "WasteAway": { "base": -1, "perRoom": 0 },
+      "Slimed": { "base": 0.6, "perRoom": 0 },
+      "Soulbind": { "base": 0, "perRoom": 0.010000000000005116 }
+    },
+    "minAmounts": { "Dazed": 2 },
+    "statusCardValues": {
+      "Dazed": 0.85, "Wound": 1.4, "Burn": 2.8, "Beckon": 6.5, "Wither": 4.2, "Infection": 3.9,
+      "Toxic": 4.4, "Soot": 1.5, "Debris": 1.3, "Void": 4, "Slimed": 1.25, "Amnesia": 4.5,
+      "MindRot": 5, "Sadness": 3.5, "Sloth": 8, "Disintegration": 6, "WasteAway": 9
     },
     "policies": {
       "Attack": { "target": "player" },
@@ -139,39 +141,18 @@
       "Slimed": { "target": "player" }
     }
   },
-  "buffs": {
-    "Strength": { "common": true, "maxAmount": 6, "formula": { "amount*attackFrequency": 2.6 }, "weight": 2.5, "stackable": true },
-    "Ritual": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.15 }, "weight": 0.2, "stackable": true },
-    "Regen": { "common": true, "minAmount": 5, "maxAmount": 10, "formula": { "amount*survivalTurns": 0.25 }, "weight": 1, "stackable": false },
-    "Plating": { "common": true, "minAmount": 6, "maxAmount": 12, "formula": { "amount*survivalTurns": 0.24 }, "weight": 1, "stackable": false },
-    "HardenedShell": { "common": true, "hpPerSurvivalTurnCap": 1, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 1 }, "weight": -0.225, "weightPerRoom": 0.0125, "stackable": false },
-    "HardToKill": { "common": true, "hpPerSurvivalTurnCap": 0.5, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 0.4 }, "weight": -0.18, "weightPerRoom": 0.01, "stackable": false },
-    "Intangible": { "common": false, "maxAmount": 1, "formula": { "amount*actionValue": 0.9 }, "weight": 1, "stackable": false },
-    "Artifact": { "common": true, "maxAmount": 3, "formula": { "amount*actionValue": 0.075 }, "weight": 0.4, "stackable": true },
-    "Thorns": { "common": true, "maxAmount": 4, "formula": { "amount*survivalTurns": 0.85 }, "weight": 1, "stackable": true },
-    "TemporaryThorns": { "common": true, "maxAmount": 5, "formula": { "amount": 1.9 }, "weight": 1, "stackable": true },
-    "Barricade": { "common": true, "maxAmount": 1, "formula": { "actionValue*survivalTurns": 0.12 }, "weight": -0.0675, "weightPerRoom": 0.0075, "stackable": false },
-    "Slippery": { "common": true, "maxAmount": 2, "formula": { "amount*playerActionValue": 0.18 }, "weight": -0.18, "weightPerRoom": 0.01, "stackable": false },
-    "Vigor": { "common": true, "maxAmount": 5, "formula": { "amount*attackFrequency": 1.8 }, "weight": 0.32, "stackable": false },
-    "Enrage": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.35 }, "weight": -0.072, "weightPerRoom": 0.008, "stackable": false },
-    "PersonalHive": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 0.7 }, "weight": -0.16, "weightPerRoom": 0.01, "stackable": false },
-    "VitalSpark": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 0.6 }, "weight": -0.126, "weightPerRoom": 0.007, "stackable": false, "unique": true },
-    "WitheringPresence": { "common": false, "maxAmount": 1, "formula": { "survivalTurns": 0.8 }, "weight": -0.2, "weightPerRoom": 0.01, "stackable": false, "unique": true },
-    "Envenom": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.95 }, "weight": -0.112, "weightPerRoom": 0.008, "stackable": false },
-    "PaperCuts": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1.55 }, "weight": -0.08, "weightPerRoom": 0.004, "stackable": false }
-  },
   "opening": {
-    "weights": { "none": 30, "positive": 40, "negative": 30 },
+    "weights": { "none": 20, "positive": 50, "negative": 30 },
     "attempts": 4,
     "maxPerMonster": 2,
     "maxEncounterValueMultiplier": 1,
     "states": {
-      "STRENGTH_DOWN": { "maxAmount": 3, "formula": { "amount*attackFrequency": -1.65 }, "amount": -1 },
+      "STRENGTH_DOWN": { "amount": -1, "maxAmount": 3, "formula": { "amount*attackFrequency": -1.65 } },
       "WEAK": { "maxAmount": 4, "formula": { "amount*actionValue": -0.15 } },
       "VULNERABLE": { "maxAmount": 4, "formula": { "amount*actionValue": -0.27 } },
       "DEMISE": { "maxAmount": 3, "formula": { "amount*actionValue": -0.065 } },
       "DOOM": { "maxAmount": 15, "formula": { "amount": -0.32 } },
-      "IMBALANCED": { "maxAmount": 1, "formula": { "amount*actionValue": -0.14 } },
+      "IMBALANCED": { "maxAmount": 1, "formula": { "amount*actionValue": -0.14 }, "common": true, "weight": 0.35 },
       "STUN": { "maxAmount": 1, "formula": { "amount*actionValue": -0.82 }, "common": true, "weight": 0.15 },
       "POISON": { "common": true, "maxAmount": 7, "formula": { "amount": -0.85 }, "weight": 0.35 },
       "SLOW": { "common": true, "maxAmount": 1, "formula": { "actionValue": -0.18 }, "weight": 0.14 }
@@ -183,7 +164,6 @@
     "defaultActionValueTier": "standard",
     "defaultStage": "act1",
     "traceTurns": 10,
-    "rooms": 0,
     "targetPriority": 0,
     "targetBlock": 0,
     "targetFirstPlayerWindow": 1,
@@ -204,6 +184,31 @@
         ]
       }
     ],
-    "turnContext": { "expectedDamageAgainstMonster": 8, "missingHp": 6 }
+    "recentPlayerDamage": [],
+    "turnContext": { "expectedDamageAgainstMonster": 8, "missingHp": 6 },
+    "rooms": 0
+  },
+  "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },
+  "buffs": {
+    "Strength": { "common": true, "maxAmount": 6, "formula": { "amount*attackFrequency": 2.6 }, "weight": 2.5, "stackable": true, "weightPerRoom": 0 },
+    "Ritual": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.2 }, "weight": 0.20000000000000284, "stackable": true, "weightPerRoom": 0 },
+    "Regen": { "common": true, "minAmount": 5, "maxAmount": 8, "formula": { "amount*survivalTurns": 0.25 }, "weight": 1, "stackable": false, "weightPerRoom": 0 },
+    "Plating": { "common": true, "minAmount": 6, "maxAmount": 10, "formula": { "amount*survivalTurns": 0.24 }, "weight": 1, "stackable": false },
+    "HardenedShell": { "common": true, "hpPerSurvivalTurnCap": 1, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 1 }, "weight": -0.30000000000000426, "weightPerRoom": 0.016666666666666906, "stackable": false },
+    "HardToKill": { "common": true, "hpPerSurvivalTurnCap": 0.5, "formula": { "actionValue*hpPerSurvivalTurn*inverseAmount": 0.4 }, "weight": -0.30000000000000426, "weightPerRoom": 0.016666666666666906, "stackable": false },
+    "Intangible": { "common": false, "maxAmount": 1, "formula": { "amount*actionValue": 0.9 }, "weight": 1, "stackable": false },
+    "Artifact": { "common": true, "maxAmount": 2, "formula": { "amount*actionValue": 0.15 }, "weight": 0.4, "stackable": true },
+    "Thorns": { "common": true, "maxAmount": 3, "formula": { "Amount": 2 }, "weight": 1, "stackable": true },
+    "TemporaryThorns": { "common": true, "maxAmount": 5, "formula": { "amount": 0.6 }, "weight": 1, "stackable": true },
+    "Barricade": { "common": true, "maxAmount": 1, "formula": { "ActionValue": 0.4 }, "weight": -0.0675, "weightPerRoom": 0.0075, "stackable": false },
+    "Slippery": { "common": true, "maxAmount": 2, "formula": { "amount*playerActionValue": 0.18 }, "weight": -0.18, "weightPerRoom": 0.01, "stackable": false },
+    "Vigor": { "common": true, "maxAmount": 8, "formula": { "amount*attackFrequency": 1 }, "weight": 3, "stackable": false, "minAmount": 3 },
+    "Enrage": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.35 }, "weight": -0.072, "weightPerRoom": 0.008, "stackable": false },
+    "PersonalHive": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 1.5 }, "weight": -0.13714285714285715, "weightPerRoom": 0.008571428571428572, "stackable": false },
+    "VitalSpark": { "common": false, "maxAmount": 1, "formula": { "Amount*AttackFrequency": 2.6 }, "weight": -0.12000000000000002, "weightPerRoom": 0.006666666666666668, "stackable": false, "unique": true },
+    "WitheringPresence": { "common": false, "maxAmount": 1, "formula": { "survivalTurns": 3 }, "weight": -0.29999999999999716, "weightPerRoom": 0.010000000000000002, "stackable": false, "unique": true },
+    "Envenom": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.95 }, "weight": -0.105, "weightPerRoom": 0.0075, "stackable": false },
+    "PaperCuts": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1.55 }, "weight": -0.07000000000000002, "weightPerRoom": 0.003500000000000001, "stackable": false },
+    "PainfulStabs": { "common": true, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1 }, "weight": -0.12, "weightPerRoom": 0.006, "stackable": false }
   }
 }

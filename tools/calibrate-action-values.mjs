@@ -88,7 +88,7 @@ function calibrate(monster, profile) {
     if (excluded.has(monster.id) || profile.enabled === false)
         return { method: 'vanilla' };
     if (profile.randomMoves)
-        return { method: 'reviewedMixedProfile', values: [profile.actionValue, profile.deadlyEnemies ?? profile.actionValue] };
+        return { method: 'reviewedMixedProfile', values: [profile.actionValue, previousAudit[monster.id]?.proposed?.[1] ?? profile.actionValue] };
 
     const referenceMoves = new Map(published.get(monster.id).moves.map(move => [move.id, move]));
     const calibratedMoves = monster.moves.map(move => publishedDamage(move, referenceMoves.get(move.id)));
@@ -142,7 +142,7 @@ const calibrated = new Map();
 const coverage = {};
 for (const monster of archive.monsters) {
     const profile = profiles.monsters[monster.id];
-    const original = previousAudit[monster.id]?.previous ?? [profile.actionValue, profile.deadlyEnemies ?? null];
+    const original = previousAudit[monster.id]?.previous ?? [profile.actionValue, null];
     const { values, ...evidence } = calibrate(monster, profile);
     const next = values?.map(round) ?? original;
     if (values && next[0] === next[1] && original[1] === null)
@@ -168,11 +168,11 @@ const lines = Object.entries(audit).map(([id, row]) => `    ${JSON.stringify(id)
 writeFileSync(auditPath, JSON.stringify(metadata, null, 2).replace(/\n}$/, ',\n') +
     `  "monsters": {\n${lines.join(',\n')}\n  }\n}\n`);
 if (process.argv.includes('--apply')) {
-    const rowPattern = /^( +"([A-Z0-9_]+)": \{ "name": .*?"actionValue": )([\d.]+)(?:, "deadlyEnemies": [\d.]+)?(?=,)/gm;
+    const rowPattern = /^( +"([A-Z0-9_]+)":\s*\{\s*"name":.*?"actionValue":\s*)([\d.]+)(?=\s*[,}])/gm;
     const nextText = profileText.replace(rowPattern, (line, prefix, id) => {
         const values = calibrated.get(id);
         calibrated.delete(id);
-        return values ? prefix + values[0] + (values[1] === null ? '' : `, "deadlyEnemies": ${values[1]}`) : line;
+        return values ? prefix + values[0] : line;
     });
     if (calibrated.size > 0)
         throw new Error(`Could not update profiles: ${[...calibrated.keys()].join(', ')}`);

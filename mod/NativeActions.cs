@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Cards;
+using MegaCrit.Sts2.Core.Models.Monsters;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
@@ -64,6 +65,9 @@ internal static class NativeActions
                     break;
                 case EffectKind.Heal:
                     await CreatureCmd.Heal(self, amount);
+                    break;
+                case EffectKind.GainSteam when monster is WaterfallGiant:
+                    await PowerCmd.Apply<SteamEruptionPower>(choice, self, amount, self, null);
                     break;
                 case var buff when ActionEffect.IsMonsterBuff(buff):
                     await ApplyOpening(self, new OpeningState(EffectPolicy.Id(buff), amount));
@@ -180,6 +184,7 @@ internal static class NativeActions
         "WITHERING_PRESENCE" => Get<WitheringPresencePower>,
         "ENVENOM" => Get<EnvenomPower>,
         "PAPER_CUTS" => Get<PaperCutsPower>,
+        "PAINFUL_STABS" => Get<RandomizedPainfulStabsPower>,
         _ => null
     };
 
@@ -198,6 +203,7 @@ internal static class NativeActions
         return kind switch
         {
             EffectKind.Block => target.Block > 0,
+            EffectKind.GainSteam => target.HasPower<SteamEruptionPower>(),
             EffectKind.Tangled => target.HasPower<TangledPower>(),
             EffectKind.Ringing => target.HasPower<RingingPower>(),
             EffectKind.Smoggy => target.HasPower<SmoggyPower>(),
@@ -240,6 +246,7 @@ internal static class NativeActions
             "RITUAL" => await Apply<RitualPower>(),
             "VIGOR" => await Apply<VigorPower>(),
             "ENRAGE" => await Apply<EnragePower>(),
+            "PAINFUL_STABS" => await Apply<RandomizedPainfulStabsPower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),

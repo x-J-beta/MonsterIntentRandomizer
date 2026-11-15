@@ -93,11 +93,14 @@ internal static class PrototypeChecks
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
         var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, ChaosMultiplier: 0).Adjust(profile);
         Equal(16, adjusted.ActionValue, "global action value multiplier");
+        Equal(10, new PoolSettings(0.75, 0.9).Adjust(profile, highAscension: true).ActionValue,
+            "high ascension adds a global action value bonus");
         Equal(0, adjusted.Volatility, "zero chaos removes grant jitter");
         Equal(profile.AttackFrequency, adjusted.AttackFrequency, "multipliers preserve the configured attack cadence");
         var random = new Random(2026);
-        Equal(3, planner.Plan(new Pools(4, 1), profile, [], random, canRandomize: false).After.ActionValue,
-            "skipped turns only decay");
+        var balance = new Pools(4, 1);
+        if (planner.Plan(balance, profile, [], random, canRandomize: false).After != balance)
+            throw new InvalidOperationException("A preserved move changed the pools.");
         var choices = new[]
         {
             ActionCandidate.Attack("attack", 1, 6, 0, weak: false, 1),

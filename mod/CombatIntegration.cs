@@ -86,7 +86,7 @@ internal static class CombatIntegration
                 if (creature.Monster is { } monster && FindProfile(rules, monster) is { } configured)
                     actionValues[id] = configured.Profile.ActionValue;
                 var state = Register(encounter, creature);
-                if (state == null)
+                if (state == null || ProtectedByAlly(creature, state.Rules))
                     continue;
 
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
@@ -176,29 +176,13 @@ internal static class CombatIntegration
     private static void SettleMove(ICombatState __0, MonsterModel __1, MoveState __2)
     {
         if (!Encounters.TryGetValue(__0, out var encounter) || !encounter.Enemies.TryGetValue(__1.Creature, out var state) ||
-            state.SettledRound >= __0.RoundNumber)
+            state.SettledRound >= __0.RoundNumber || state.PlannedRound != __0.RoundNumber ||
+            !ReferenceEquals(state.RandomMove, __2) || state.Plan is not { Action: { } action } plan)
             return;
 
         state.SettledRound = __0.RoundNumber;
-        if (state.PlannedRound == __0.RoundNumber && ReferenceEquals(state.RandomMove, __2) &&
-            state.Plan is { Action: { } action } plan)
-        {
-            state.History = state.History.Record(action);
-            state.Balance = plan.After;
-        }
-        else if (!IsOrdinaryMove(__2) || KeepsNativeMove(__1.Creature, state, __2, __0.RoundNumber))
-        {
-            state.Balance = encounter.Planner.Plan(state.Balance, state.Profile, [], new Random(0), canRandomize: false).After;
-        }
-        else
-        {
-            int hits = __2.Intents.OfType<AttackIntent>().Sum(intent => intent.Repeats);
-            double value = hits == 0 ? state.Profile.ActionValue * state.Profile.NonAttackMultiplier :
-                __2.Intents.OfType<AttackIntent>().Sum(intent => (double)(intent.DamageCalc?.Invoke() ?? 0) * intent.Repeats);
-            var granted = state.PlannedRound == __0.RoundNumber && state.Plan is { } fallback ? fallback.Granted :
-                encounter.Planner.Plan(state.Balance, state.Profile, [], RandomFor(__0, __1.Creature.CombatId ?? 0, __0.RoundNumber)).Granted;
-            state.Balance = encounter.Planner.Settle(granted, value, hits);
-        }
+        state.History = state.History.Record(action);
+        state.Balance = plan.After;
     }
 
     [HarmonyPostfix]
@@ -278,7 +262,7 @@ internal static class CombatIntegration
     private static (MonsterRules Rules, MonsterProfile Profile)? FindProfile(RuleConfiguration rules, MonsterModel monster) =>
         monster.GetType().Assembly == typeof(MonsterModel).Assembly &&
         rules.Monsters.TryGetValue(monster.Id.Entry, out var entry)
-            ? (entry, rules.PoolSettings.Adjust(entry.AtAscension(RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies))))
+            ? (entry, rules.PoolSettings.Adjust(entry.Profile, RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies)))
             : null;
 
     private static bool IsOrdinaryMove(MoveState move) => move.Intents.Count > 0 &&
@@ -287,6 +271,8 @@ internal static class CombatIntegration
 
     private static bool SupportsRandomMoves(MonsterMoveStateMachine machine, MonsterRules rules)
     {
+        if (rules.RandomizeAllMoves)
+            return true;
         var moves = machine.States.Values.OfType<MoveState>();
         return rules.RandomMoves is { } allowed
             ? moves.Any(move => allowed.Contains(move.Id) && !rules.KeepMoves.Contains(move.Id) && IsOrdinaryMove(move))
@@ -294,13 +280,19 @@ internal static class CombatIntegration
     }
 
     private static bool CanReplaceMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
-        move.CanTransitionAway && !creature.IsStunned && IsOrdinaryMove(move) && !KeepsNativeMove(creature, enemy, move, round);
+        !creature.IsStunned && (enemy.Rules.RandomizeAllMoves || move.CanTransitionAway && IsOrdinaryMove(move)) &&
+        !KeepsNativeMove(creature, enemy, move, round);
 
     private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
         (enemy.Rules.FixedOpening && round == 1) || enemy.Rules.KeepMoves.Contains(move.Id) ||
         (enemy.Rules.RandomMoves is { } allowed && !allowed.Contains(move.Id)) ||
+        ProtectedByAlly(creature, enemy.Rules) ||
         (enemy.Rules.RandomizeWhenPower?.Trim() is { Length: > 0 } id &&
             !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));
+
+    private static bool ProtectedByAlly(Creature creature, MonsterRules rules) =>
+        rules.KeepVanillaWhileAllyAlive is { Length: > 0 } id && creature.CombatState is { } combat &&
+        combat.Enemies.Any(ally => ally != creature && ally.IsAlive && ally.Monster?.Id.Entry == id);
 
     private static bool MatchesPower(string entry, string required) =>
         entry.Equals(required, StringComparison.OrdinalIgnoreCase) ||

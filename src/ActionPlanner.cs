@@ -35,7 +35,8 @@ public sealed record PoolSettings(
     double ActionValueMultiplier = 1, double ChaosMultiplier = 1,
     double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
-    IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5)
+    IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5,
+    double HighAscensionActionValueBonus = 2)
 {
     internal double ChaosProgress => Math.Clamp((ChaosMultiplier - 1) / 4, 0, 1);
     internal double SharedNonAttackWeight => 0.25 + 0.75 * ChaosProgress;
@@ -48,11 +49,11 @@ public sealed record PoolSettings(
             [IntentStyle.Attack] = 40, [IntentStyle.Buff] = 20, [IntentStyle.Defend] = 20, [IntentStyle.PlayerDebuff] = 20
         };
 
-    public MonsterProfile Adjust(MonsterProfile profile)
+    public MonsterProfile Adjust(MonsterProfile profile, bool highAscension = false)
     {
         var adjusted = profile with
         {
-            ActionValue = profile.ActionValue * ActionValueMultiplier,
+            ActionValue = (profile.ActionValue + (highAscension ? HighAscensionActionValueBonus : 0)) * ActionValueMultiplier,
             Volatility = profile.Volatility * ChaosMultiplier
         };
         double mix = BudgetChaos;
@@ -113,14 +114,11 @@ public sealed class ActionPlanner(PoolSettings settings)
     public ActionPlan Plan(Pools previous, MonsterProfile profile, IEnumerable<ActionCandidate> candidates,
         Random random, bool canRandomize = true, Func<int, double, ActionCandidate?>? buildAttack = null)
     {
+        if (!canRandomize)
+            return new ActionPlan(null, previous, previous, false);
+
         double retainedAction = previous.ActionValue * settings.ActionValueRetention;
         double retainedDesire = previous.AttackDesire * settings.AttackDesireRetention;
-        if (!canRandomize)
-        {
-            var aged = new Pools(retainedAction, retainedDesire);
-            return new ActionPlan(null, aged, aged, false);
-        }
-
         double turnShare = Math.Clamp(profile.AttackFrequency, 0, 1);
         double income = profile.ActionValue * (turnShare + (1 - turnShare) * profile.NonAttackMultiplier);
         var granted = new Pools(retainedAction + income, retainedDesire + profile.AttackFrequency);

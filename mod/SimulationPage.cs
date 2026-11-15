@@ -27,6 +27,8 @@ internal static class SimulationPage
         var allyHp = SettingsPage.NumberRow(panel, "其他怪物当前血量之和", 0, 9999, 1);
         var allowPhase = new CheckButton { Text = "假定满足怪物的状态条件", ButtonPressed = true, Visible = false };
         panel.AddChild(allowPhase);
+        var allyAlive = new CheckButton { ButtonPressed = true, Visible = false };
+        panel.AddChild(allyAlive);
         var run = new Button { Name = "RunSimulation", Text = "按当前参数模拟" };
         panel.AddChild(run);
         var output = new TextEdit
@@ -61,7 +63,8 @@ internal static class SimulationPage
                 var rules = ModSettings.Parse(new StoredSettings(true, settingsJson.RootElement, profilesJson.RootElement));
                 string id = ids[monster.Selected];
                 output.Text = Run(rules, id, highAscension.ButtonPressed,
-                    (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed, (int)rooms.Value, hp.Value, allyHp.Value);
+                    (int)seed.Value, (int)rounds.Value, allowPhase.ButtonPressed, allyAlive.ButtonPressed,
+                    (int)rooms.Value, hp.Value, allyHp.Value);
             }
             catch (Exception error)
             {
@@ -91,7 +94,7 @@ internal static class SimulationPage
                 if (previous != ids[monster.Selected])
                     ReadSelectedMonster(json.RootElement);
                 else
-                    UpdatePhaseLabel(json.RootElement.GetProperty("monsters").GetProperty(ids[monster.Selected]));
+                    UpdatePhaseLabels(json.RootElement);
             }
             catch (Exception error)
             {
@@ -105,37 +108,49 @@ internal static class SimulationPage
         {
             var entry = profilesDocument.GetProperty("monsters").GetProperty(ids[monster.Selected]);
             hp.SetValueNoSignal(entry.GetProperty("hp").GetDouble());
-            UpdatePhaseLabel(entry);
+            UpdatePhaseLabels(profilesDocument);
             output.Text = "点击模拟生成该怪物的出招轨迹。";
         }
 
-        void UpdatePhaseLabel(JsonElement entry)
+        void UpdatePhaseLabels(JsonElement profilesDocument)
         {
+            var roster = profilesDocument.GetProperty("monsters");
+            var entry = roster.GetProperty(ids[monster.Selected]);
             string? power = entry.TryGetProperty("randomizeWhenPower", out var condition) ? condition.GetString() : null;
             allowPhase.Visible = !string.IsNullOrWhiteSpace(power);
             allowPhase.Text = $"假定拥有 {power}";
+            string? allyId = entry.TryGetProperty("keepVanillaWhileAllyAlive", out var protectedBy) ? protectedBy.GetString() : null;
+            allyAlive.Visible = !string.IsNullOrWhiteSpace(allyId);
+            if (allyId != null)
+            {
+                string? allyName = roster.TryGetProperty(allyId, out var ally) && ally.TryGetProperty("name", out var name)
+                    ? name.GetString() : null;
+                allyAlive.Text = $"假定{allyName ?? allyId}仍然存活";
+            }
         }
     }
 
     private static string Run(RuleConfiguration rules, string id, bool highAscension, int seed, int rounds,
-        bool allowPhase, int rooms, double hp, double allyHp)
+        bool allowPhase, bool allyAlive, int rooms, double hp, double allyHp)
     {
         var monster = rules.Monsters[id];
         if (!monster.Enabled || rules.KeepVanilla.Contains(id))
             return "这个画像保留原版行动。";
-        var profile = rules.PoolSettings.Adjust(monster.AtAscension(highAscension)) with
+        var profile = rules.PoolSettings.Adjust(monster.Profile, highAscension) with
         {
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
             PlayerActionValue = rules.PlayerAction.At(rooms),
             CurrentHp = hp,
             RoomsEntered = rooms + 1
         };
-        var candidates = rules.OpeningStatesFor(monster)
+        bool protectedByAlly = !string.IsNullOrWhiteSpace(monster.KeepVanillaWhileAllyAlive) && allyAlive;
+        var candidates = (protectedByAlly ? [] : rules.OpeningStatesFor(monster))
             .Select(key => rules.OpeningOption(key, profile, rooms)).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
-        bool phaseAllowsRandomization = string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase;
+        bool phaseAllowsRandomization = !protectedByAlly &&
+            (string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase);
         var turns = ActionSimulation.Trace(rules, profile, opening, seed, rounds, monster.FullBlockChance,
             monster.FixedOpening, phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
@@ -144,7 +159,9 @@ internal static class SimulationPage
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
-        if (monster.RandomMoves != null)
+        if (protectedByAlly)
+            result.AppendLine("该同伴仍然存活，当前阶段保留原版行动。");
+        else if (monster.RandomMoves != null)
             result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下轨迹模拟符合随机条件的回合。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));

@@ -102,6 +102,7 @@ internal static class SettingsPage
 
         var quickInputs = new List<(string[] Path, SpinBox Input)>();
         AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", "actionValueMultiplier");
+        AddNumber("高进阶额外行动力", 0, 100, 0.01, "pools", "highAscensionActionValueBonus");
         AddNumber("混沌程度倍率", 0, 5, 0.01, "pools", "chaosMultiplier");
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");

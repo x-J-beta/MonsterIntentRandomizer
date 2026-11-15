@@ -80,6 +80,9 @@ internal static class IntentDetails
             EffectKind.Wait => chinese ? (zh, "本回合准备，保留剩余行动力。") : (en, "Waits this turn and retains unspent action value."),
             EffectKind.TemporaryThorns => chinese ? (zh, $"获得 {n} 层荆棘，持续到下个玩家回合结束。") :
                 (en, $"Gains {n} Thorns through the next player turn."),
+            EffectKind.PainfulStabs => chinese ? (zh, $"每段打穿格挡的攻击向玩家弃牌堆加入 {n} 张伤口。") :
+                (en, $"Adds {n} Wounds to the player's discard pile per unblocked attack hit."),
+            EffectKind.GainSteam => chinese ? (zh, $"增加 {n} 层蒸汽喷发。") : (en, $"Gains {n} Steam Eruption."),
             EffectKind.Smoggy or EffectKind.Tender => chinese ? (zh, $"对玩家施加{zh}，持续到战斗结束。") :
                 (en, $"Applies {en} to the player for the rest of combat."),
             EffectKind.Shrink => chinese ? (zh, "对玩家施加缩小，持续到施加者死亡。") :
@@ -131,6 +134,8 @@ internal static class IntentDetails
             EffectKind.Artifact => ("人工制品", "Artifact"), EffectKind.Barricade => ("壁垒", "Barricade"),
             EffectKind.Slippery => ("滑溜", "Slippery"),
             EffectKind.Vigor => ("活力", "Vigor"), EffectKind.Enrage => ("激怒", "Enrage"),
+            EffectKind.PainfulStabs => ("疼痛戳刺", "Painful Stabs"),
+            EffectKind.GainSteam => ("积攒蒸汽", "Build Steam"),
             _ => (kind.ToString(), kind.ToString())
         };
 
