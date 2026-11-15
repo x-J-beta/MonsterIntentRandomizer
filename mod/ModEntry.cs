@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 23;
+    private const int SettingsRevision = 24;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -79,7 +79,8 @@ internal static class ModSettings
             foreach (var kind in Enum.GetValues<EffectKind>().Where(ActionEffect.UsesThreshold))
                 if (settings["buffs"]?[kind.ToString()] is JsonObject rule)
                     rule["stackable"] = true;
-        if (settings["simulation"] is JsonObject simulation)
+        UpgradeGeneratedCards(settings["buffs"] as JsonObject, defaultSettings["buffs"]!);
+        if (stored.Revision < 23 && settings["simulation"] is JsonObject simulation)
         {
             foreach (string key in new[] { "fallback", "targetPriority", "targetBlock", "targetFirstPlayerWindow",
                 "firstPlayerWindowFraction", "recentPlayerDamage" })
@@ -217,6 +218,33 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void UpgradeGeneratedCards(JsonObject? buffs, JsonNode defaults)
+    {
+        if (buffs == null)
+            return;
+        foreach (var kind in TriggeredCardBuffs.Types.Keys)
+        {
+            string id = kind.ToString();
+            if (buffs[id] is JsonObject buff)
+                buff["generatedCards"] ??= defaults[id]!["generatedCards"]!.DeepClone();
+        }
+
+        if (buffs["WitheringPresence"] is not JsonObject withering)
+            return;
+        if ((withering["maxAmount"]?.GetValue<int>() ?? 1) == 1)
+        {
+            withering["maxAmount"] = defaults["WitheringPresence"]!["maxAmount"]!.DeepClone();
+            withering["minAmount"] = defaults["WitheringPresence"]!["minAmount"]!.DeepClone();
+        }
+        withering["stackable"] = true;
+        if (withering["formula"] is JsonObject { Count: 1 } formula)
+        {
+            string term = formula.First().Key;
+            if (term.Equals("survivalTurns", StringComparison.OrdinalIgnoreCase))
+                withering["formula"] = new JsonObject { ["survivalTurns*inverseAmount"] = formula[term]!.GetValue<double>() * 6 };
         }
     }
 

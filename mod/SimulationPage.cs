@@ -166,7 +166,7 @@ internal static class SimulationPage
         else if (monster.RandomMoves != null)
             result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下仅模拟可随机回合，未排入保留的原版招式。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
-            $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}（{pick.Value:+0.##;-0.##;0}）"));
+            $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}{GeneratedCardName(pick.State.GeneratedCard)}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");
         result.AppendLine($"开场净估值 {opening.Sum(pick => pick.Value):0.##}　净值上限 {profile.ActionValue * rules.Draws.MaxEncounterValueMultiplier * rules.Draws.Strength:0.##}");
         result.AppendLine($"随机招式 {randomized.Length}／{rounds} 回合");
@@ -196,6 +196,9 @@ internal static class SimulationPage
         string.Join(" ＋ ", action.Effects.Select(effect =>
         effect.Kind == EffectKind.Attack
             ? $"攻击 {action.Damage / effect.Hits:0} × {effect.Hits}"
-            : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}" +
+            : $"{IntentDetails.Names(effect.Kind).Chinese} {effect.Amount}{GeneratedCardName(effect.GeneratedCard)}" +
                 (effect.IsStatusCard ? $"（{IntentDetails.DescribeDestinations(effect)}）" : "")));
+
+    private static string GeneratedCardName(EffectKind? card) =>
+        card.HasValue ? $"［{IntentDetails.Names(card.Value).Chinese}］" : "";
 }

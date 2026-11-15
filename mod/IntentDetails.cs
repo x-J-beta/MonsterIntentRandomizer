@@ -69,6 +69,19 @@ internal static class IntentDetails
             string destinations = DescribeDestinations(effect, chinese);
             return chinese ? (zh, $"加入 {n} 张{zh}（{destinations}）。") : (en, $"Adds {n} {en} ({destinations}).");
         }
+        if (effect.GeneratedCard is { } card)
+        {
+            var names = Names(card);
+            return effect.Kind switch
+            {
+                EffectKind.WitheringPresence => chinese ? (zh, $"玩家每打出 {n} 张牌，向手牌加入 1 张{names.Chinese}。") :
+                    (en, $"Every {n} cards played, adds one {names.English} to the player's hand."),
+                EffectKind.PersonalHive => chinese ? (zh, $"受到攻击命中时，向攻击者的抽牌堆洗入 {n} 张{names.Chinese}。") :
+                    (en, $"When hit by an attack, adds {n} {names.English} to the attacker's draw pile."),
+                _ => chinese ? (zh, $"每段打穿格挡的攻击向玩家的弃牌堆加入 {n} 张{names.Chinese}。") :
+                    (en, $"Adds {n} {names.English} to the player's discard pile per unblocked attack hit.")
+            };
+        }
 
         return effect.Kind switch
         {

@@ -47,12 +47,13 @@ internal static class ActionSimulation
         var balances = planner.Start(profile, opening.Sum(pick => pick.Value));
         var activeEffects = new Dictionary<EffectKind, int>();
         var thresholds = new Dictionary<EffectKind, int>();
+        var generatedCards = new Dictionary<EffectKind, EffectKind>();
         var usedEffects = new HashSet<EffectKind>();
         int vigor = 0;
         foreach (var pick in opening)
             if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
-                RecordEffect(kind, pick.State.Amount, 0);
+                RecordEffect(kind, pick.State.Amount, 0, pick.State.GeneratedCard);
         var prior = rules.TurnPrior with { Rooms = rooms,
             ExpectedDamageAgainstMonster = rules.PlayerAction.At(rooms) / Math.Max(1, enemyCount) };
         var history = new ActionHistory();
@@ -77,6 +78,7 @@ internal static class ActionSimulation
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
                 SpecialDebuffAvailable = !specialDebuffSpent,
                 Thresholds = thresholds,
+                GeneratedCards = generatedCards,
                 ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
                     .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet(),
                 AllowHardCardLimit = prior.AllowHardCardLimit && turn >= rules.HardCardLimitFirstTurn
@@ -101,7 +103,7 @@ internal static class ActionSimulation
             {
                 history = history.Record(action);
                 foreach (var effect in action.Effects!)
-                    RecordEffect(effect.Kind, effect.Amount, turn);
+                    RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
                 specialDebuffSpent |= action.Effects!.Any(effect => effect.IsSpecialDebuff);
             }
             else
@@ -109,11 +111,13 @@ internal static class ActionSimulation
         }
         return turns;
 
-        void RecordEffect(EffectKind kind, int amount, int round)
+        void RecordEffect(EffectKind kind, int amount, int round, EffectKind? card)
         {
             usedEffects.Add(kind);
             if (ActionEffect.UsesThreshold(kind))
                 thresholds[kind] = amount;
+            if (card.HasValue)
+                generatedCards[kind] = card.Value;
             if (kind == EffectKind.Vigor)
                 vigor += amount;
             if (rules.Actions.PolicyFor(kind).Stackable)

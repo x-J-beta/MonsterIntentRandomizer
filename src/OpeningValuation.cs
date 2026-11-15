@@ -1,16 +1,17 @@
 namespace MonsterIntentRandomizer;
 
-public sealed record OpeningState(string Id, int Amount);
+public sealed record OpeningState(string Id, int Amount, EffectKind? GeneratedCard = null);
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
     IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
     int? PreviousThreshold = null, double PreviousValue = 0);
-public sealed record ThresholdPrice(StatusValue State, MonsterProfile Profile, double Planned);
+public sealed record ThresholdPrice(StatusValue State, MonsterProfile Profile, double Planned, double Scale = 1);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
 public sealed record OpeningDraws(double None, double Positive, double Negative, int Attempts,
     int MaxPerMonster, double MaxEncounterValueMultiplier, double Strength = 1);
 public sealed record StatusValue(Dictionary<string, double> Formula, int Amount = 1, double Weight = 1,
     int? MaxAmount = null, double WeightPerRoom = 0, int MinAmount = 1,
-    double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false)
+    double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false,
+    Dictionary<EffectKind, double>? GeneratedCards = null)
 {
     internal ActionValuation CompiledFormula { get; } = new(new Dictionary<EffectKind, Dictionary<string, double>>
         { [EffectKind.Attack] = Formula ?? throw new ArgumentException("开场状态和共用强化须配置估值公式。") });
@@ -36,15 +37,23 @@ public static class OpeningValuation
             Math.Max(0, Evaluate(state, profile, after) - Evaluate(state, profile, before));
 
     public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
-        double strength = 1, double chaosProgress = 0, int? previousThreshold = null)
+        double strength = 1, double chaosProgress = 0, int? previousThreshold = null,
+        ActionValuationSettings? actions = null, EffectKind? existingCard = null)
     {
-        var doses = state.Doses(profile, strength).Select(amount =>
-            new OpeningOption(new OpeningState(id, amount), Evaluate(state, profile, amount))).ToArray();
+        EffectPolicy.TryGetKind(id, out var kind);
+        var variants = actions == null ? [(Card: (EffectKind?)null, Weight: 1.0)] :
+            TriggeredCardBuffs.Variants(kind, state, actions, rooms, existingCard);
+        var doses = (from variant in variants
+                     let scale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, variant.Card, actions, profile)
+                     from amount in state.Doses(profile, kind == EffectKind.WitheringPresence ? 1 : strength)
+                     select new OpeningOption(new OpeningState(id, amount, variant.Card),
+                         Evaluate(state, profile, amount) * scale, variant.Weight)).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
             new OpeningOption(new OpeningState(id, 0), 0);
+        double previousScale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, existingCard, actions, profile);
         return representative with { Weight = state.RoomWeight.At(rooms, chaosProgress), Doses = doses,
             Stackable = state.Stackable, Unique = state.Unique, PreviousThreshold = previousThreshold,
-            PreviousValue = Evaluate(state, profile, previousThreshold ?? 0) };
+            PreviousValue = Evaluate(state, profile, previousThreshold ?? 0) * previousScale };
     }
 
     public static IReadOnlyList<OpeningPick> Draw(
@@ -69,7 +78,7 @@ public static class OpeningValuation
                 .Select(pair =>
                 {
                     var previous = selected.Where(pick => pick.MonsterId == pair.Key).ToArray();
-                    var options = pair.Value.Select(option => PriceThreshold(option, previous))
+                    var options = pair.Value.Select(option => PriceDoses(option, previous))
                         .Where(option => (previous.Length < settings.MaxPerMonster || option.PreviousThreshold.HasValue &&
                             previous.Any(pick => pick.State.Id == option.State.Id)) && option.Weight > 0 &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
@@ -92,7 +101,8 @@ public static class OpeningValuation
                 double baseBudget = Math.Max(0, actionValues.GetValueOrDefault(id));
                 double budget = baseBudget * settings.Strength;
                 var ranked = doses.Where(dose => positive ? dose.Value > 0 : dose.Value < 0)
-                    .Select(dose => (Dose: dose, Weight: ActionPlanner.MatchingWeight(Math.Abs(dose.Value), budget, Math.Max(1, baseBudget))))
+                    .Select(dose => (Dose: dose, Weight: dose.Weight *
+                        ActionPlanner.MatchingWeight(Math.Abs(dose.Value), budget, Math.Max(1, baseBudget))))
                     .ToArray();
                 double doseRoll = random.NextDouble() * ranked.Sum(dose => dose.Weight);
                 foreach (var dose in ranked)
@@ -120,11 +130,15 @@ public static class OpeningValuation
         return selected;
     }
 
-    private static OpeningOption PriceThreshold(OpeningOption option, IReadOnlyList<OpeningPick> previous)
+    private static OpeningOption PriceDoses(OpeningOption option, IReadOnlyList<OpeningPick> previous)
     {
-        if (option.PreviousThreshold is not int current || option.Doses is not { } doses)
+        if (option.Doses is not { } doses)
             return option;
-        var upgraded = previous.FirstOrDefault(pick => pick.State.Id == option.State.Id);
+        var upgraded = previous.LastOrDefault(pick => pick.State.Id == option.State.Id);
+        if (upgraded?.State.GeneratedCard is { } card)
+            doses = doses.Where(dose => dose.State.GeneratedCard == card).ToArray();
+        if (option.PreviousThreshold is not int current)
+            return option with { Doses = doses };
         double alreadyPaid = option.PreviousValue + (upgraded?.Value ?? 0);
         int threshold = upgraded?.State.Amount ?? current;
         return option with

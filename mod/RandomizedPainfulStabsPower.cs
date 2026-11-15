@@ -1,24 +1,20 @@
 using Godot;
 using HarmonyLib;
-using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Commands.Builders;
-using MegaCrit.Sts2.Core.Entities.Cards;
-using MegaCrit.Sts2.Core.Entities.Powers;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
-using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
-using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.ValueProps;
 
 namespace MonsterIntentRandomizer;
 
-public sealed class RandomizedPainfulStabsPower : PowerModel
+public sealed class RandomizedPainfulStabsPower : RandomizedCardPower
 {
-    public override PowerType Type => PowerType.Buff;
-    public override PowerStackType StackType => PowerStackType.Counter;
-    public override LocString Title => ModelDb.Power<PainfulStabsPower>().Title;
-    public override LocString Description => ModelDb.Power<PainfulStabsPower>().Description;
+    protected override EffectKind Kind => EffectKind.PainfulStabs;
+    internal override PowerModel NativePower => ModelDb.Power<PainfulStabsPower>();
+    protected override (string Chinese, string English) DescriptionText =>
+        ("每段打穿格挡的攻击向玩家弃牌堆加入 {Amount} 张[gold]{Card}[/gold]。",
+         "Adds {Amount} [gold]{Card}[/gold] to the player's discard pile per unblocked attack hit.");
 
     public override async Task AfterAttack(PlayerChoiceContext choice, AttackCommand command)
     {
@@ -29,8 +25,7 @@ public sealed class RandomizedPainfulStabsPower : PowerModel
             .Where(hit => hit.Receiver.IsPlayer && hit.UnblockedDamage > 0)
             .GroupBy(hit => hit.Receiver).ToArray();
         foreach (var group in hits)
-            await CardPileCmd.AddToCombatAndPreview<Wound>(group.Key, PileType.Discard, Amount * group.Count(), null,
-                CardPilePosition.Bottom);
+            await InsertCard(group.Key, Amount * group.Count());
         if (hits.Length > 0)
             Flash();
     }
@@ -41,7 +36,7 @@ internal static class CustomPowerIcons
 {
     private static PowerModel? NativeIcon(PowerModel power) => power switch
     {
-        RandomizedPainfulStabsPower => ModelDb.Power<PainfulStabsPower>(),
+        RandomizedCardPower cards => cards.NativePower,
         SteamBuildupPower => ModelDb.Power<SteamEruptionPower>(),
         _ => null
     };

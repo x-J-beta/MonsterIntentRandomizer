@@ -71,7 +71,7 @@ OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, Monst
 var options = Options(enemies[0], rules.OpeningStatesFor(configured), profile);
 foreach (var option in options)
     Console.WriteLine($"{option.State.Id,-19} " + string.Join(", ", option.Doses!.Select(dose =>
-        $"{dose.State.Amount}: {dose.Value:+0.00;-0.00;0.00}")));
+        $"{dose.State.Amount}{(dose.State.GeneratedCard is { } card ? $" [{card}]" : "")}: {dose.Value:+0.00;-0.00;0.00}")));
 
 var openingRandom = new Random(seed);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
@@ -95,7 +95,7 @@ var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();
 double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
-    $"{pick.MonsterId}:{pick.State.Id} {pick.State.Amount} ({pick.Value:+0.00;-0.00;0.00})"))) +
+    $"{pick.MonsterId}:{pick.State.Id} {pick.State.Amount}{(pick.State.GeneratedCard is { } card ? $" [{card}]" : "")} ({pick.Value:+0.00;-0.00;0.00})"))) +
     $" | encounter net {selected.Sum(pick => pick.Value):+0.00;-0.00;0.00}, " +
     $"net limit {actionValues.Values.Sum() * rules.Draws.MaxEncounterValueMultiplier * rules.Draws.Strength:F2}");
 

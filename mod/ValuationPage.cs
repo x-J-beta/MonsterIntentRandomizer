@@ -49,7 +49,8 @@ internal static class ValuationPage
                     ActionName, selectedBuff, (detail, id) =>
                     {
                         selectedBuff = id;
-                        RenderState(detail, root => root["buffs"]![id]!, shared: true);
+                        RenderState(detail, root => root["buffs"]![id]!, shared: true,
+                            kind: Enum.Parse<EffectKind>(id, ignoreCase: true));
                     });
             }
             catch (Exception error)
@@ -129,7 +130,7 @@ internal static class ValuationPage
                 (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
         }
 
-        void RenderState(VBoxContainer content, Func<JsonNode, JsonNode> At, bool shared)
+        void RenderState(VBoxContainer content, Func<JsonNode, JsonNode> At, bool shared, EffectKind? kind = null)
         {
             var state = At(JsonNode.Parse(settings.Text)!);
             content.AddChild(new Label { Text = shared ? "目标：自身 · 开场和出招共用" : "目标：自身" });
@@ -145,14 +146,47 @@ internal static class ValuationPage
                 (root, number) => At(root)["weight"] = number);
             AddNumber(content, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
                 (root, number) => At(root)["weightPerRoom"] = number);
-            AddNumber(content, "每次层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
+            bool interval = kind == EffectKind.WitheringPresence;
+            AddNumber(content, interval ? "最短触发间隔（张）" : "每次层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
                 (root, number) => At(root)["minAmount"] = (int)number, minimum: 1);
             if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
                 AddNumber(content, "动态层数上限系数", cap, 0.01,
                     (root, number) => At(root)["hpPerSurvivalTurnCap"] = number, minimum: 0);
             else
-                AddNumber(content, "每次层数上限", state["maxAmount"]?.GetValue<int>() ?? 1, 1,
+                AddNumber(content, interval ? "最长触发间隔（张）" : "每次层数上限", state["maxAmount"]?.GetValue<int>() ?? 1, 1,
                     (root, number) => At(root)["maxAmount"] = (int)number);
+            if (kind is { } effect && TriggeredCardBuffs.Types.TryGetValue(effect, out var source))
+                AddGeneratedCards(content, At, source);
+        }
+
+        void AddGeneratedCards(VBoxContainer content, Func<JsonNode, JsonNode> at, StatusPlacement source)
+        {
+            content.AddChild(new Label { Text = "生成的状态牌" });
+            var picker = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            content.AddChild(picker);
+            var choices = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsCard(kind) &&
+                ActionCatalog.CanPlace(kind, source.Pile)).ToArray();
+            foreach (var kind in choices)
+                picker.AddItem(IntentDetails.Names(kind).Chinese);
+            var weight = SettingsPage.NumberRow(content, "牌种权重（0 停用）", 0, 100, 0.01);
+            picker.ItemSelected += _ => RefreshWeight();
+            picker.Select(Array.IndexOf(choices, source.Card));
+            RefreshWeight();
+            weight.ValueChanged += value => Edit(root =>
+            {
+                var state = at(root);
+                state["generatedCards"] ??= new JsonObject { [source.Card.ToString()] = 1 };
+                state["generatedCards"]![choices[picker.Selected].ToString()] = value;
+            });
+
+            void RefreshWeight()
+            {
+                var state = at(JsonNode.Parse(settings.Text)!);
+                var card = choices[picker.Selected];
+                double current = state["generatedCards"] is JsonObject pool
+                    ? pool[card.ToString()]?.GetValue<double>() ?? 0 : card == source.Card ? 1 : 0;
+                weight.SetValueNoSignal(current);
+            }
         }
 
         void AddCheck(VBoxContainer content, string label, bool current, Action<JsonNode, bool> update)

@@ -208,11 +208,11 @@
     "Slippery": { "common": true, "maxAmount": 2, "formula": { "amount*playerActionValue": 0.18 }, "weight": -0.18, "weightPerRoom": 0.01, "stackable": false },
     "Vigor": { "common": true, "maxAmount": 8, "formula": { "amount*attackFrequency": 1 }, "weight": 3, "stackable": false, "minAmount": 3 },
     "Enrage": { "common": true, "maxAmount": 2, "formula": { "amount*attackFrequency*survivalTurns": 1.35 }, "weight": -0.072, "weightPerRoom": 0.008, "stackable": false },
-    "PersonalHive": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 1.5 }, "weight": -0.13714285714285715, "weightPerRoom": 0.008571428571428572, "stackable": false },
+    "PersonalHive": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 1.5 }, "weight": -0.13714285714285715, "weightPerRoom": 0.008571428571428572, "stackable": false, "generatedCards": { "Dazed": 3, "Wound": 1, "Soot": 1, "Debris": 1, "Slimed": 1 } },
     "VitalSpark": { "common": false, "maxAmount": 1, "formula": { "Amount*AttackFrequency": 2.6 }, "weight": -0.12000000000000002, "weightPerRoom": 0.006666666666666668, "stackable": false, "unique": true },
-    "WitheringPresence": { "common": false, "maxAmount": 1, "formula": { "survivalTurns": 3 }, "weight": -0.29999999999999716, "weightPerRoom": 0.010000000000000002, "stackable": false, "unique": true },
+    "WitheringPresence": { "common": false, "minAmount": 2, "maxAmount": 6, "formula": { "survivalTurns*inverseAmount": 18 }, "weight": -0.29999999999999716, "weightPerRoom": 0.010000000000000002, "stackable": true, "unique": true, "generatedCards": { "Wither": 3, "Burn": 2, "Infection": 1, "Toxic": 1, "Beckon": 0.5 } },
     "Envenom": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.95 }, "weight": -0.105, "weightPerRoom": 0.0075, "stackable": false },
     "PaperCuts": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1.55 }, "weight": -0.07000000000000002, "weightPerRoom": 0.003500000000000001, "stackable": false },
-    "PainfulStabs": { "common": true, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1 }, "weight": -0.12, "weightPerRoom": 0.006, "stackable": false }
+    "PainfulStabs": { "common": true, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1 }, "weight": -0.12, "weightPerRoom": 0.006, "stackable": false, "generatedCards": { "Wound": 3, "Soot": 1, "Debris": 1, "Slimed": 1, "Burn": 0.5 } }
   }
 }

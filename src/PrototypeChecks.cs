@@ -183,6 +183,7 @@ internal static class PrototypeChecks
             [EffectKind.DexterityDown] = new() { ["fixed"] = 1.5, ["amount"] = 0.4 },
             [EffectKind.Dazed] = new() { ["amount"] = 1.5 },
             [EffectKind.Wound] = new() { ["amount"] = 2.5 },
+            [EffectKind.Wither] = new() { ["amount"] = 4 },
             [EffectKind.Beckon] = new() { ["amount"] = 6.5 }
         });
         var buffs = new Dictionary<EffectKind, StatusValue>
@@ -210,6 +211,36 @@ internal static class PrototypeChecks
             IntentWeights = Enum.GetValues<IntentStyle>().ToDictionary(style => style, _ => 1.0)
         };
         var context = new ActionContext(6, MissingHp: 3);
+        var withering = Status("survivalTurns*inverseAmount", 18, 6) with
+        {
+            MinAmount = 2, Stackable = true,
+            GeneratedCards = new Dictionary<EffectKind, double> { [EffectKind.Wither] = 1, [EffectKind.Wound] = 1 }
+        };
+        var generators = catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
+            { [EffectKind.WitheringPresence] = withering } };
+        var generatorCatalog = new ActionCatalog(generators);
+        var generatorProfile = varied with { BaseExpectedSurvivalTurns = 4 };
+        var generatedChoices = generatorCatalog.Generate(generatorProfile, context).Where(action =>
+            action.Effects is [{ Kind: EffectKind.WitheringPresence, Amount: 6 }]).ToArray();
+        Equal(12, generatedChoices.Single(action => action.Effects is [{ GeneratedCard: EffectKind.Wither }]).Value,
+            "the native card and threshold keep the original price");
+        Equal(12 * 2.5 / 4, generatedChoices.Single(action => action.Effects is [{ GeneratedCard: EffectKind.Wound }]).Value,
+            "generated status card changes the price");
+        var witheringUpgrade = generatorCatalog.Generate(generatorProfile, context with
+        {
+            Thresholds = new Dictionary<EffectKind, int> { [EffectKind.WitheringPresence] = 6 },
+            GeneratedCards = new Dictionary<EffectKind, EffectKind> { [EffectKind.WitheringPresence] = EffectKind.Wound }
+        }).Single(action => action.Effects is [{ Kind: EffectKind.WitheringPresence, Amount: 4, GeneratedCard: EffectKind.Wound }]);
+        Equal((18 - 12) * 2.5 / 4, witheringUpgrade.Value, "an upgrade charges the difference for the assigned card");
+        var witheringOpening = OpeningValuation.Option("WITHERING_PRESENCE", withering, generatorProfile, actions: generators,
+            previousThreshold: 6, existingCard: EffectKind.Wound);
+        var openedWithering = OpeningValuation.Draw(
+            new Dictionary<string, IReadOnlyList<OpeningOption>> { ["test"] = [witheringOpening] },
+            new Dictionary<string, double> { ["test"] = 40 }, new OpeningDraws(0, 1, 0, 12, 1, 3), new Random(11)).Single();
+        if (openedWithering.State.GeneratedCard != EffectKind.Wound || openedWithering.State.Amount >= 6)
+            throw new InvalidOperationException("Opening upgrades must retain the original card and lower the threshold.");
+        Equal((72.0 / openedWithering.State.Amount - 12) * 2.5 / 4, openedWithering.Value,
+            "opening and combat share the generated card price");
         var generated = catalog.Generate(varied, context).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));

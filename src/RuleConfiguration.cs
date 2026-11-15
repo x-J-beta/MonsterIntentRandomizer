@@ -19,6 +19,11 @@ internal sealed class RuleConfiguration
         var buffs = Read<Dictionary<EffectKind, StatusValue>>(settings.GetProperty("buffs"));
         if (buffs.Any(entry => !ActionEffect.IsMonsterBuff(entry.Key) || entry.Value.Amount != 1))
             throw new ArgumentException("共用强化须为怪物自身的正面状态，并配置估值公式。");
+        foreach (var (kind, buff) in buffs)
+            if (buff.GeneratedCards is { } generated &&
+                (!TriggeredCardBuffs.Types.TryGetValue(kind, out var source) || generated.Any(entry =>
+                    !ActionEffect.IsCard(entry.Key) || !ActionCatalog.CanPlace(entry.Key, source.Pile) || entry.Value < 0)))
+                throw new ArgumentException($"{kind} 的生成牌须为可加入指定牌堆的状态牌，权重须为非负数。");
         PlayerAction = settings.TryGetProperty("playerAction", out var curve) ? Read<PlayerActionCurve>(curve) : new();
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
@@ -90,9 +95,10 @@ internal sealed class RuleConfiguration
     public HashSet<string> KeepVanilla { get; }
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
-    internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null) =>
+    internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null,
+        EffectKind? existingCard = null) =>
         OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress,
-            EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null);
+            EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard);
     internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
             .Concat((Actions.Buffs?.Keys ?? []).Where(kind => monster.Profile.EffectWeights?.GetValueOrDefault(kind) > 0)

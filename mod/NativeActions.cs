@@ -74,11 +74,11 @@ internal static class NativeActions
                 case var buff when ActionEffect.IsMonsterBuff(buff):
                     string id = EffectPolicy.Id(buff);
                     int before = effect.Threshold != null ? ThresholdFor(self, id) : 0;
-                    int applied = await ApplyOpening(self, new OpeningState(id, amount));
+                    int applied = await ApplyOpening(self, new OpeningState(id, amount, effect.GeneratedCard));
                     if (effect.Threshold is { } pricing)
                     {
                         CombatIntegration.RecordThresholdCost(combat, self,
-                            OpeningValuation.ThresholdCost(pricing.State, pricing.Profile, before, applied));
+                            OpeningValuation.ThresholdCost(pricing.State, pricing.Profile, before, applied) * pricing.Scale);
                         if (applied > 0 && (before == 0 || applied < before))
                             CombatIntegration.RecordEffect(combat, buff);
                     }
@@ -132,7 +132,7 @@ internal static class NativeActions
         }
     }
 
-    private static Task InsertStatus(IReadOnlyList<Creature> targets, ActionEffect effect) => effect.Kind switch
+    internal static Task InsertStatus(IReadOnlyList<Creature> targets, ActionEffect effect) => effect.Kind switch
     {
         EffectKind.Dazed => Insert<Dazed>(targets, effect),
         EffectKind.Wound => Insert<Wound>(targets, effect),
@@ -193,9 +193,10 @@ internal static class NativeActions
         "DEMISE" => Get<DemisePower>,
         "DOOM" => Get<DoomPower>,
         "IMBALANCED" => Get<ImbalancedPower>,
-        "PERSONAL_HIVE" => Get<PersonalHivePower>,
+        "PERSONAL_HIVE" => target => (PowerModel?)target.GetPower<RandomizedPersonalHivePower>() ?? target.GetPower<PersonalHivePower>(),
         "VITAL_SPARK" => Get<VitalSparkPower>,
-        "WITHERING_PRESENCE" => Get<WitheringPresencePower>,
+        "WITHERING_PRESENCE" => target => (PowerModel?)target.GetPower<RandomizedWitheringPresencePower>() ??
+            target.GetPowerInstances<WitheringPresencePower>().FirstOrDefault(),
         "ENVENOM" => Get<EnvenomPower>,
         "PAPER_CUTS" => Get<PaperCutsPower>,
         "PAINFUL_STABS" => Get<RandomizedPainfulStabsPower>,
@@ -239,6 +240,7 @@ internal static class NativeActions
     {
         "HARDENED_SHELL" => target.GetPower<HardenedShellPower>()?.Amount ?? 0,
         "HARD_TO_KILL" => target.GetPower<HardToKillPower>()?.Amount ?? 0,
+        "WITHERING_PRESENCE" => target.GetPower<RandomizedWitheringPresencePower>()?.Amount ?? 0,
         _ => 0
     };
 
@@ -263,7 +265,7 @@ internal static class NativeActions
 
         if (state.Id == "VITAL_SPARK")
             return await VitalSparkIntegration.Apply(target, state.Amount);
-        if (state.Id is "PERSONAL_HIVE" or "WITHERING_PRESENCE" or "ENVENOM" or "PAPER_CUTS")
+        if (state.Id is "ENVENOM" or "PAPER_CUTS")
             return await ApplyRareBuff(target, state);
         var choice = new ThrowingPlayerChoiceContext();
         var applied = state.Id switch
@@ -272,7 +274,9 @@ internal static class NativeActions
             "RITUAL" => await Apply<RitualPower>(),
             "VIGOR" => await Apply<VigorPower>(),
             "ENRAGE" => await Apply<EnragePower>(),
-            "PAINFUL_STABS" => await Apply<RandomizedPainfulStabsPower>(),
+            "PAINFUL_STABS" => await ApplyGenerator<RandomizedPainfulStabsPower>(),
+            "PERSONAL_HIVE" => await ApplyGenerator<RandomizedPersonalHivePower>(),
+            "WITHERING_PRESENCE" => await ApplyGenerator<RandomizedWitheringPresencePower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
@@ -310,6 +314,34 @@ internal static class NativeActions
                 await PowerCmd.ModifyAmount(choice, power, state.Amount - power.Amount, target, null);
             return target.GetPower<T>()?.Amount ?? 0;
         }
+
+        async Task<int> ApplyGenerator<T>() where T : RandomizedCardPower
+        {
+            var power = target.GetPower<T>();
+            int before = power?.Amount ?? 0;
+            bool threshold = EffectPolicy.IsThreshold(state.Id);
+            if (power == null)
+            {
+                power = (T)ModelDb.Power<T>().ToMutable();
+                power.ConfiguredCard = state.GeneratedCard;
+                if (threshold)
+                    power.Target = target.CombatState?.PlayerCreatures.FirstOrDefault(player => player.IsAlive);
+                await PowerCmd.Apply(choice, power, target, state.Amount, target, null);
+            }
+            else if (state.GeneratedCard == null || state.GeneratedCard == power.Card)
+            {
+                if (power is RandomizedWitheringPresencePower withering)
+                {
+                    if (state.Amount < before)
+                        await withering.ReduceThreshold(choice, state.Amount);
+                }
+                else
+                    await PowerCmd.ModifyAmount(choice, power, state.Amount, target, null);
+            }
+
+            int appliedAmount = target.GetPower<T>()?.Amount ?? 0;
+            return threshold ? appliedAmount : appliedAmount - before;
+        }
     }
 
     private static async Task<int> ApplyTemporaryThorns(Creature target, int amount)
@@ -327,29 +359,17 @@ internal static class NativeActions
 
     private static async Task<int> ApplyRareBuff(Creature owner, OpeningState state)
     {
-        if (owner.CombatState is not { } combat)
+        if (owner.CombatState == null)
             return 0;
 
         int before = OpeningPower(state.Id)?.Invoke(owner)?.Amount ?? 0;
         var choice = new ThrowingPlayerChoiceContext();
         var power = state.Id switch
         {
-            "PERSONAL_HIVE" => (PowerModel?)await PowerCmd.Apply<PersonalHivePower>(choice, owner, state.Amount, owner, null),
-            "WITHERING_PRESENCE" => await ApplyWithering(),
-            "ENVENOM" => await PowerCmd.Apply<EnvenomPower>(choice, owner, state.Amount, owner, null),
+            "ENVENOM" => (PowerModel?)await PowerCmd.Apply<EnvenomPower>(choice, owner, state.Amount, owner, null),
             "PAPER_CUTS" => await PowerCmd.Apply<PaperCutsPower>(choice, owner, state.Amount, owner, null),
             _ => null
         };
         return power == null ? 0 : power.Amount - before;
-
-        async Task<WitheringPresencePower?> ApplyWithering()
-        {
-            if (combat.PlayerCreatures.FirstOrDefault(player => player.IsAlive) is not { } player)
-                return null;
-            var power = (WitheringPresencePower)ModelDb.Power<WitheringPresencePower>().ToMutable();
-            power.Target = player;
-            await PowerCmd.Apply(choice, power, owner, state.Amount, owner, null);
-            return owner.Powers.Contains(power) ? power : null;
-        }
     }
 }

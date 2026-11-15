@@ -16,7 +16,8 @@ public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
 public sealed record StatusCardDestination(StatusPile Pile, int Amount);
 
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null,
-    IReadOnlyList<StatusCardDestination>? SplitDestinations = null, ThresholdPrice? Threshold = null)
+    IReadOnlyList<StatusCardDestination>? SplitDestinations = null, ThresholdPrice? Threshold = null,
+    EffectKind? GeneratedCard = null)
 {
     public IReadOnlyList<StatusCardDestination> CardDestinations => SplitDestinations ?? [new(Pile ?? StatusPile.Discard, Amount)];
     public EffectTarget Target => TargetFor(Kind);
@@ -33,7 +34,8 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
         EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
-    public static bool UsesThreshold(EffectKind kind) => kind is EffectKind.HardenedShell or EffectKind.HardToKill;
+    public static bool UsesThreshold(EffectKind kind) =>
+        kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.WitheringPresence;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
@@ -71,7 +73,8 @@ public sealed record ActionContext(
     bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
-    bool SpecialDebuffAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null);
+    bool SpecialDebuffAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
+    IReadOnlyDictionary<EffectKind, EffectKind>? GeneratedCards = null);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
@@ -84,6 +87,14 @@ public sealed record ActionValuationSettings(
     IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
     IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null, double CardStartingPlayerActionValue = 16)
 {
+    internal double CardUnitValue(EffectKind card, MonsterProfile profile, int amount = 1)
+    {
+        double baseline = CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
+        double ratio = Math.Max(baseline, CardPlayerActionValueRatios?.GetValueOrDefault(card) ?? 0);
+        double baseValue = Valuation.Evaluate(card, profile, amount) / amount;
+        return Math.Max(0, baseValue - ratio * CardStartingPlayerActionValue) + ratio * profile.PlayerActionValue;
+    }
+
     public EffectPolicy PolicyFor(EffectKind kind) => Buffs?.GetValueOrDefault(kind) is { } buff
         ? new EffectPolicy(buff.Stackable, buff.Unique, EffectTarget.Self)
         : Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
@@ -109,7 +120,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
 
     public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context)
     {
-        double cardBaseline = settings.CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
@@ -122,16 +132,24 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             int current = threshold ? context.Thresholds?.GetValueOrDefault(kind) ?? 0 : 0;
             if (current > 0 && !buff.Stackable)
                 continue;
-            var doses = buff.Doses(profile).Where(amount => current == 0 || amount < current)
-                .Select(amount => (Amount: amount, Value: threshold ? OpeningValuation.ThresholdCost(buff, profile, current, amount)
-                    : OpeningValuation.Evaluate(buff, profile, amount)))
-                .Where(dose => dose.Value > 0).ToArray();
+            EffectKind? existingCard = context.GeneratedCards != null && context.GeneratedCards.TryGetValue(kind, out var card)
+                ? card : null;
+            var doses = (from variant in TriggeredCardBuffs.Variants(kind, buff, settings, context.Rooms, existingCard)
+                         let scale = TriggeredCardBuffs.Scale(kind, variant.Card, settings, profile)
+                         from amount in buff.Doses(profile)
+                         where current == 0 || amount < current
+                         let price = threshold ? OpeningValuation.ThresholdCost(buff, profile, current, amount)
+                             : OpeningValuation.Evaluate(buff, profile, amount)
+                         where price * scale > 0
+                         select (Amount: amount, Value: price * scale, variant.Card, variant.Weight, Scale: scale)).ToArray();
+            double doseWeight = doses.Sum(dose => dose.Weight);
             foreach (var dose in doses)
             {
                 var effect = new ActionEffect(kind, dose.Amount,
-                    Threshold: threshold ? new ThresholdPrice(buff, profile, dose.Value) : null);
-                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight / doses.Length,
-                    Effects: [effect], SharedWeightBonus: bonus / doses.Length);
+                    Threshold: threshold ? new ThresholdPrice(buff, profile, dose.Value, dose.Scale) : null,
+                    GeneratedCard: dose.Card);
+                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight * dose.Weight / doseWeight,
+                    Effects: [effect], SharedWeightBonus: bonus * dose.Weight / doseWeight);
             }
         }
         foreach (var (kind, levels) in settings.Amounts)
@@ -223,10 +241,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 .GroupBy(place => place.Pile)
                 .Select(group => new StatusPlacement(kind, group.Key, group.Sum(place => place.Weight)))
                 .OrderByDescending(place => place.Weight).ToArray();
-            double value = settings.Valuation.Evaluate(kind, profile, amount);
-            double ratio = Math.Max(cardBaseline, settings.CardPlayerActionValueRatios?.GetValueOrDefault(kind) ?? 0);
-            double perCard = Math.Max(0, value / amount - ratio * settings.CardStartingPlayerActionValue)
-                + ratio * profile.PlayerActionValue;
+            double perCard = settings.CardUnitValue(kind, profile, amount);
             if (perCard <= 0)
                 return;
 
@@ -252,7 +267,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         }
     }
 
-    private static bool CanPlace(EffectKind kind, StatusPile pile) =>
+    internal static bool CanPlace(EffectKind kind, StatusPile pile) =>
         !(kind == EffectKind.Dazed && pile is StatusPile.Hand or StatusPile.Bottom) &&
         !(pile == StatusPile.Hand && kind is EffectKind.Void or EffectKind.Amnesia or EffectKind.MindRot or
             EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration);
@@ -271,7 +286,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         EffectKind.Vulnerable or EffectKind.Frail || ActionEffect.IsCard(kind);
 
     private static string EffectName(ActionEffect effect) =>
-        $"{effect.Kind} {effect.Amount}" + (effect.SplitDestinations is { } split
+        $"{effect.Kind} {effect.Amount}" + (effect.GeneratedCard is { } card ? $" [{card}]" : "") + (effect.SplitDestinations is { } split
             ? " @" + string.Join("+", split.Select(destination => $"{destination.Pile}:{destination.Amount}"))
             : effect.Pile is { } pile ? $" @{pile}" : "");
 }

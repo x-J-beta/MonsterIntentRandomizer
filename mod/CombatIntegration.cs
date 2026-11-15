@@ -94,7 +94,8 @@ internal static class CombatIntegration
                 candidates[id] = rules.OpeningStatesFor(state.Rules)
                     .Where(key => key != "STUN" || (creature.Monster?.NextMove is { } first &&
                         CanReplaceMove(creature, state, first, 1)))
-                    .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key)))
+                    .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key),
+                        EffectPolicy.TryGetKind(key, out var kind) ? RandomizedCardPower.Find(creature, kind)?.Card : null))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -115,6 +116,8 @@ internal static class CombatIntegration
                 double price = threshold
                     ? OpeningValuation.ThresholdCost(pricing, profile, previousThreshold, applied)
                     : OpeningValuation.Evaluate(pricing, profile, applied);
+                if (pick.State.GeneratedCard.HasValue && EffectPolicy.TryGetKind(pick.State.Id, out var kind))
+                    price *= TriggeredCardBuffs.Scale(kind, pick.State.GeneratedCard, rules.Actions, profile);
                 if (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0)
                     encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
                 state.Balance = state.Balance with
@@ -347,6 +350,9 @@ internal static class CombatIntegration
             AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
             Thresholds = (encounter.Rules.Actions.Buffs?.Keys ?? []).Where(ActionEffect.UsesThreshold)
                 .ToDictionary(kind => kind, kind => NativeActions.ThresholdFor(self, EffectPolicy.Id(kind))),
+            GeneratedCards = TriggeredCardBuffs.Types.Keys
+                .Select(kind => (Kind: kind, Power: RandomizedCardPower.Find(self, kind)))
+                .Where(entry => entry.Power != null).ToDictionary(entry => entry.Kind, entry => entry.Power!.Card),
             ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
