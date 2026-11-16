@@ -44,7 +44,8 @@ public sealed record PoolSettings(
     double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 1,
     IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5,
     double HighAscensionActionValueMultiplier = 1.15,
-    double FavoriteDirectBaseShare = 0.1, double FavoriteDirectStrengthMultiplier = 0.02)
+    double FavoriteDirectBaseShare = 0.1, double FavoriteDirectStrengthMultiplier = 0.02,
+    bool ExternalMoveRandomSkip = true)
 {
     internal double ChaosMultiplier => 1 + 4 * Chaos;
     internal double SharedNonAttackWeight => 0.25 + 0.75 * Chaos;

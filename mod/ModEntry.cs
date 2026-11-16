@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 38;
+    private const int SettingsRevision = 39;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -231,8 +231,25 @@ internal static class ModSettings
                 AddActionDefaults(settings, defaultSettings, curseIds);
             else if (stored.Revision == 36)
                 UpgradeCurseStacking(settings, curseIds);
-            AddLaterMonsterValuationDefaults(settings, defaultSettings);
-            AddDefaultFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
+            var currentMonsters = profiles["monsters"]!.AsObject();
+            if (stored.Revision < 38)
+            {
+                AddLaterMonsterValuationDefaults(settings, defaultSettings);
+                AddDefaultFavorites(currentMonsters, defaultProfiles);
+            }
+            if (currentMonsters["THIEVING_HOPPER"] is JsonObject hopper)
+            {
+                var favorites = (hopper["favorites"] ??= new JsonObject()).AsObject();
+                if (stored.Revision == 38 && favorites["Debt"]?.GetValue<double>() == 2)
+                    favorites.Remove("Debt");
+                favorites["DrawDown"] ??= defaultProfiles["THIEVING_HOPPER"]!["favorites"]!["DrawDown"]!.DeepClone();
+            }
+            if (currentMonsters["GREMLIN_MERC"] is JsonObject merc)
+            {
+                var favorites = merc["favorites"] ??= new JsonObject();
+                favorites["Debt"] ??= defaultProfiles["GREMLIN_MERC"]!["favorites"]!["Debt"]!.DeepClone();
+            }
+            settings["pools"]!["externalMoveRandomSkip"] ??= defaultSettings["pools"]!["externalMoveRandomSkip"]!.DeepClone();
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),

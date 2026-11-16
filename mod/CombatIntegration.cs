@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History;
@@ -32,6 +33,7 @@ internal static class CombatIntegration
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
         public HashSet<EffectKind> FixedSpecialStatuses { get; init; } = [];
         public int SpecialStatusesSpent { get; set; }
+        public int? LastMoveRandomSkipRollRound { get; set; }
         public bool Ready { get; set; }
         public int Rooms { get; init; }
         public int CompletedPlayerTurns { get; set; }
@@ -167,7 +169,7 @@ internal static class CombatIntegration
                     : enemy.Profile;
                 var profile = WithSurvival(configured, creature, combat, encounter);
                 enemy.Plan = encounter.Rules.PlanMove(__instance.Id.Entry, original.Id, enemy.Balance, profile,
-                    context, RandomFor(combat, creature.CombatId ?? 0, round));
+                    context, RandomForMove(combat, encounter, creature.CombatId ?? 0, round));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action, enemy.Rules) : null;
                 enemy.PlannedRound = round;
                 enemy.ActualThresholdCost = 0;
@@ -367,4 +369,18 @@ internal static class CombatIntegration
 
     private static Random RandomFor(ICombatState combat, uint creatureId, int round) =>
         MoveRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor, creatureId, round);
+
+    private static Random RandomForMove(ICombatState combat, EncounterRules encounter, uint creatureId, int round)
+    {
+        var random = RandomFor(combat, creatureId, round);
+        var pools = encounter.Rules.PoolSettings;
+        if (!pools.ExternalMoveRandomSkip || pools.Chaos <= 0.3 || encounter.LastMoveRandomSkipRollRound == round)
+            return random;
+
+        encounter.LastMoveRandomSkipRollRound = round;
+        double chance = Math.Pow(pools.Chaos - 0.3, 3);
+        if (RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue < chance)
+            random.NextDouble();
+        return random;
+    }
 }

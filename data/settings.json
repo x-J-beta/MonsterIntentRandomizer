@@ -8,6 +8,7 @@
     "minimumSelectionSpread": 0.5,
     "actionValueMultiplier": 1.05,
     "chaos": 0.375,
+    "externalMoveRandomSkip": true,
     "drawBudgetMultiplier": 1.4000000000000001,
     "localOverdraftShare": 0.3,
     "nonAttackCandidates": 5,

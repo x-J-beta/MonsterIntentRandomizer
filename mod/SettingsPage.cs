@@ -101,9 +101,12 @@ internal static class SettingsPage
         buttons.AddChild(save);
 
         var quickInputs = new List<(string[] Path, SpinBox Input)>();
+        var quickToggles = new List<(string Section, string Key, bool Default, CheckButton Input)>();
         AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", "actionValueMultiplier");
         AddNumber("高进阶行动力倍率", 1, 5, 0.01, "pools", "highAscensionActionValueMultiplier");
         AddNumber("混沌值", 0, 1, 0.01, "pools", "chaos");
+        AddToggle("实战出招随机跳样", "每轮用系统随机数判定一次。触发时，跳过一个出招随机数。",
+            "pools", "externalMoveRandomSkip", defaultValue: true);
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
@@ -120,31 +123,13 @@ internal static class SettingsPage
         AddNumber("玩家行动力基础值", 0.001, 100, 0.001, "playerAction", "base");
         AddNumber("玩家行动力房间除数", 0.001, 100, 0.001, "playerAction", "roomsPerStep");
         AddNumber("玩家行动力指数", 0.0001, 5, 0.0001, "playerAction", "exponent");
-        var useCombatDamage = new CheckButton
-        {
-            Text = "按本场玩家平均输出调整玩家行动力（10%）",
-            TooltipText = "每个玩家回合结束时更新，本场平均伤害占 10%，房间曲线占 90%。"
-        };
-        fields.AddChild(useCombatDamage);
-        useCombatDamage.Toggled += selected =>
-        {
-            try
-            {
-                var json = JsonNode.Parse(settings.Text)!.AsObject();
-                var playerAction = json["playerAction"] ??= new JsonObject();
-                playerAction["useCombatDamage"] = selected;
-                settings.Text = json.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-                message.Text = "";
-            }
-            catch (Exception error)
-            {
-                message.Text = $"无法同步玩家输出设置。{error.Message}";
-            }
-        };
+        AddToggle("按本场玩家平均输出调整玩家行动力（10%）",
+            "每个玩家回合结束时更新，本场平均伤害占 10%，房间曲线占 90%。",
+            "playerAction", "useCombatDamage", defaultValue: false);
         AddNumber("开场抽取次数", 0, 20, 1, "opening", "attempts");
         AddNumber("单怪开场状态数量", 0, 10, 1, "opening", "maxPerMonster");
         AddNumber("开场净值上限倍率", 0, 3, 0.01, "opening", "maxEncounterValueMultiplier");
-        AddNumber("混沌 5 的开场强度倍率", 1, 3, 0.01, "pools", "openingStrengthAtMax");
+        AddNumber("满混沌时的开场强度倍率", 1, 3, 0.01, "pools", "openingStrengthAtMax");
         AddNumber("开场无变化权重", 0, 100, 1, "opening", "weights", "none");
         AddNumber("开场正面权重", 0, 100, 1, "opening", "weights", "positive");
         AddNumber("开场负面权重", 0, 100, 1, "opening", "weights", "negative");
@@ -225,16 +210,42 @@ internal static class SettingsPage
             };
         }
 
+        void AddToggle(string label, string tooltip, string section, string key, bool defaultValue)
+        {
+            var input = new CheckButton { Text = label, TooltipText = tooltip };
+            fields.AddChild(input);
+            quickToggles.Add((section, key, defaultValue, input));
+            input.Toggled += selected =>
+            {
+                try
+                {
+                    var json = JsonNode.Parse(settings.Text)!.AsObject();
+                    var owner = json[section] ??= new JsonObject();
+                    owner[key] = selected;
+                    settings.Text = json.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                    message.Text = "";
+                }
+                catch (Exception error)
+                {
+                    message.Text = $"无法同步全局参数。{error.Message}";
+                }
+            };
+        }
+
         void RefreshNumbers()
         {
             try
             {
                 using var json = JsonDocument.Parse(settings.Text);
                 bool isObject = json.RootElement.ValueKind == JsonValueKind.Object;
-                useCombatDamage.Disabled = !isObject;
-                useCombatDamage.SetPressedNoSignal(isObject && json.RootElement.TryGetProperty("playerAction", out var action) &&
-                    action.ValueKind == JsonValueKind.Object && action.TryGetProperty("useCombatDamage", out var option) &&
-                    option.ValueKind == JsonValueKind.True);
+                foreach (var (section, key, defaultValue, input) in quickToggles)
+                {
+                    input.Disabled = !isObject;
+                    bool selected = isObject && json.RootElement.TryGetProperty(section, out var owner) &&
+                        owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty(key, out var option)
+                        ? option.ValueKind == JsonValueKind.True : defaultValue;
+                    input.SetPressedNoSignal(isObject && selected);
+                }
                 foreach (var (path, input) in quickInputs)
                 {
                     var current = json.RootElement;
@@ -250,7 +261,8 @@ internal static class SettingsPage
             }
             catch (JsonException)
             {
-                useCombatDamage.Disabled = true;
+                foreach (var (_, _, _, input) in quickToggles)
+                    input.Disabled = true;
                 foreach (var (_, input) in quickInputs)
                     input.Editable = false;
                 message.Text = "请先修复配置 JSON。";
