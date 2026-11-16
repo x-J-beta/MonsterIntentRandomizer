@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 34;
+    private const int SettingsRevision = 35;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -217,6 +217,7 @@ internal static class ModSettings
                 UpgradeDisabledWeights(settings);
             UpgradeStatReductionWeights(settings, defaultSettings);
             AddStatReductionFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
+            UpgradeChaosAndKnightDebuffs(settings, defaultSettings);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -240,6 +241,30 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void UpgradeChaosAndKnightDebuffs(JsonNode settings, JsonNode defaults)
+    {
+        var pools = settings["pools"]!.AsObject();
+        var defaultPools = defaults["pools"]!;
+        if (pools["chaos"] == null)
+        {
+            pools["chaos"] = pools["chaosMultiplier"]?.GetValue<double>() is double oldChaos
+                ? Math.Clamp((oldChaos - 1) / 4, 0, 1) : defaultPools["chaos"]!.GetValue<double>();
+            pools["fullChaosBudgetAt"] = pools["fullChaosBudgetAt"]?.GetValue<double>() is double oldThreshold && oldThreshold > 1
+                ? (oldThreshold - 1) / 4 : defaultPools["fullChaosBudgetAt"]!.GetValue<double>();
+        }
+        pools.Remove("chaosMultiplier");
+
+        var actions = settings["actions"]!;
+        var defaultActions = defaults["actions"]!;
+        foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
+        {
+            var entries = (actions[section] ??= new JsonObject()).AsObject();
+            foreach (string effect in new[] { "Dampen", "Hex" })
+                if (defaultActions[section]?[effect] is { } value)
+                    entries[effect] ??= value.DeepClone();
         }
     }
 

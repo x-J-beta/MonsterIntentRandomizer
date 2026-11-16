@@ -28,13 +28,13 @@ internal sealed class RuleConfiguration
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
             throw new ArgumentException("玩家行动力的基础值、房间除数和指数须为正数。");
         PoolSettings = Read<PoolSettings>(settings.GetProperty("pools"));
-        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.ChaosMultiplier < 0 || PoolSettings.HighAscensionActionValueMultiplier < 1)
-            throw new ArgumentException("全局行动力倍率须为正数，混沌倍率须为非负数，高进阶行动力倍率须至少为 1。");
+        if (PoolSettings.ActionValueMultiplier <= 0 || PoolSettings.Chaos is < 0 or > 1 || PoolSettings.HighAscensionActionValueMultiplier < 1)
+            throw new ArgumentException("全局行动力倍率须为正数，混沌值须在 0 到 1 之间，高进阶行动力倍率须至少为 1。");
         if (PoolSettings.FavoriteDirectBaseShare is < 0 or > 1 || PoolSettings.FavoriteDirectStrengthMultiplier < 0)
             throw new ArgumentException("偏好直占基础值须在 0 到 1 之间，强度系数须为非负数。");
         if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
             PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
-            PoolSettings.FullChaosBudgetAt <= 1 || PoolSettings.OpeningStrengthAtMax < 1 ||
+            PoolSettings.FullChaosBudgetAt <= 0 || PoolSettings.OpeningStrengthAtMax < 1 ||
             PoolSettings.ChaosBudgetWeights is { } chaosWeights &&
             (chaosWeights.Any(entry => !Enum.IsDefined(entry.Key) || entry.Value < 0) || chaosWeights.Values.Sum() <= 0))
             throw new ArgumentException("抽取预算、候选数量或混沌分配参数无效。");
@@ -70,11 +70,11 @@ internal sealed class RuleConfiguration
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, policies, buffs, PoolSettings.ChaosProgress, cardRatios, PlayerAction.At(0));
+            minimums, policies, buffs, PoolSettings.Chaos, cardRatios, PlayerAction.At(0));
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),
-            PoolSettings.OpeningStrength);
+            PoolSettings.OpeningStrength, PoolSettings.SpecialStatusLimit);
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
         foreach (var (kind, buff) in buffs)
             OpeningValues[EffectPolicy.Id(kind)] = buff;
@@ -101,7 +101,7 @@ internal sealed class RuleConfiguration
     public int HardCardLimitFirstTurn { get; }
     internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null,
         EffectKind? existingCard = null, string? monsterId = null) =>
-        OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress,
+        OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.Chaos,
             EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard, monsterId);
     internal IEnumerable<string> OpeningStatesFor(string id, MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
@@ -118,7 +118,8 @@ internal sealed class RuleConfiguration
             extraBuffHits: clawPhase ? profile.BaseExpectedSurvivalTurns / 2 : 0);
         var plan = Planner.Plan(previous, profile, candidates, random,
             buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target),
-            extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0);
+            extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0,
+            specialStatusesRemaining: context.SpecialStatusesRemaining);
         return clawPhase ? plan with { After = plan.After with { CompletedClawTurns = previous.CompletedClawTurns + 1 } } : plan;
     }
 
@@ -133,6 +134,20 @@ internal sealed class RuleConfiguration
     };
 
     internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique;
+
+    internal HashSet<EffectKind> FixedKnightStatuses(IEnumerable<string> enemies)
+    {
+        var fixedStatuses = new HashSet<EffectKind>();
+        foreach (string id in enemies)
+        {
+            if (id == "MAGI_KNIGHT" && Monsters.GetValueOrDefault(id)?.AllowsMove("DAMPEN_MOVE") != true)
+                fixedStatuses.Add(EffectKind.Dampen);
+            if (id == "SPECTRAL_KNIGHT" && Monsters.GetValueOrDefault(id)?.AllowsMove("HEX") != true)
+                fixedStatuses.Add(EffectKind.Hex);
+        }
+        return fixedStatuses;
+    }
+
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
     {
         JsonElement Setting(string name) => entry.TryGetProperty(name, out var value) ? value : defaults.GetProperty(name);

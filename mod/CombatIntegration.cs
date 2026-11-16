@@ -31,8 +31,8 @@ internal static class CombatIntegration
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
         public Dictionary<EffectKind, (Creature Owner, int Round)> UniquePlans { get; } = new();
-        public (Creature Owner, int Round)? SpecialStatusPlan { get; set; }
-        public bool SpecialStatusSpent { get; set; }
+        public HashSet<EffectKind> FixedSpecialStatuses { get; init; } = [];
+        public int SpecialStatusesSpent { get; set; }
         public bool Ready { get; set; }
         public int Rooms { get; init; }
         public int CompletedPlayerTurns { get; set; }
@@ -72,7 +72,11 @@ internal static class CombatIntegration
         try
         {
             int rooms = Math.Max(0, combat.RunState.MapPointHistory.SelectMany(act => act).Sum(point => point.Rooms.Count) - 1);
-            var encounter = new EncounterRules(rules) { Rooms = rooms };
+            var encounter = new EncounterRules(rules)
+            {
+                Rooms = rooms,
+                FixedSpecialStatuses = rules.FixedKnightStatuses(combat.Enemies.Select(enemy => enemy.ModelId.Entry))
+            };
             Encounters.Add(combat, encounter);
             var candidates = new Dictionary<string, IReadOnlyList<OpeningOption>>();
             var actionValues = new Dictionary<string, double>();
@@ -120,7 +124,8 @@ internal static class CombatIntegration
                 if (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0)
                 {
                     encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
-                    encounter.SpecialStatusSpent |= pick.State.IsSpecialStatus;
+                    if (pick.State.SpecialStatus.HasValue)
+                        encounter.SpecialStatusesSpent++;
                 }
                 state.Balance = state.Balance with
                 {
@@ -167,10 +172,8 @@ internal static class CombatIntegration
                 enemy.PlannedRound = round;
                 enemy.ActualThresholdCost = 0;
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
-                    if (encounter.Rules.UniqueAction(effect.Kind))
+                    if (effect.IsSpecialStatus || encounter.Rules.UniqueAction(effect.Kind))
                         encounter.UniquePlans[effect.Kind] = (creature, round);
-                if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialStatus) == true)
-                    encounter.SpecialStatusPlan = (creature, round);
             }
 
             // The original state machine keeps its branch and stun history. Only the advertised/executed move changes.
@@ -216,11 +219,13 @@ internal static class CombatIntegration
 
     internal static bool ManagesCombat(ICombatState combat) => Encounters.TryGetValue(combat, out _);
 
-    internal static bool SpendSpecialStatus(ICombatState combat)
+    internal static bool SpendSpecialStatus(ICombatState combat, EffectKind kind)
     {
-        if (!Encounters.TryGetValue(combat, out var encounter) || encounter.SpecialStatusSpent)
+        if (!Encounters.TryGetValue(combat, out var encounter) ||
+            encounter.SpecialStatusesSpent >= encounter.Rules.PoolSettings.SpecialStatusLimit)
             return false;
-        encounter.SpecialStatusSpent = true;
+        encounter.SpecialStatusesSpent++;
+        encounter.UniquePlans.Remove(kind);
         return true;
     }
 
@@ -231,14 +236,18 @@ internal static class CombatIntegration
         if (!Encounters.TryGetValue(combat, out var encounter))
             return true;
         var targetKind = ActionEffect.TargetFor(kind);
+        string id = EffectPolicy.Id(kind);
+        if (ActionEffect.IsSpecialStatusKind(kind) &&
+            (encounter.FixedSpecialStatuses.Contains(kind) || encounter.UsedEffects.Contains((targetKind, id))))
+            return false;
         var target = targetKind == EffectTarget.Self ? self : player;
         bool stackable = encounter.Rules.Actions.PolicyFor(kind, self.Monster?.Id.Entry).Stackable;
         if (!stackable && NativeActions.HasActionEffect(kind, target))
             return false;
-        if (ActionEffect.UsesThreshold(kind) && NativeActions.ThresholdFor(self, EffectPolicy.Id(kind)) > 0)
+        if (ActionEffect.UsesThreshold(kind) && NativeActions.ThresholdFor(self, id) > 0)
             return stackable;
         return !encounter.Rules.UniqueAction(kind) ||
-            (!encounter.UsedEffects.Contains((targetKind, EffectPolicy.Id(kind))) &&
+            (!encounter.UsedEffects.Contains((targetKind, id)) &&
                 !(targetKind == EffectTarget.Self ? combat.Enemies : combat.PlayerCreatures)
                     .Any(creature => creature.IsAlive && NativeActions.HasActionEffect(kind, creature)));
     }
@@ -310,6 +319,8 @@ internal static class CombatIntegration
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
         var player = combat.PlayerCreatures[0];
+        int reservedSpecials = encounter.UniquePlans.Count(entry => ActionEffect.IsSpecialStatusKind(entry.Key) &&
+            entry.Value.Round == combat.RoundNumber && entry.Value.Owner != self && entry.Value.Owner.IsAlive);
         return encounter.Rules.TurnContext(encounter.Rooms, combat.Enemies.Count(enemy => enemy.IsAlive),
             combat.RoundNumber, encounter.AveragePlayerDamage) with
         {
@@ -328,9 +339,8 @@ internal static class CombatIntegration
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
                     reserved.Owner != self && reserved.Owner.IsAlive)).ToHashSet(),
-            SpecialStatusAvailable = !encounter.SpecialStatusSpent &&
-                !(encounter.SpecialStatusPlan is { } special && special.Round == combat.RoundNumber &&
-                    special.Owner != self && special.Owner.IsAlive)
+            SpecialStatusesRemaining = Math.Max(0,
+                encounter.Rules.PoolSettings.SpecialStatusLimit - encounter.SpecialStatusesSpent - reservedSpecials)
         };
     }
 

@@ -117,8 +117,11 @@ internal static class ValuationPage
 
             AddCheck(content, "可叠加", policy?["stackable"]?.GetValue<bool>() ?? defaultPolicy.Stackable,
                 (root, value) => SetPolicy(root, id, "stackable", value));
-            AddCheck(content, "战斗中独特", policy?["unique"]?.GetValue<bool>() ?? defaultPolicy.Unique,
-                (root, value) => SetPolicy(root, id, "unique", value));
+            if (ActionEffect.IsSpecialStatusKind(kind))
+                content.AddChild(new Label { Text = "独特能力 · 占用全场名额" });
+            else
+                AddCheck(content, "战斗中独特", policy?["unique"]?.GetValue<bool>() ?? defaultPolicy.Unique,
+                    (root, value) => SetPolicy(root, id, "unique", value));
             var weight = config["weights"]?[id];
             AddNumber(content, "基础权重（-100 仅按偏好抽取）", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
                 (root, number) => SetActionWeight(root, id, "base", number));
@@ -140,8 +143,11 @@ internal static class ValuationPage
                     (root, value) => At(root)["common"] = value);
             AddCheck(content, "可叠加", state["stackable"]?.GetValue<bool>() ?? false,
                 (root, value) => At(root)["stackable"] = value);
-            AddCheck(content, "战斗中独特", state["unique"]?.GetValue<bool>() ?? false,
-                (root, value) => At(root)["unique"] = value);
+            if (kind is { } statusKind && ActionEffect.IsSpecialStatusKind(statusKind))
+                content.AddChild(new Label { Text = "独特能力 · 占用全场名额" });
+            else
+                AddCheck(content, "战斗中独特", state["unique"]?.GetValue<bool>() ?? false,
+                    (root, value) => At(root)["unique"] = value);
             AddNumber(content, shared ? "基础权重（-100 仅按出招偏好抽取）" : "基础权重（-100 停用）",
                 state["weight"]?.GetValue<double>() ?? 1, 0.001,
                 (root, number) => At(root)["weight"] = number);

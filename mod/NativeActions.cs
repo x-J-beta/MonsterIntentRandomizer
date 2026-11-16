@@ -61,7 +61,7 @@ internal static class NativeActions
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
             }
-            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat))
+            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat, effect.Kind))
                 continue;
             if (!string.IsNullOrWhiteSpace(supportAnimation))
             {
@@ -130,6 +130,17 @@ internal static class NativeActions
                     break;
                 case EffectKind.Shrink:
                     await PowerCmd.Apply<ShrinkPower>(choice, living, -1, self, null);
+                    break;
+                case EffectKind.Dampen:
+                    foreach (var target in living)
+                    {
+                        var power = (DampenPower)ModelDb.Power<DampenPower>().ToMutable();
+                        power.AddCaster(self);
+                        await PowerCmd.Apply(choice, power, target, 1, self, null);
+                    }
+                    break;
+                case EffectKind.Hex:
+                    await PowerCmd.Apply<HexPower>(choice, living, amount, self, null);
                     break;
                 case EffectKind.Soulbind:
                     await PowerCmd.Apply<ChainsOfBindingPower>(choice, living, amount, self, null);
@@ -275,6 +286,8 @@ internal static class NativeActions
             EffectKind.Frail => target.HasPower<FrailPower>(),
             EffectKind.Poison => target.HasPower<PoisonPower>(),
             EffectKind.Shrink => target.HasPower<ShrinkPower>(),
+            EffectKind.Dampen => target.HasPower<DampenPower>(),
+            EffectKind.Hex => target.HasPower<HexPower>(),
             EffectKind.Soulbind => target.HasPower<ChainsOfBindingPower>(),
             EffectKind.DrawDown => target.HasPower<NextTurnDrawDownPower>(),
             EffectKind.EnergyDown => target.HasPower<NextTurnEnergyDownPower>(),

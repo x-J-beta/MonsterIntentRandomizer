@@ -103,7 +103,7 @@ internal static class SettingsPage
         var quickInputs = new List<(string[] Path, SpinBox Input)>();
         AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", "actionValueMultiplier");
         AddNumber("高进阶行动力倍率", 1, 5, 0.01, "pools", "highAscensionActionValueMultiplier");
-        AddNumber("混沌程度倍率", 0, 5, 0.01, "pools", "chaosMultiplier");
+        AddNumber("混沌值", 0, 1, 0.01, "pools", "chaos");
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
         AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
@@ -114,7 +114,7 @@ internal static class SettingsPage
         AddNumber("偏好直占比例基础值（0.10 = 10%）", 0, 1, 0.01, "pools", "favoriteDirectBaseShare");
         AddNumber("偏好强度对直占比例的系数", 0, 1, 0.01, "pools", "favoriteDirectStrengthMultiplier");
         AddNumber("无攻击时转给其他行动的比例", 0, 1, 0.01, "pools", "unusedAttackBudgetShare");
-        AddNumber("预算达到混沌目标的倍率", 1.01, 10, 0.01, "pools", "fullChaosBudgetAt");
+        AddNumber("预算达到目标的混沌值", 0.0025, 2.25, 0.0025, "pools", "fullChaosBudgetAt");
         foreach (var (id, label) in new[] { ("attack", "攻击"), ("buff", "强化"), ("defend", "防御"), ("playerDebuff", "减益") })
             AddNumber($"高混沌{label}分配权重", 0, 100, 0.01, "pools", "chaosBudgetWeights", id);
         AddNumber("玩家行动力基础值", 0.001, 100, 0.001, "playerAction", "base");

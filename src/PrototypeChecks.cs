@@ -54,7 +54,10 @@ internal static class PrototypeChecks
         var regen = Status("amount*survivalTurns", 0.225, 4);
         var variable = OpeningValuation.Option("REGEN", regen, estimate);
         var normalChaos = new PoolSettings(0.75, 0.9);
-        var maxChaos = normalChaos with { ChaosMultiplier = 5 };
+        var maxChaos = normalChaos with { Chaos = 1 };
+        Equal(1, (normalChaos with { Chaos = 0.669 }).SpecialStatusLimit, "below the second special status");
+        Equal(2, (normalChaos with { Chaos = 0.67 }).SpecialStatusLimit, "the second special status unlocks at 0.67");
+        Equal(3, maxChaos.SpecialStatusLimit, "full chaos allows three special statuses");
         Equal(0.25, normalChaos.SharedNonAttackWeight, "normal chaos shares a quarter of non-attack weight");
         Equal(1, maxChaos.SharedNonAttackWeight, "full chaos shares all non-attack weight");
         Equal(1.5, maxChaos.OpeningStrength, "full chaos opening strength");
@@ -89,11 +92,11 @@ internal static class PrototypeChecks
             DrawBudgetMultiplier: 1, UnusedAttackBudgetShare: 0));
         var profile = new MonsterProfile(8, 0.15, 0.67, 0.35, 2,
             new Dictionary<IntentStyle, double> { [IntentStyle.Attack] = 1, [IntentStyle.Defend] = 1 });
-        var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, ChaosMultiplier: 0).Adjust(profile);
+        var adjusted = new PoolSettings(0.75, 0.9, ActionValueMultiplier: 2, Chaos: 0).Adjust(profile);
         Equal(16, adjusted.ActionValue, "global action value multiplier");
         Equal(9.2, new PoolSettings(0.75, 0.9).Adjust(profile, highAscension: true).ActionValue,
             "high ascension scales the same monster profile");
-        Equal(0, adjusted.Volatility, "zero chaos removes grant jitter");
+        Equal(profile.Volatility, adjusted.Volatility, "zero chaos retains the original minimum volatility");
         Equal(profile.AttackFrequency, adjusted.AttackFrequency, "multipliers preserve the configured attack cadence");
         var random = new Random(2026);
         var balance = new Pools(4, 1);
@@ -295,14 +298,17 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Opening upgrades must retain the original card and lower the threshold.");
         Equal((72.0 / openedWithering.State.Amount - 12) * 2.5 / 4, openedWithering.Value,
             "opening and combat share the generated card price");
-        var sharedOpening = OpeningValuation.Draw(new Dictionary<string, IReadOnlyList<OpeningOption>>
+        var sharedOptions = new Dictionary<string, IReadOnlyList<OpeningOption>>
         {
             ["first"] = [witheringOpening],
             ["second"] = [new(new OpeningState("ENVENOM", 1), 2)]
-        }, new Dictionary<string, double> { ["first"] = 40, ["second"] = 40 },
-            new OpeningDraws(0, 1, 0, 12, 1, 3), new Random(11));
-        if (sharedOpening.Count != 1)
-            throw new InvalidOperationException("Different specials must share a single opening slot across monsters.");
+        };
+        var sharedValues = new Dictionary<string, double> { ["first"] = 40, ["second"] = 40 };
+        var sharedDraws = new OpeningDraws(0, 1, 0, 12, 1, 3);
+        Equal(1, OpeningValuation.Draw(sharedOptions, sharedValues, sharedDraws, new Random(11)).Count,
+            "specials share the opening allowance");
+        Equal(2, OpeningValuation.Draw(sharedOptions, sharedValues, sharedDraws with { SpecialStatusLimit = 2 }, new Random(11)).Count,
+            "higher chaos admits a second special in the same encounter");
         var generated = catalog.Generate(varied, context).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
@@ -326,7 +332,7 @@ internal static class PrototypeChecks
             Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
         Equal(4, secondAct.Single(action => action.Id == "DrawDown 1").Value, "draw reduction uses player turn value");
         Equal(6.6, secondAct.Single(action => action.Id == "EnergyDown 1").Value, "energy reduction uses player turn value");
-        var spent = context with { SpecialStatusAvailable = false };
+        var spent = context with { SpecialStatusesRemaining = 0 };
         var afterSpecialStatus = catalog.Generate(varied, spent).SelectMany(action => action.Effects!).ToArray();
         if (!generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialStatus)) ||
             afterSpecialStatus.Any(effect => effect.IsSpecialStatus) ||

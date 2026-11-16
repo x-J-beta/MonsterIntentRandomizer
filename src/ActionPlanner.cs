@@ -39,17 +39,18 @@ internal static class CombatMath
 public sealed record PoolSettings(
     double ActionValueRetention, double AttackDesireRetention, double InitialActionValueShare = 0.5,
     double InitialAttackDesire = 0, double BalanceTargetWeight = 0.5, double MinimumSelectionSpread = 0.5,
-    double ActionValueMultiplier = 1, double ChaosMultiplier = 1,
+    double ActionValueMultiplier = 1, double Chaos = 0,
     double DrawBudgetMultiplier = 1.3, double LocalOverdraftShare = 0.2, int NonAttackCandidates = 5,
-    double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 5,
+    double UnusedAttackBudgetShare = 0.5, double FullChaosBudgetAt = 1,
     IReadOnlyDictionary<IntentStyle, double>? ChaosBudgetWeights = null, double OpeningStrengthAtMax = 1.5,
     double HighAscensionActionValueMultiplier = 1.15,
     double FavoriteDirectBaseShare = 0.1, double FavoriteDirectStrengthMultiplier = 0.02)
 {
-    internal double ChaosProgress => Math.Clamp((ChaosMultiplier - 1) / 4, 0, 1);
-    internal double SharedNonAttackWeight => 0.25 + 0.75 * ChaosProgress;
-    internal double OpeningStrength => 1 + (OpeningStrengthAtMax - 1) * ChaosProgress;
-    private double BudgetChaos => Math.Clamp((ChaosMultiplier - 1) / (FullChaosBudgetAt - 1), 0, 1);
+    internal double ChaosMultiplier => 1 + 4 * Chaos;
+    internal double SharedNonAttackWeight => 0.25 + 0.75 * Chaos;
+    internal double OpeningStrength => 1 + (OpeningStrengthAtMax - 1) * Chaos;
+    internal int SpecialStatusLimit => 1 + (Chaos >= 0.67 ? 1 : 0) + (Chaos >= 1 ? 1 : 0);
+    private double BudgetChaos => Math.Clamp(Chaos / FullChaosBudgetAt, 0, 1);
 
     private static readonly IReadOnlyDictionary<IntentStyle, double> DefaultChaosWeights =
         new Dictionary<IntentStyle, double>
@@ -119,7 +120,7 @@ public sealed class ActionPlanner(PoolSettings settings)
 
     public ActionPlan Plan(Pools previous, MonsterProfile profile, IEnumerable<ActionCandidate> candidates,
         Random random, bool canRandomize = true, Func<int, double, ActionCandidate?>? buildAttack = null,
-        int extraClawDesire = 0)
+        int extraClawDesire = 0, int specialStatusesRemaining = 1)
     {
         if (!canRandomize)
             return new ActionPlan(null, previous, previous);
@@ -148,7 +149,8 @@ public sealed class ActionPlanner(PoolSettings settings)
         if (attack != null)
             parts.Add(attack);
 
-        var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is { Count: 1 }),
+        var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is [{ } effect] &&
+                (specialStatusesRemaining > 0 || !effect.IsSpecialStatus)),
             profile, otherTarget, overdraft, attack == null, random);
         while (parts.Count < 2 && otherTarget > 0 && extras.Count > 0)
         {
@@ -159,8 +161,10 @@ public sealed class ActionPlanner(PoolSettings settings)
             parts.Add(extra);
             otherTarget -= extra.Value;
             var chosen = extra.Effects![0];
+            if (chosen.IsSpecialStatus)
+                specialStatusesRemaining--;
             extras.RemoveAll(candidate => candidate.Effects![0].Kind == chosen.Kind ||
-                (chosen.IsSpecialStatus && candidate.Effects[0].IsSpecialStatus));
+                (specialStatusesRemaining == 0 && candidate.Effects[0].IsSpecialStatus));
         }
 
         var action = Compose(parts);
@@ -184,7 +188,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         double waitChance = 5 / (desire + 10);
         if (choices.Count == 0 || random.NextDouble() < waitChance)
             return 0;
-        return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, 1 - settings.ChaosProgress))), 0, random);
+        return Draw(choices.Select(choice => (choice.Hits, Math.Pow(choice.Weight, 1 - settings.Chaos))), 0, random);
     }
 
     private List<ActionCandidate> Shortlist(IEnumerable<ActionCandidate> options, MonsterProfile profile, double budget,

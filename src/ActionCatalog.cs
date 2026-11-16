@@ -8,7 +8,7 @@ public enum EffectKind
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
     Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage, PainfulStabs,
-    SteamEruption
+    SteamEruption, Dampen, Hex
 }
 
 public enum EffectTarget { Self, Player }
@@ -48,10 +48,12 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.WitheringPresence;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
+        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
+        EffectKind.Dampen or EffectKind.Hex;
     public bool IsSpecialStatus => IsSpecialStatusKind(Kind);
     public static bool IsSpecialStatusKind(EffectKind kind) => kind is EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Shrink or EffectKind.Soulbind or EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PainfulStabs;
+        EffectKind.Shrink or EffectKind.Soulbind or EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PainfulStabs or
+        EffectKind.Dampen or EffectKind.Hex;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
@@ -81,7 +83,7 @@ public sealed record ActionContext(
     bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
-    bool SpecialStatusAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
+    int SpecialStatusesRemaining = 1, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
     IReadOnlyDictionary<EffectKind, EffectKind>? GeneratedCards = null);
 
 public sealed record ActionValuationSettings(
@@ -207,7 +209,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                         break;
                     case EffectKind.Frail or EffectKind.Poison when canDebuff:
                     case EffectKind.Shrink when canDebuff && amount == 1:
-                    case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown when canDebuff:
+                    case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.Dampen or EffectKind.Hex when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case var card when ActionEffect.IsCard(card):
@@ -233,7 +235,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         }
 
         bool IsAvailable(EffectKind kind) => context.ActiveEffects?.Contains(kind) != true &&
-            (context.SpecialStatusAvailable || !ActionEffect.IsSpecialStatusKind(kind));
+            (context.SpecialStatusesRemaining > 0 || !ActionEffect.IsSpecialStatusKind(kind));
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)
         {

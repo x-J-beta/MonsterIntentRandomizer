@@ -12,9 +12,12 @@ internal static class ActionSimulation
         IReadOnlyList<OpeningPick> opening, int seed, int rounds,
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
-        bool specialStatusSpent = opening.Any(pick => pick.State.IsSpecialStatus);
+        var specialStatuses = opening.Select(pick => pick.State.SpecialStatus).OfType<EffectKind>().ToHashSet();
         opening = opening.Where(pick => pick.MonsterId == monsterId).ToArray();
         var monster = rules.Monsters[monsterId];
+        var fixedStatuses = rules.FixedKnightStatuses(enemyCount > 1 &&
+            monsterId is "MAGI_KNIGHT" or "SPECTRAL_KNIGHT" or "FLAIL_KNIGHT"
+                ? ["MAGI_KNIGHT", "SPECTRAL_KNIGHT"] : [monsterId]);
         var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = rules.Planner.Start(profile, opening.Sum(pick => pick.Value));
@@ -48,6 +51,8 @@ internal static class ActionSimulation
             bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < monster.FullBlockChance;
             var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
                 .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet();
+            active.UnionWith(fixedStatuses);
+            active.UnionWith(specialStatuses);
             if (drawDown > 0 && !rules.Actions.PolicyFor(EffectKind.DrawDown).Stackable)
                 active.Add(EffectKind.DrawDown);
             if (energyDown > 0 && !rules.Actions.PolicyFor(EffectKind.EnergyDown).Stackable)
@@ -56,7 +61,7 @@ internal static class ActionSimulation
             {
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
-                SpecialStatusAvailable = !specialStatusSpent,
+                SpecialStatusesRemaining = Math.Max(0, rules.PoolSettings.SpecialStatusLimit - specialStatuses.Count),
                 Thresholds = thresholds,
                 GeneratedCards = generatedCards,
                 ActiveEffects = active
@@ -80,8 +85,11 @@ internal static class ActionSimulation
             {
                 history = history.Record(action);
                 foreach (var effect in action.Effects!)
+                {
                     RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
-                specialStatusSpent |= action.Effects!.Any(effect => effect.IsSpecialStatus);
+                    if (effect.IsSpecialStatus)
+                        specialStatuses.Add(effect.Kind);
+                }
             }
             else
                 history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };

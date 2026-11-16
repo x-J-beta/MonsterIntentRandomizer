@@ -2,7 +2,8 @@ namespace MonsterIntentRandomizer;
 
 public sealed record OpeningState(string Id, int Amount, EffectKind? GeneratedCard = null)
 {
-    internal bool IsSpecialStatus => EffectPolicy.TryGetKind(Id, out var kind) && ActionEffect.IsSpecialStatusKind(kind);
+    internal EffectKind? SpecialStatus => EffectPolicy.TryGetKind(Id, out var kind) && ActionEffect.IsSpecialStatusKind(kind)
+        ? kind : null;
 }
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
     IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
@@ -10,7 +11,7 @@ public sealed record OpeningOption(OpeningState State, double Value, double Weig
 public sealed record ThresholdPrice(StatusValue State, MonsterProfile Profile, double Planned, double Scale = 1);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
 public sealed record OpeningDraws(double None, double Positive, double Negative, int Attempts,
-    int MaxPerMonster, double MaxEncounterValueMultiplier, double Strength = 1);
+    int MaxPerMonster, double MaxEncounterValueMultiplier, double Strength = 1, int SpecialStatusLimit = 1);
 public sealed record StatusValue(Dictionary<string, double> Formula, int Amount = 1, double Weight = 1,
     int? MaxAmount = null, double WeightPerRoom = 0, int MinAmount = 1,
     double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false,
@@ -78,7 +79,7 @@ public static class OpeningValuation
                 continue;
 
             bool positive = roll < settings.None + settings.Positive;
-            bool specialStatusSelected = selected.Any(pick => pick.State.IsSpecialStatus);
+            var specialStatuses = selected.Select(pick => pick.State.SpecialStatus).OfType<EffectKind>().ToHashSet();
             var available = candidates.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair =>
                 {
@@ -86,7 +87,8 @@ public static class OpeningValuation
                     var options = pair.Value.Select(option => PriceDoses(option, previous))
                         .Where(option => (previous.Length < settings.MaxPerMonster || option.PreviousThreshold.HasValue &&
                             previous.Any(pick => pick.State.Id == option.State.Id)) && option.Weight > 0 &&
-                        (!specialStatusSelected || !option.State.IsSpecialStatus) &&
+                        (option.State.SpecialStatus is not { } special || (specialStatuses.Count < settings.SpecialStatusLimit &&
+                            !specialStatuses.Contains(special))) &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
                             (positive ? option.Value > 0 : option.Value < 0)) &&
                         previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable)) &&

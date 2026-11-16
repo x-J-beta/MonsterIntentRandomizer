@@ -32,7 +32,8 @@ internal static class IntentDetails
         if (ModSettings.Current.ShowIntentDetails && ____intent != null && Effects.TryGetValue(____intent, out var effect))
         {
             var (name, _) = Describe(effect);
-            ____valueLabel.Text = effect.Kind is EffectKind.Shrink or EffectKind.Smoggy or EffectKind.Tender or EffectKind.Ringing or EffectKind.Wait
+            ____valueLabel.Text = effect.Kind is EffectKind.Shrink or EffectKind.Smoggy or EffectKind.Tender or EffectKind.Ringing or
+                EffectKind.Dampen or EffectKind.Hex or EffectKind.Wait
                 ? name : $"{name} {effect.Amount}";
         }
     }
@@ -94,6 +95,10 @@ internal static class IntentDetails
                 (en, $"Applies {en} to the player for the rest of combat."),
             EffectKind.Shrink => chinese ? (zh, "对玩家施加缩小，持续到施加者死亡。") :
                 (en, "Applies Shrink to the player until the caster dies."),
+            EffectKind.Dampen => chinese ? (zh, "使玩家已升级的牌降级，施加者死亡后恢复。") :
+                (en, "Downgrades the player's upgraded cards until the caster dies."),
+            EffectKind.Hex => chinese ? (zh, "给玩家可附加恶咒的牌赋予虚无，持续到施加者死亡。") :
+                (en, "Makes eligible cards Ethereal until the caster dies."),
             EffectKind.DrawDown => chinese ? (zh, $"玩家下回合开始时少抽 {n} 张牌，扣不完则顺延。") :
                 (en, $"At the start of next turn, the player draws {n} fewer cards. Any unused reduction carries over."),
             EffectKind.EnergyDown => chinese ? (zh, $"玩家下回合开始时扣除 {n} 点能量，扣不完则顺延。") :
@@ -130,6 +135,7 @@ internal static class IntentDetails
             EffectKind.StrengthDown => ("降力量", "Strength Down"), EffectKind.DexterityDown => ("降敏捷", "Dexterity Down"),
             EffectKind.Smoggy => ("烟雾弥漫", "Smoggy"), EffectKind.Tender => ("柔嫩", "Tender"),
             EffectKind.Shrink => ("缩小", "Shrink"),
+            EffectKind.Dampen => ("抑制", "Dampen"), EffectKind.Hex => ("恶咒", "Hex"),
             EffectKind.Soulbind => ("魂缚", "Soulbind"), EffectKind.DrawDown => ("抽牌减少", "Draw Down"),
             EffectKind.EnergyDown => ("能量减少", "Energy Down"),
             EffectKind.PersonalHive => ("人体蜂房", "Personal Hive"), EffectKind.VitalSpark => ("活力火花", "Vital Spark"),
