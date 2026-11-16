@@ -19,13 +19,13 @@ internal static class NativeActions
     internal const string MoveId = "MIR_RANDOM_MOVE";
     private const float AnimationLeadTime = 0.2f;
 
-    internal static MoveState Build(MonsterModel monster, ActionCandidate candidate, MonsterRules rules)
+    internal static MoveState Build(MonsterModel monster, ActionCandidate candidate, MonsterRules rules, int[]? animatedAttackHits)
     {
         var effects = candidate.Effects!;
         string? animation = effects.Count == 0 ? null : rules.AnimationFor(candidate.IsAttack
             ? IntentStyle.Attack : ActionEffect.StyleFor(effects[0].Kind));
         return new MoveState(MoveId, targets => Execute(monster, effects, targets,
-                candidate.IsAttack ? animation : null, candidate.IsAttack ? null : animation),
+                candidate.IsAttack ? animation : null, candidate.IsAttack ? null : animation, animatedAttackHits),
             effects.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] : effects.Select(CreateIntent).ToArray());
     }
 
@@ -43,7 +43,7 @@ internal static class NativeActions
     });
 
     private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets,
-        string? attackAnimation, string? supportAnimation)
+        string? attackAnimation, string? supportAnimation, int[]? animatedAttackHits)
     {
         Creature self = monster.Creature;
         var choice = new ThrowingPlayerChoiceContext();
@@ -78,7 +78,7 @@ internal static class NativeActions
                 case EffectKind.Attack:
                     var attack = DamageCmd.Attack(amount).FromMonster(monster).WithHitCount(effect.Hits)
                         .WithHitFx("vfx/vfx_attack_blunt");
-                    SetAttackAnimation(attack, self, attackAnimation, effect.Hits);
+                    SetAttackAnimation(attack, self, attackAnimation, animatedAttackHits);
                     await attack.Execute(choice);
                     break;
                 case EffectKind.Block:
@@ -192,7 +192,7 @@ internal static class NativeActions
         _ => throw new ArgumentOutOfRangeException(nameof(effect))
     };
 
-    private static void SetAttackAnimation(AttackCommand attack, Creature attacker, string? trigger, int hits)
+    private static void SetAttackAnimation(AttackCommand attack, Creature attacker, string? trigger, int[]? animatedHits)
     {
         if (string.IsNullOrWhiteSpace(trigger))
         {
@@ -200,27 +200,20 @@ internal static class NativeActions
             return;
         }
 
-        int animationsRemaining = CombatMath.AttackAnimationCount(hits);
-        if (animationsRemaining == hits)
+        if (animatedHits == null)
         {
             attack.WithAttackerAnim(trigger, AnimationLeadTime);
             return;
         }
 
-        int hitsRemaining = hits;
-        var animationRandom = new Random();
+        int hit = 0, animation = 0;
         // The native callback runs once per hit before its visuals and damage.
         attack.WithNoAttackerAnim().AfterAttackerAnim(() =>
         {
-            if (animationsRemaining == 0)
+            if (animation == animatedHits.Length || hit++ != animatedHits[animation])
                 return Task.CompletedTask;
 
-            int sample = animationRandom.Next(hitsRemaining);
-            hitsRemaining--;
-            if (sample >= animationsRemaining)
-                return Task.CompletedTask;
-
-            animationsRemaining--;
+            animation++;
             return CreatureCmd.TriggerAnim(attacker, trigger, AnimationLeadTime);
         });
     }

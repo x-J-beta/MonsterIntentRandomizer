@@ -84,7 +84,7 @@ foreach (var option in options)
     Console.WriteLine($"{option.State.Id,-19} " + string.Join(", ", option.Doses!.Select(dose =>
         $"{dose.State.Amount}{(dose.State.GeneratedCard is { } card ? $" [{card}]" : "")}: {dose.Value:+0.00;-0.00;0.00}")));
 
-var openingRandom = MoveRandom.For(unchecked((uint)seed), rooms + 1, 0, 0);
+var combatRandom = CombatRandom.For(unchecked((uint)seed), rooms + 1);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
 var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
 foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue", out _)))
@@ -103,7 +103,7 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
                 MonstersBehind = enemies.SkipWhile(enemy => enemy.Id != id).Skip(1).Count(enemy => enemy.Hp > 0)
             });
 }
-var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);
+var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, combatRandom);
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();
 double openingValue = ownOpening.Sum(pick => pick.Value);
 Console.WriteLine("opening: " + (selected.Count == 0 ? "NONE" : string.Join(", ", selected.Select(pick =>
@@ -115,7 +115,7 @@ var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, selected, seed,
+foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, selected, combatRandom,
     sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
     rooms: rooms, enemyCount: enemies.Length, phaseId: phaseId))
 {

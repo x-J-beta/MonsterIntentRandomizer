@@ -34,6 +34,19 @@ internal static class CombatMath
         long groups = (long)Math.Cbrt(squared);
         return (int)(groups * groups * groups >= squared ? groups : groups + 1);
     }
+
+    internal static int[]? DrawAttackAnimationHits(int hits, Random random)
+    {
+        int animationCount = AttackAnimationCount(hits);
+        if (animationCount == hits)
+            return null;
+
+        var positions = new int[animationCount];
+        for (int hit = 0, placed = 0; placed < animationCount; hit++)
+            if (random.Next(hits - hit) < animationCount - placed)
+                positions[placed++] = hit;
+        return positions;
+    }
 }
 
 public sealed record PoolSettings(
@@ -114,7 +127,10 @@ public readonly record struct Pools(double ActionValue, double AttackDesire)
     internal int CompletedClawTurns { get; init; }
 }
 
-public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools After);
+public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools After)
+{
+    internal int[]? AnimatedAttackHits { get; init; }
+}
 
 public sealed class ActionPlanner(PoolSettings settings)
 {

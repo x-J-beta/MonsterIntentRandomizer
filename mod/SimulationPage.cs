@@ -172,11 +172,11 @@ internal static class SimulationPage
         var candidates = rules.OpeningStatesFor(id, monster)
             .Where(key => key != "STUN" || monster.AllowsMove(sequence?.First))
             .Select(key => rules.OpeningOption(key, profile, rooms, monsterId: id)).ToArray();
+        var random = CombatRandom.For(unchecked((uint)seed), rooms + 1);
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
-            new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws,
-            MoveRandom.For(unchecked((uint)seed), rooms + 1, 0, 0));
-        var turns = ActionSimulation.Trace(rules, id, profile, opening, seed, rounds,
+            new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, random);
+        var turns = ActionSimulation.Trace(rules, id, profile, opening, random, rounds,
             rooms: rooms, enemyCount: Math.Max(allyHp > 0 ? 2 : 1, monstersBehind + 1), phaseId: phaseId);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();

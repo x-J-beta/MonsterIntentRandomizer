@@ -126,6 +126,9 @@ internal sealed class RuleConfiguration
             buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target),
             extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0,
             specialStatusesRemaining: context.SpecialStatusesRemaining);
+        if (plan.Action is { AttackHits: > 1 } attack &&
+            !string.IsNullOrWhiteSpace(Monsters.GetValueOrDefault(MovePresets.ProfileId(id))?.AnimationFor(IntentStyle.Attack)))
+            plan = plan with { AnimatedAttackHits = CombatMath.DrawAttackAnimationHits(attack.AttackHits, random) };
         return clawPhase ? plan with { After = plan.After with { CompletedClawTurns = previous.CompletedClawTurns + 1 } } : plan;
     }
 

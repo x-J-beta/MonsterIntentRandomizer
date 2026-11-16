@@ -28,17 +28,17 @@ internal sealed record SimulationMoveSequence(string[] Loop, string[]? Opening =
     }
 }
 
-internal static class MoveRandom
+internal static class CombatRandom
 {
-    internal static Random For(ulong seed, int floor, uint creatureId, int round)
+    internal static Random For(ulong seed, int floor)
     {
         unchecked
         {
+            const uint mix = 16777619;
             uint mixed = (uint)seed ^ (uint)(seed >> 32);
-            mixed = (mixed ^ (uint)floor) * 16777619;
-            mixed = (mixed ^ creatureId) * 16777619;
-            mixed = (mixed ^ (uint)round) * 16777619;
-            return new Random((int)mixed);
+            mixed = (mixed ^ (uint)floor) * mix;
+            // Preserve the previous opening seed, which used zero for the creature and round.
+            return new Random((int)(mixed * mix * mix));
         }
     }
 }

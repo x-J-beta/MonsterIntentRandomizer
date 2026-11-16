@@ -25,9 +25,10 @@ internal static class CombatIntegration
     private static readonly AccessTools.FieldRef<MonsterModel, MoveState> NextMove =
         AccessTools.FieldRefAccess<MonsterModel, MoveState>("<NextMove>k__BackingField");
 
-    private sealed class EncounterRules(RuleConfiguration rules)
+    private sealed class EncounterRules(RuleConfiguration rules, Random random)
     {
         public RuleConfiguration Rules { get; } = rules;
+        public Random Random { get; } = random;
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
@@ -74,7 +75,7 @@ internal static class CombatIntegration
         try
         {
             int rooms = Math.Max(0, combat.RunState.MapPointHistory.SelectMany(act => act).Sum(point => point.Rooms.Count) - 1);
-            var encounter = new EncounterRules(rules)
+            var encounter = new EncounterRules(rules, CombatRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor))
             {
                 Rooms = rooms,
                 FixedSpecialStatuses = rules.FixedKnightStatuses(combat.Enemies.Select(enemy => enemy.ModelId.Entry))
@@ -105,7 +106,7 @@ internal static class CombatIntegration
                     .ToArray();
             }
 
-            var draws = OpeningValuation.Draw(candidates, actionValues, rules.Draws, RandomFor(combat, 0, 0));
+            var draws = OpeningValuation.Draw(candidates, actionValues, rules.Draws, encounter.Random);
             // A newly added Artifact should not consume a simultaneously drawn penalty.
             foreach (var pick in draws.OrderBy(pick => pick.State.Id == "ARTIFACT"))
             {
@@ -168,9 +169,11 @@ internal static class CombatIntegration
                     ? Adjust(encounter.Rules, phase?.Apply(enemy.Rules.Profile) ?? enemy.Rules.Profile)
                     : enemy.Profile;
                 var profile = WithSurvival(configured, creature, combat, encounter);
+                SkipMoveSample(encounter, round);
                 enemy.Plan = encounter.Rules.PlanMove(__instance.Id.Entry, original.Id, enemy.Balance, profile,
-                    context, RandomForMove(combat, encounter, creature.CombatId ?? 0, round));
-                enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action, enemy.Rules) : null;
+                    context, encounter.Random);
+                enemy.RandomMove = enemy.Plan.Action is { } action
+                    ? NativeActions.Build(__instance, action, enemy.Rules, enemy.Plan.AnimatedAttackHits) : null;
                 enemy.PlannedRound = round;
                 enemy.ActualThresholdCost = 0;
                 enemy.PendingEffects.Clear();
@@ -367,20 +370,15 @@ internal static class CombatIntegration
     private static bool IsCurrentCombat(ICombatState combat) =>
         CombatManager.Instance.IsInProgress && ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), combat);
 
-    private static Random RandomFor(ICombatState combat, uint creatureId, int round) =>
-        MoveRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor, creatureId, round);
-
-    private static Random RandomForMove(ICombatState combat, EncounterRules encounter, uint creatureId, int round)
+    private static void SkipMoveSample(EncounterRules encounter, int round)
     {
-        var random = RandomFor(combat, creatureId, round);
         var pools = encounter.Rules.PoolSettings;
         if (!pools.ExternalMoveRandomSkip || pools.Chaos <= 0.3 || encounter.LastMoveRandomSkipRollRound == round)
-            return random;
+            return;
 
         encounter.LastMoveRandomSkipRollRound = round;
         double chance = Math.Pow(pools.Chaos - 0.3, 3);
         if (RandomNumberGenerator.GetInt32(int.MaxValue) / (double)int.MaxValue < chance)
-            random.NextDouble();
-        return random;
+            encounter.Random.NextDouble();
     }
 }

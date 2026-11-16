@@ -9,7 +9,7 @@ internal sealed record SimulatedTurn(int Round, ActionPlan Plan, bool Imbalanced
 internal static class ActionSimulation
 {
     internal static IReadOnlyList<SimulatedTurn> Trace(RuleConfiguration rules, string monsterId, MonsterProfile profile,
-        IReadOnlyList<OpeningPick> opening, int seed, int rounds,
+        IReadOnlyList<OpeningPick> opening, Random random, int rounds,
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
         int specialStatusesSpent = opening.Count(pick => pick.State.IsSpecialStatus);
@@ -23,7 +23,6 @@ internal static class ActionSimulation
             monsterId is "MAGI_KNIGHT" or "SPECTRAL_KNIGHT" or "FLAIL_KNIGHT"
                 ? ["MAGI_KNIGHT", "SPECTRAL_KNIGHT"] : [monsterId]);
         var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
-        var imbalanceRandom = new Random(seed ^ 0x4B82C097);
         var balances = rules.Planner.Start(profile, opening.Sum(pick => pick.Value));
         var activeEffects = new Dictionary<EffectKind, int>();
         var thresholds = new Dictionary<EffectKind, int>();
@@ -51,7 +50,7 @@ internal static class ActionSimulation
                     "RITUAL" => (turn - 1) * pick.State.Amount,
                     _ => 0
                 });
-            bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < monster.FullBlockChance;
+            bool skipFromImbalance = imbalanced && previousAttack && random.NextDouble() < monster.FullBlockChance;
             var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
                 .Concat(usedEffects.Where(kind =>
                     rules.UniqueAction(kind) && !thresholds.ContainsKey(kind) ||
@@ -74,8 +73,7 @@ internal static class ActionSimulation
                     turn < firstEnemyAction + pick.State.Amount);
             var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
             bool canRandomize = hasMove && monster.AllowsMove(originalMove);
-            var plan = rules.PlanMove(monsterId, originalMove, balances, profile, context,
-                MoveRandom.For(unchecked((uint)seed), rooms + 1, 1, turn), canRandomize);
+            var plan = rules.PlanMove(monsterId, originalMove, balances, profile, context, random, canRandomize);
             balances = plan.After;
             turns.Add(new SimulatedTurn(turn, plan, skipFromImbalance, originalMove));
 

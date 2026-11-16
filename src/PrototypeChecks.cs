@@ -7,6 +7,10 @@ internal static class PrototypeChecks
         Equal(3, CombatMath.AttackAnimationCount(4), "multi-hit animation rounds up");
         Equal(4, CombatMath.AttackAnimationCount(8), "perfect cubes do not add an animation");
         Equal(9, CombatMath.AttackAnimationCount(27), "animation count follows two-thirds power");
+        var animationHits = CombatMath.DrawAttackAnimationHits(27, new Random(11))!;
+        if (animationHits.Length != 9 || animationHits.Any(hit => hit is < 0 or >= 27) ||
+            !animationHits.SequenceEqual(animationHits.Distinct().Order()))
+            throw new InvalidOperationException("Attack animations must occupy distinct hits in attack order.");
         var roomCurve = new PlayerActionCurve(Base: 20, Exponent: 1);
         var combatCurve = roomCurve with { UseCombatDamage = true };
         Equal(20, roomCurve.At(0, 50), "combat damage is opt-in");
