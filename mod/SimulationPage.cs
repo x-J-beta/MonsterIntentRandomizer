@@ -184,6 +184,8 @@ internal static class SimulationPage
             result.AppendLine("按常规战斗的原版招式顺序模拟，每回合标明原招和替换结果。");
         else if (monster.RandomMoves != null)
             result.AppendLine($"可随机招式 {monster.RandomMoves.Count} 个。以下仅模拟可随机回合，未排入保留的原版招式。");
+        else if (monster.KeepMoves.Count > 0)
+            result.AppendLine($"保留原版招式 {string.Join("、", monster.KeepMoves)}。以下仅模拟可随机回合。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
             $"{ValuationPage.OpeningName(pick.State.Id)} {pick.State.Amount}{GeneratedCardName(pick.State.GeneratedCard)}（{pick.Value:+0.##;-0.##;0}）"));
         result.AppendLine($"开场状态 {states}");

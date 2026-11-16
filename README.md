@@ -16,7 +16,7 @@
 
 ## 哪些怪物会随机
 
-`keepVanilla` 在 [画像文件](data/monster-profiles.json) 顶部，列出完整使用原版行动的怪物。无厌沙虫、知识恶魔、女王等采用 `randomMoves` 招式白名单，通用招式可以随机，召唤和阶段机制等专属招式由原版执行。 [专属招式核对记录](data/mixed-monster-actions.json)
+在 [画像文件](data/monster-profiles.json) 中，`keepVanilla` 保留整只怪物的原版行为，`keepMoves` 保留指定的原版招式。这些招式在原版循环中每次出现时均按原版执行。无厌沙虫、知识恶魔、女王等也可用 `randomMoves` 指定可随机的招式。 [专属招式核对记录](data/mixed-monster-actions.json)
 
 瀑布巨兽保留首招「增压」，执行后获得专属能力「蒸汽积蓄」。从第二回合起，存活时每个自身回合结束获得原版数量的蒸汽喷发。蒸汽喷发独立于画像和随机出招。
 

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 26;
+    private const int SettingsRevision = 27;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -69,8 +69,10 @@ internal static class ModSettings
 
         var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
-        UpgradePhaseProfiles(profiles, defaultProfiles);
-        if (stored.Revision == 25)
+        if (stored.Revision < 26)
+            UpgradePhaseProfiles(profiles, defaultProfiles);
+        UpgradeMoveExclusions(profiles, defaultProfiles);
+        if (stored.Revision >= 25)
             return stored with { Profiles = JsonSerializer.SerializeToElement(profiles), Revision = SettingsRevision };
 
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
@@ -241,18 +243,48 @@ internal static class ModSettings
         if (monsters["CEREMONIAL_BEAST"]?["phases"]?["rush"] is JsonObject rush)
             rush["allowedBuffs"] ??= defaults["CEREMONIAL_BEAST"]!["phases"]!["rush"]!["allowedBuffs"]!.DeepClone();
 
-        var added = new[] { "CRUSHER", "LIVING_SHIELD", "PHANTASMAL_GARDENER", "SNEAKY_GREMLIN", "THIEVING_HOPPER" };
+        var added = new[] { "PHANTASMAL_GARDENER", "SNEAKY_GREMLIN", "THIEVING_HOPPER" };
         var excluded = profiles["keepVanilla"] as JsonArray;
         foreach (string id in added)
         {
-            if (monsters[id] is JsonObject profile)
-                profile["randomMoves"] ??= defaults[id]!["randomMoves"]!.DeepClone();
-            else
-                monsters[id] = defaults[id]!.DeepClone();
+            monsters[id] ??= defaults[id]!.DeepClone();
 
             var previous = excluded?.FirstOrDefault(entry => entry?.GetValue<string>() == id);
             if (previous != null)
                 excluded!.Remove(previous);
+        }
+    }
+
+    private static void UpgradeMoveExclusions(JsonNode profiles, JsonObject defaults)
+    {
+        var excluded = (profiles["keepVanilla"] ??= new JsonArray()).AsArray();
+        foreach (string id in new[] { "CRUSHER", "ROCKET", "LIVING_SHIELD" })
+            if (!excluded.Any(item => item?.GetValue<string>() == id))
+                excluded.Add(id);
+
+        var previousAllowlists = new Dictionary<string, string[]>
+        {
+            ["CRUSHER"] = ["THRASH_MOVE", "BUG_STING_MOVE", "ADAPT_MOVE", "GUARDED_STRIKE_MOVE"],
+            ["LIVING_SHIELD"] = ["SMASH_MOVE"],
+            ["MAGI_KNIGHT"] = [],
+            ["PHANTASMAL_GARDENER"] = ["BITE_MOVE", "LASH_MOVE", "FLAIL_MOVE"],
+            ["SNEAKY_GREMLIN"] = ["TACKLE_MOVE"],
+            ["SPECTRAL_KNIGHT"] = ["SOUL_SLASH", "SOUL_FLAME"],
+            ["THIEVING_HOPPER"] = ["NAB_MOVE", "HAT_TRICK_MOVE"]
+        };
+        foreach (var (id, previous) in previousAllowlists)
+        {
+            if (profiles["monsters"]?[id] is not JsonObject profile)
+                continue;
+            if (previous.Length > 0 && JsonNode.DeepEquals(profile["randomMoves"], JsonSerializer.SerializeToNode(previous)))
+                profile.Remove("randomMoves");
+            if (defaults[id]?["keepMoves"] is not JsonArray nativeMoves)
+                continue;
+
+            var kept = (profile["keepMoves"] ??= new JsonArray()).AsArray();
+            foreach (var move in nativeMoves)
+                if (!kept.Any(item => JsonNode.DeepEquals(item, move)))
+                    kept.Add(move?.DeepClone());
         }
     }
 
