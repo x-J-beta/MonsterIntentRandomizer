@@ -100,9 +100,9 @@ internal sealed class RuleConfiguration
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
     internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null,
-        EffectKind? existingCard = null) =>
+        EffectKind? existingCard = null, string? monsterId = null) =>
         OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress,
-            EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard);
+            EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard, monsterId);
     internal IEnumerable<string> OpeningStatesFor(string id, MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
             .Distinct().Where(state => !EffectPolicy.TryGetKind(state, out var kind) || EffectPolicy.CanTargetMonster(kind, id));

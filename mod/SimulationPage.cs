@@ -168,7 +168,7 @@ internal static class SimulationPage
         var sequence = rules.MovePresets.SequenceFor(id, phaseId);
         var candidates = rules.OpeningStatesFor(id, monster)
             .Where(key => key != "STUN" || monster.AllowsMove(sequence?.First))
-            .Select(key => rules.OpeningOption(key, profile, rooms)).ToArray();
+            .Select(key => rules.OpeningOption(key, profile, rooms, monsterId: id)).ToArray();
         var opening = OpeningValuation.Draw(
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws,

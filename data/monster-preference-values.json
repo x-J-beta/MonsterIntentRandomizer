@@ -6,7 +6,7 @@
     "act2": 18,
     "act3": 33
   },
-  "recalculated": 99,
+  "recalculated": 96,
   "phasesRecalculated": 5,
   "monsters": {
     "AEONGLASS": {"previous":{"attack":33.33,"buff":16.67,"defend":33.33,"playerDebuff":16.67},"before":{"attack":65.41,"buff":16.32,"defend":16.19,"playerDebuff":2.08},"proposed":{"attack":80.16,"buff":0,"defend":19.84,"playerDebuff":0},"values":{"attack":44,"buff":0,"defend":10.89,"playerDebuff":0},"moves":["EBB","EYE_LASERS"]},
@@ -28,9 +28,6 @@
     "CUBEX_CONSTRUCT": {"previous":{"attack":33.33,"buff":66.67,"defend":0,"playerDebuff":0},"before":{"attack":72.7,"buff":27.3,"defend":0,"playerDebuff":0},"proposed":{"attack":55.14,"buff":44.86,"defend":0,"playerDebuff":0},"values":{"attack":17,"buff":13.83,"defend":0,"playerDebuff":0},"moves":["CHARGE_UP","REPEATER_BLAST","EXPEL"]},
     "DAMP_CULTIST": {"previous":{"attack":35,"buff":65,"defend":0,"playerDebuff":0},"before":{"attack":16.53,"buff":83.47,"defend":0,"playerDebuff":0},"proposed":{"attack":11.66,"buff":88.34,"defend":0,"playerDebuff":0},"values":{"attack":1,"buff":7.58,"defend":0,"playerDebuff":0},"moves":["INCANTATION","DARK_STRIKE"]},
     "DECIMILLIPEDE_SEGMENT": {"previous":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"before":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"proposed":{"attack":74.42,"buff":21.44,"defend":0,"playerDebuff":4.14},"values":{"attack":24,"buff":6.92,"defend":0,"playerDebuff":1.34},"moves":["WRITHE","BULK","CONSTRICT"]},
-    "DECIMILLIPEDE_SEGMENT_BACK": {"previous":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"before":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"proposed":{"attack":74.42,"buff":21.44,"defend":0,"playerDebuff":4.14},"values":{"attack":24,"buff":6.92,"defend":0,"playerDebuff":1.34},"moves":["WRITHE","BULK","CONSTRICT"]},
-    "DECIMILLIPEDE_SEGMENT_FRONT": {"previous":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"before":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"proposed":{"attack":74.42,"buff":21.44,"defend":0,"playerDebuff":4.14},"values":{"attack":24,"buff":6.92,"defend":0,"playerDebuff":1.34},"moves":["WRITHE","BULK","CONSTRICT"]},
-    "DECIMILLIPEDE_SEGMENT_MIDDLE": {"previous":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"before":{"attack":77,"buff":18,"defend":0,"playerDebuff":5},"proposed":{"attack":74.42,"buff":21.44,"defend":0,"playerDebuff":4.14},"values":{"attack":24,"buff":6.92,"defend":0,"playerDebuff":1.34},"moves":["WRITHE","BULK","CONSTRICT"]},
     "DEVOTED_SCULPTOR": {"previous":{"attack":50,"buff":50,"defend":0,"playerDebuff":0},"before":{"attack":51.06,"buff":48.94,"defend":0,"playerDebuff":0},"proposed":{"attack":41.02,"buff":58.98,"defend":0,"playerDebuff":0},"values":{"attack":12,"buff":17.25,"defend":0,"playerDebuff":0},"moves":["FORBIDDEN_INCANTATION","SAVAGE"]},
     "ENTOMANCER": {"previous":{"attack":50,"buff":30,"defend":0,"playerDebuff":20},"before":{"attack":75.55,"buff":24.45,"defend":0,"playerDebuff":0},"proposed":{"attack":58.85,"buff":41.15,"defend":0,"playerDebuff":0},"values":{"attack":39,"buff":27.27,"defend":0,"playerDebuff":0},"moves":["PHEROMONE_SPIT","BEES","SPEAR"]},
     "EXOSKELETON": {"previous":{"attack":66.67,"buff":33.33,"defend":0,"playerDebuff":0},"before":{"attack":77.51,"buff":22.49,"defend":0,"playerDebuff":0},"proposed":{"attack":61.4,"buff":38.6,"defend":0,"playerDebuff":0},"values":{"attack":11,"buff":6.92,"defend":0,"playerDebuff":0},"moves":["SKITTER","MANDIBLES","ENRAGE"]},

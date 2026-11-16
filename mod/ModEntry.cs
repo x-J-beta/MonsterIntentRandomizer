@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 30;
+    private const int SettingsRevision = 31;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -209,6 +209,7 @@ internal static class ModSettings
             }
             if (stored.Revision < 29)
                 UpgradeRoster(profiles["monsters"]!.AsObject(), defaultProfiles);
+            MergeAliasedProfiles(profiles["monsters"]!.AsObject(), defaultProfiles);
             settings["playerAction"] ??= defaultSettings["playerAction"]!.DeepClone();
             settings["playerAction"]!["useCombatDamage"] ??= false;
             return stored with
@@ -234,6 +235,23 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void MergeAliasedProfiles(JsonObject monsters, JsonObject defaults)
+    {
+        foreach (var (alias, id) in MovePresets.Aliases ?? [])
+        {
+            if (monsters[alias] is not JsonObject separate)
+                continue;
+
+            if (monsters[id] == null)
+            {
+                var shared = separate.DeepClone().AsObject();
+                shared["name"] = defaults[id]?["name"]?.DeepClone();
+                monsters[id] = shared;
+            }
+            monsters.Remove(alias);
         }
     }
 
@@ -324,7 +342,6 @@ internal static class ModSettings
     private static void UpgradeMonsterCoverage(JsonNode profiles, JsonObject defaults)
     {
         var added = new HashSet<string>(["PHROG_PARASITE", "WRIGGLER", "DECIMILLIPEDE_SEGMENT",
-            "DECIMILLIPEDE_SEGMENT_FRONT", "DECIMILLIPEDE_SEGMENT_MIDDLE", "DECIMILLIPEDE_SEGMENT_BACK",
             "EYE_WITH_TEETH", "PARAFRIGHT", "TOUGH_EGG", "TWO_TAILED_RAT"]);
         if (profiles["keepVanilla"] is JsonArray excluded)
             foreach (var entry in excluded.Where(entry => entry != null && added.Contains(entry.GetValue<string>())).ToArray())

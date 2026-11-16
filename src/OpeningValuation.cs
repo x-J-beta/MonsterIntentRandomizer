@@ -38,11 +38,11 @@ public static class OpeningValuation
 
     public static OpeningOption Option(string id, StatusValue state, MonsterProfile profile, int rooms = 0,
         double strength = 1, double chaosProgress = 0, int? previousThreshold = null,
-        ActionValuationSettings? actions = null, EffectKind? existingCard = null)
+        ActionValuationSettings? actions = null, EffectKind? existingCard = null, string? monsterId = null)
     {
         EffectPolicy.TryGetKind(id, out var kind);
         var variants = actions == null ? [(Card: (EffectKind?)null, Weight: 1.0)] :
-            TriggeredCardBuffs.Variants(kind, state, actions, rooms, existingCard);
+            TriggeredCardBuffs.Variants(kind, state, actions, rooms, existingCard, monsterId);
         var doses = (from variant in variants
                      let scale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, variant.Card, actions, profile)
                      from amount in state.Doses(profile, kind == EffectKind.WitheringPresence ? 1 : strength)
@@ -52,7 +52,8 @@ public static class OpeningValuation
             new OpeningOption(new OpeningState(id, 0), 0);
         double previousScale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, existingCard, actions, profile);
         return representative with { Weight = state.RoomWeight.At(rooms, chaosProgress), Doses = doses,
-            Stackable = state.Stackable, Unique = state.Unique, PreviousThreshold = previousThreshold,
+            Stackable = state.Stackable || TriggeredCardBuffs.UsesNative(kind, monsterId),
+            Unique = state.Unique, PreviousThreshold = previousThreshold,
             PreviousValue = Evaluate(state, profile, previousThreshold ?? 0) * previousScale };
     }
 

@@ -88,7 +88,7 @@ internal static class ActionSimulation
                 generatedCards[kind] = card.Value;
             if (kind == EffectKind.Vigor)
                 vigor += amount;
-            if (rules.Actions.PolicyFor(kind).Stackable)
+            if (rules.Actions.PolicyFor(kind, monsterId).Stackable)
                 return;
             if (kind is EffectKind.Block or EffectKind.Heal or EffectKind.Attack)
                 return;

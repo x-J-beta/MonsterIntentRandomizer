@@ -31,6 +31,7 @@ string monsterId = (args.Length > 1 ? args[1] : sample.GetProperty("defaultMonst
 string ascension = args.Length > 2 ? args[2] : sample.GetProperty("defaultActionValueTier").GetString()!;
 using var profiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "monster-profiles.json")));
 var rules = new RuleConfiguration(root, profiles.RootElement, ReadMoves(folder));
+monsterId = rules.MovePresets.ProfileId(monsterId);
 var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
 var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
@@ -73,7 +74,7 @@ OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, Monst
 {
     return states
         .Where(id => !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
-        .Select(id => rules.OpeningOption(id, owner, rooms)).ToArray();
+        .Select(id => rules.OpeningOption(id, owner, rooms, monsterId: enemy.Id)).ToArray();
 }
 var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
 var options = Options(enemies[0], rules.OpeningStatesFor(monsterId, configured)

@@ -94,7 +94,8 @@ internal static class CombatIntegration
                     .Where(key => key != "STUN" || (creature.Monster?.NextMove is { } first &&
                         !creature.IsStunned && state.Rules.AllowsMove(first.Id)))
                     .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key),
-                        EffectPolicy.TryGetKind(key, out var kind) ? RandomizedCardPower.Find(creature, kind)?.Card : null))
+                        EffectPolicy.TryGetKind(key, out var kind) ? RandomizedCardPower.Find(creature, kind)?.Card : null,
+                        creature.ModelId.Entry))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
                     .ToArray();
             }
@@ -232,7 +233,7 @@ internal static class CombatIntegration
             return true;
         var targetKind = ActionEffect.TargetFor(kind);
         var target = targetKind == EffectTarget.Self ? self : player;
-        bool stackable = encounter.Rules.Actions.PolicyFor(kind).Stackable;
+        bool stackable = encounter.Rules.Actions.PolicyFor(kind, self.Monster?.Id.Entry).Stackable;
         if (!stackable && NativeActions.HasActionEffect(kind, target))
             return false;
         if (ActionEffect.UsesThreshold(kind) && NativeActions.ThresholdFor(self, EffectPolicy.Id(kind)) > 0)
@@ -299,7 +300,7 @@ internal static class CombatIntegration
 
     private static (MonsterRules Rules, MonsterProfile Profile)? FindProfile(RuleConfiguration rules, MonsterModel monster) =>
         monster.GetType().Assembly == typeof(MonsterModel).Assembly &&
-        rules.Monsters.TryGetValue(monster.Id.Entry, out var entry)
+        rules.Monsters.TryGetValue(rules.MovePresets.ProfileId(monster.Id.Entry), out var entry)
             ? (entry, Adjust(rules, monster.NextMove is { } move && entry.PhaseForMove(move.Id) is { } phase
                 ? phase.Apply(entry.Profile) : entry.Profile))
             : null;

@@ -105,8 +105,8 @@ public sealed record ActionValuationSettings(
         return Math.Max(0, baseValue - ratio * CardStartingPlayerActionValue) + ratio * profile.PlayerActionValue;
     }
 
-    public EffectPolicy PolicyFor(EffectKind kind) => Buffs?.GetValueOrDefault(kind) is { } buff
-        ? new EffectPolicy(buff.Stackable, buff.Unique, EffectTarget.Self)
+    public EffectPolicy PolicyFor(EffectKind kind, string? monsterId = null) => Buffs?.GetValueOrDefault(kind) is { } buff
+        ? new EffectPolicy(buff.Stackable || TriggeredCardBuffs.UsesNative(kind, monsterId), buff.Unique, EffectTarget.Self)
         : Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
 }
 
@@ -149,7 +149,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 continue;
             EffectKind? existingCard = context.GeneratedCards != null && context.GeneratedCards.TryGetValue(kind, out var card)
                 ? card : null;
-            var doses = (from variant in TriggeredCardBuffs.Variants(kind, buff, settings, context.Rooms, existingCard)
+            var doses = (from variant in TriggeredCardBuffs.Variants(kind, buff, settings, context.Rooms, existingCard, monsterId)
                          let scale = TriggeredCardBuffs.Scale(kind, variant.Card, settings, profile)
                          from amount in buff.Doses(profile)
                          where current == 0 || amount < current

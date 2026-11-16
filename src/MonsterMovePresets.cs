@@ -1,13 +1,15 @@
 namespace MonsterIntentRandomizer;
 
 internal sealed record MonsterMovePresets(Dictionary<string, string[]> Moves,
-    Dictionary<string, SimulationMoveSequence> Sequences)
+    Dictionary<string, SimulationMoveSequence> Sequences, Dictionary<string, string>? Aliases = null)
 {
-    internal string[] MoveIds(string id) => Moves.GetValueOrDefault(id) ?? [];
+    internal string ProfileId(string id) => Aliases?.GetValueOrDefault(id) ?? id;
+
+    internal string[] MoveIds(string id) => Moves.GetValueOrDefault(ProfileId(id)) ?? [];
 
     internal SimulationMoveSequence? SequenceFor(string id, string? phaseId = null)
     {
-        if (Sequences.TryGetValue(id, out var sequence))
+        if (Sequences.TryGetValue(ProfileId(id), out var sequence))
             return phaseId == null ? sequence : sequence.Phases?.GetValueOrDefault(phaseId) ?? sequence;
         var moves = MoveIds(id);
         return moves.Length == 0 ? null : new SimulationMoveSequence(moves);

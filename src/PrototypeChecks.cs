@@ -213,6 +213,21 @@ internal static class PrototypeChecks
             .Where(effect => ActionEffect.IsMonsterBuff(effect.Kind)).Select(effect => effect.Kind).ToHashSet();
         if (!rushBuffs.SetEquals([EffectKind.Strength]))
             throw new InvalidOperationException("Phase buff restrictions must also exclude defensive buffs.");
+        var hive = Status("amount*survivalTurns", 1.5) with
+        {
+            GeneratedCards = new Dictionary<EffectKind, double> { [EffectKind.Wound] = 1 }
+        };
+        var hiveSettings = catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
+            { [EffectKind.PersonalHive] = hive } };
+        var hiveCatalog = new ActionCatalog(hiveSettings);
+        var nativeHive = hiveCatalog.Generate(estimate, new ActionContext(6), "ENTOMANCER")
+            .Single(action => action.Effects is [{ Kind: EffectKind.PersonalHive }]);
+        var customHive = hiveCatalog.Generate(estimate, new ActionContext(6), "FLYCONID")
+            .Single(action => action.Effects is [{ Kind: EffectKind.PersonalHive }]);
+        if (nativeHive.Effects![0].GeneratedCard != EffectKind.Dazed || customHive.Effects![0].GeneratedCard != EffectKind.Wound ||
+            !hiveSettings.PolicyFor(EffectKind.PersonalHive, "ENTOMANCER").Stackable ||
+            hiveSettings.PolicyFor(EffectKind.PersonalHive, "FLYCONID").Stackable)
+            throw new InvalidOperationException("Entomancer stacks the native hive while other monsters use the configured hive.");
         var steam = Status("amount", 0.6, 6);
         var steamCatalog = new ActionCatalog(catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
         {

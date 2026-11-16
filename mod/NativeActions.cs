@@ -326,6 +326,8 @@ internal static class NativeActions
             "STEAM_ERUPTION" => await Apply<SteamEruptionPower>(),
             "ENRAGE" => await Apply<EnragePower>(),
             "PAINFUL_STABS" => await ApplyGenerator<RandomizedPainfulStabsPower>(),
+            "PERSONAL_HIVE" when TriggeredCardBuffs.UsesNative(EffectKind.PersonalHive, target.Monster?.Id.Entry) =>
+                await Apply<PersonalHivePower>(),
             "PERSONAL_HIVE" => await ApplyGenerator<RandomizedPersonalHivePower>(),
             "WITHERING_PRESENCE" => await ApplyGenerator<RandomizedWitheringPresencePower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),

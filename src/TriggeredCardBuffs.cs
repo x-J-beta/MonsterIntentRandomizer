@@ -9,11 +9,16 @@ internal static class TriggeredCardBuffs
         [EffectKind.PainfulStabs] = new(EffectKind.Wound, StatusPile.Discard)
     };
 
+    internal static bool UsesNative(EffectKind kind, string? monsterId) =>
+        kind == EffectKind.PersonalHive && monsterId == "ENTOMANCER";
+
     internal static IEnumerable<(EffectKind? Card, double Weight)> Variants(EffectKind kind, StatusValue state,
-        ActionValuationSettings settings, int rooms, EffectKind? existing = null)
+        ActionValuationSettings settings, int rooms, EffectKind? existing = null, string? monsterId = null)
     {
         if (!Types.TryGetValue(kind, out var original))
             return [(null, 1)];
+        if (UsesNative(kind, monsterId))
+            return [(original.Card, 1)];
         if (existing is { } card)
             return [(card, 1)];
 
