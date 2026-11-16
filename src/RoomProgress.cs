@@ -22,12 +22,14 @@ public sealed record RoomWeight(double Base = 1, double PerRoom = 0)
     {
         if (IsDisabled)
             return 0;
-        double baseWeight = (1 - chaosProgress) * Base + chaosProgress;
-        if (Base < 0 && PerRoom > 0)
-        {
-            double exponent = 5 - 3 * Math.Clamp(PerRoom / 0.05, 0, 1);
-            baseWeight = Base * (1 - Math.Pow(chaosProgress, exponent));
-        }
-        return Math.Max(0, baseWeight + Math.Max(0, rooms) * PerRoom);
+        if (chaosProgress == 1)
+            return 1;
+
+        double exponent = 6 - 5 * Math.Clamp(PerRoom / 0.04, 0, 1);
+        double baseWeight = Base < 1
+            ? Base + (Math.Pow(2 - Base, Math.Pow(chaosProgress, exponent)) - 1)
+            : Math.Pow(Base, 1 - chaosProgress);
+        double perRoom = PerRoom * (1 - chaosProgress * chaosProgress);
+        return Math.Max(0, baseWeight + Math.Max(0, rooms) * perRoom);
     }
 }

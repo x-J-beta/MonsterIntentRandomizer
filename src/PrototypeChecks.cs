@@ -63,15 +63,17 @@ internal static class PrototypeChecks
         Equal(1.5, maxChaos.OpeningStrength, "full chaos opening strength");
         Equal(6, OpeningValuation.Option("REGEN", regen, estimate, strength: maxChaos.OpeningStrength)
             .Doses!.Max(dose => dose.State.Amount), "chaos raises the opening layer cap");
-        Equal(3, new RoomWeight(4, 0.1).At(5, 0.5), "chaos attenuates base weight linearly");
+        Equal(2.375, new RoomWeight(4, 0.1).At(5, 0.5), "chaos tapers a strong base weight and its room increment");
+        Equal(0.05, new RoomWeight(-0.1, 0.003).At(50), "zero chaos keeps the configured base and increment");
         var lateWeight = new RoomWeight(-0.3, 0.02);
         Equal(0, lateWeight.At(7), "normal chaos keeps the late effect locked");
         Equal(0, lateWeight.At(6, 0.125), "moderate chaos still needs room progression");
         Equal(0, new RoomWeight(-0.1, 0.003).At(32, 0.5), "moderate chaos barely advances slow weights");
-        Equal(0.4, new RoomWeight(-0.8, 0.05).At(20, 0.5), "moderate chaos advances steeper weights");
-        Equal(0.02, lateWeight.At(1, 1), "full chaos removes the lock while preserving the room increment");
+        Equal(Math.Sqrt(2.8) - 1.05, new RoomWeight(-0.8, 0.05).At(20, 0.5), "moderate chaos advances steeper weights");
+        Equal(1, lateWeight.At(1, 1), "full chaos removes the lock and sets the weight to one");
+        Equal(1, new RoomWeight(4, 0.1).At(90, 1), "full chaos removes the room increment for strong base weights");
         Equal(0, new RoomWeight(RoomWeight.DisabledBase, 0.02).At(90, 1), "explicitly disabled weights stay disabled");
-        Equal(0.05, new RoomWeight(-1, 0.05).At(1, 1), "minus one is an ordinary negative base weight");
+        Equal(1, new RoomWeight(-1, 0.05).At(1, 1), "minus one is an ordinary negative base weight");
         if (OpeningValuation.Draw(openingOptions, openingActionValues,
                 draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25, Strength = maxChaos.OpeningStrength },
                 new Random(11)).Count != 1)
