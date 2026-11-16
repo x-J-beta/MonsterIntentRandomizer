@@ -9,9 +9,7 @@ using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
-using MegaCrit.Sts2.Core.Models.Monsters;
 using MegaCrit.Sts2.Core.Models.Powers;
-using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
@@ -25,12 +23,9 @@ internal static class CombatIntegration
     private static readonly AccessTools.FieldRef<MonsterModel, MoveState> NextMove =
         AccessTools.FieldRefAccess<MonsterModel, MoveState>("<NextMove>k__BackingField");
 
-    private sealed class EncounterRules(RuleConfiguration rules, IReadOnlyList<Creature> initialEnemies)
+    private sealed class EncounterRules(RuleConfiguration rules)
     {
         public RuleConfiguration Rules { get; } = rules;
-        public ActionPlanner Planner { get; } = new(rules.PoolSettings);
-        public ActionCatalog Catalog { get; } = new(rules.Actions);
-        public HashSet<Creature> InitialEnemies { get; } = initialEnemies.ToHashSet();
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
@@ -75,7 +70,7 @@ internal static class CombatIntegration
         try
         {
             int rooms = Math.Max(0, combat.RunState.MapPointHistory.SelectMany(act => act).Sum(point => point.Rooms.Count) - 1);
-            var encounter = new EncounterRules(rules, combat.Enemies) { Rooms = rooms };
+            var encounter = new EncounterRules(rules) { Rooms = rooms };
             Encounters.Add(combat, encounter);
             var candidates = new Dictionary<string, IReadOnlyList<OpeningOption>>();
             var actionValues = new Dictionary<string, double>();
@@ -88,13 +83,13 @@ internal static class CombatIntegration
                 if (creature.Monster is { } monster && FindProfile(rules, monster) is { } configured)
                     actionValues[id] = configured.Profile.ActionValue;
                 var state = Register(encounter, creature);
-                if (state == null || ProtectedByAlly(creature, state.Rules))
+                if (state == null)
                     continue;
 
                 var profile = WithSurvival(state.Profile, creature, combat, encounter);
-                candidates[id] = rules.OpeningStatesFor(state.Rules)
+                candidates[id] = rules.OpeningStatesFor(creature.ModelId.Entry, state.Rules)
                     .Where(key => key != "STUN" || (creature.Monster?.NextMove is { } first &&
-                        CanReplaceMove(creature, state, first, 1)))
+                        !creature.IsStunned && state.Rules.AllowsMove(first.Id)))
                     .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key),
                         EffectPolicy.TryGetKind(key, out var kind) ? RandomizedCardPower.Find(creature, kind)?.Card : null))
                     .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
@@ -147,7 +142,7 @@ internal static class CombatIntegration
         try
         {
             var enemy = Register(encounter, creature);
-            if (enemy == null || !CanReplaceMove(creature, enemy, original, combat.RoundNumber))
+            if (enemy == null || creature.IsStunned || !enemy.Rules.AllowsMove(original.Id))
                 return;
             int round = combat.RoundNumber;
             if (enemy.SettledRound >= round)
@@ -160,11 +155,9 @@ internal static class CombatIntegration
                     ? Adjust(encounter.Rules, phase?.Apply(enemy.Rules.Profile) ?? enemy.Rules.Profile)
                     : enemy.Profile;
                 var profile = WithSurvival(configured, creature, combat, encounter);
-                enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
-                    encounter.Catalog.Generate(profile, context),
-                    RandomFor(combat, creature.CombatId ?? 0, round),
-                    buildAttack: (hits, target) => encounter.Catalog.BuildAttack(profile, context, hits, target));
-                enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action) : null;
+                enemy.Plan = encounter.Rules.PlanMove(__instance.Id.Entry, enemy.Balance, profile,
+                    context, RandomFor(combat, creature.CombatId ?? 0, round));
+                enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action, enemy.Rules) : null;
                 enemy.PlannedRound = round;
                 enemy.ActualThresholdCost = 0;
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
@@ -205,16 +198,6 @@ internal static class CombatIntegration
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(WaterfallGiant), "PressurizeMove")]
-    private static void GrantSteamBuildup(WaterfallGiant __instance, ref Task __result)
-    {
-        var owner = __instance.Creature;
-        if (owner.CombatState is { } combat && Encounters.TryGetValue(combat, out var encounter) &&
-            encounter.Ready && Register(encounter, owner) != null)
-            __result = SteamBuildupPower.ApplyAfterOpening(__result, __instance);
-    }
-
-    [HarmonyPostfix]
     [HarmonyPatch(typeof(Hook), nameof(Hook.AfterSideTurnEnd))]
     private static void RecordPlayerTurn(ICombatState __0, CombatSide __1, ref Task __result)
     {
@@ -240,6 +223,8 @@ internal static class CombatIntegration
 
     internal static bool CanUseEffect(ICombatState combat, Creature self, Creature player, EffectKind kind)
     {
+        if (!EffectPolicy.CanTargetMonster(kind, self.Monster?.Id.Entry))
+            return false;
         if (!Encounters.TryGetValue(combat, out var encounter))
             return true;
         var targetKind = ActionEffect.TargetFor(kind);
@@ -285,16 +270,15 @@ internal static class CombatIntegration
             return existing;
         if (creature.Monster is not { } monster || creature.CombatState == null ||
             creature.Side != CombatSide.Enemy || !creature.IsAlive ||
-            encounter.Rules.KeepVanilla.Contains(monster.Id.Entry) ||
             FindProfile(encounter.Rules, monster) is not { Rules.Enabled: true } configured ||
             !configured.Rules.HasEnabledStage ||
             monster.MoveStateMachine is not { } machine ||
-            !SupportsRandomMoves(machine, configured.Rules, !encounter.InitialEnemies.Contains(creature)))
+            !machine.States.Values.OfType<MoveState>().Any(move => configured.Rules.AllowsMove(move.Id)))
             return null;
 
         var state = new EnemyRules(configured.Rules, configured.Profile)
         {
-            Balance = encounter.Planner.Start(configured.Profile)
+            Balance = encounter.Rules.Planner.Start(configured.Profile)
         };
         encounter.Enemies.Add(creature, state);
         return state;
@@ -310,57 +294,17 @@ internal static class CombatIntegration
     private static MonsterProfile Adjust(RuleConfiguration rules, MonsterProfile profile) =>
         rules.PoolSettings.Adjust(profile, RunManager.Instance.HasAscension(AscensionLevel.DeadlyEnemies));
 
-    private static bool IsOrdinaryMove(MoveState move) => move.Intents.Count > 0 &&
-        move.Intents.All(intent => intent.IntentType is IntentType.Attack or IntentType.Buff or IntentType.Debuff or
-            IntentType.DebuffStrong or IntentType.Defend or IntentType.Heal or IntentType.StatusCard or IntentType.CardDebuff);
-
-    private static bool IsSummoningMove(MoveState move) => move.Intents.Any(intent => intent.IntentType == IntentType.Summon);
-
-    private static bool SupportsRandomMoves(MonsterMoveStateMachine machine, MonsterRules rules, bool joinedCombat)
-    {
-        if (rules.RandomizeAllMoves)
-            return true;
-        var moves = machine.States.Values.OfType<MoveState>().ToArray();
-        return rules.RandomMoves != null || joinedCombat || moves.Any(IsSummoningMove)
-            ? moves.Any(move => rules.AllowsMove(move.Id) && IsOrdinaryMove(move))
-            : moves.All(move => rules.KeepMoves.Contains(move.Id) || IsOrdinaryMove(move));
-    }
-
-    private static bool CanReplaceMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
-        !creature.IsStunned && !IsSummoningMove(move) &&
-        (enemy.Rules.RandomizeAllMoves || move.CanTransitionAway && IsOrdinaryMove(move)) &&
-        !KeepsNativeMove(creature, enemy, move, round);
-
-    private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
-        (enemy.Rules.FixedOpening && round == 1) || !enemy.Rules.AllowsMove(move.Id) ||
-        ProtectedByAlly(creature, enemy.Rules) ||
-        (enemy.Rules.RequiredPower(enemy.Rules.PhaseForMove(move.Id))?.Trim() is { Length: > 0 } id &&
-            !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));
-
-    private static bool ProtectedByAlly(Creature creature, MonsterRules rules) =>
-        rules.KeepVanillaWhileAllyAlive is { Length: > 0 } id && creature.CombatState is { } combat &&
-        combat.Enemies.Any(ally => ally != creature && ally.IsAlive && ally.Monster?.Id.Entry == id);
-
-    private static bool MatchesPower(string entry, string required) =>
-        entry.Equals(required, StringComparison.OrdinalIgnoreCase) ||
-        (entry.EndsWith("_POWER", StringComparison.OrdinalIgnoreCase) &&
-            entry.AsSpan(0, entry.Length - "_POWER".Length).Equals(required, StringComparison.OrdinalIgnoreCase));
-
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
         var player = combat.PlayerCreatures[0];
-        return encounter.Rules.TurnPrior with
+        return encounter.Rules.TurnContext(encounter.Rooms, combat.Enemies.Count(enemy => enemy.IsAlive), combat.RoundNumber) with
         {
-            ExpectedDamageAgainstMonster = encounter.Rules.PlayerAction.At(encounter.Rooms) /
-                Math.Max(1, combat.Enemies.Count(enemy => enemy.IsAlive)),
-            Rooms = encounter.Rooms,
             ExistingBlock = 0, // This action's Block and the next player attack follow the enemy block reset.
             MissingHp = self.MaxHp - self.CurrentHp,
             Strength = (self.GetPower<StrengthPower>()?.Amount ?? 0) + (self.GetPower<VigorPower>()?.Amount ?? 0),
             Weakened = self.HasPower<WeakPower>(),
             PlayerHasArtifact = player.HasPower<ArtifactPower>(),
             PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
-            AllowHardCardLimit = combat.RoundNumber >= encounter.Rules.HardCardLimitFirstTurn,
             Thresholds = (encounter.Rules.Actions.Buffs?.Keys ?? []).Where(ActionEffect.UsesThreshold)
                 .ToDictionary(kind => kind, kind => NativeActions.ThresholdFor(self, EffectPolicy.Id(kind))),
             GeneratedCards = TriggeredCardBuffs.Types.Keys
@@ -389,16 +333,6 @@ internal static class CombatIntegration
     private static bool IsCurrentCombat(ICombatState combat) =>
         CombatManager.Instance.IsInProgress && ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), combat);
 
-    private static Random RandomFor(ICombatState combat, uint creatureId, int round)
-    {
-        ulong seed = combat.RunState.Rng.Seed;
-        unchecked
-        {
-            uint mixed = (uint)seed ^ (uint)(seed >> 32);
-            mixed = (mixed ^ (uint)combat.RunState.TotalFloor) * 16777619;
-            mixed = (mixed ^ creatureId) * 16777619;
-            mixed = (mixed ^ (uint)round) * 16777619;
-            return new Random((int)mixed);
-        }
-    }
+    private static Random RandomFor(ICombatState combat, uint creatureId, int round) =>
+        MoveRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor, creatureId, round);
 }

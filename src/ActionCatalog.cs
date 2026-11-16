@@ -7,7 +7,8 @@ public enum EffectKind
     PersonalHive, VitalSpark, WitheringPresence, Envenom, PaperCuts, Smoggy, Tender, Frail, Poison, Shrink,
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
-    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage, PainfulStabs
+    Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage, PainfulStabs,
+    SteamEruption
 }
 
 public enum EffectTarget { Self, Player }
@@ -23,13 +24,22 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public EffectTarget Target => TargetFor(Kind);
     public static EffectTarget TargetFor(EffectKind kind) => kind is EffectKind.Block or EffectKind.Heal or
         EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns
-        or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage || IsDefensiveBuff(kind) || IsRareBuff(kind)
+        or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage or EffectKind.SteamEruption || IsDefensiveBuff(kind) || IsRareBuff(kind)
         ? EffectTarget.Self : EffectTarget.Player;
     public bool IsStatusCard => IsCard(Kind);
     public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
         kind is not (EffectKind.Block or EffectKind.Heal);
-    public static bool IsDefensiveBuff(EffectKind kind) => UsesThreshold(kind) ||
-        kind is EffectKind.Intangible or EffectKind.Plating or EffectKind.Barricade or EffectKind.Slippery;
+    public static bool IsDefensiveBuff(EffectKind kind) => kind is EffectKind.Intangible or EffectKind.Plating or
+        EffectKind.Barricade or EffectKind.Slippery or EffectKind.HardenedShell or EffectKind.HardToKill or
+        EffectKind.Regen or EffectKind.Artifact or EffectKind.Thorns or EffectKind.TemporaryThorns;
+    internal static IntentStyle StyleFor(EffectKind kind) => kind switch
+    {
+        EffectKind.Attack => IntentStyle.Attack,
+        EffectKind.Block or EffectKind.Heal => IntentStyle.Defend,
+        _ when IsDefensiveBuff(kind) => IntentStyle.Defend,
+        _ when IsMonsterBuff(kind) => IntentStyle.Buff,
+        _ => IntentStyle.PlayerDebuff
+    };
     public static bool IsCard(EffectKind kind) => kind is EffectKind.Dazed or EffectKind.Wound or EffectKind.Burn or EffectKind.Beckon or
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
@@ -118,18 +128,19 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     internal static bool CanFavor(EffectKind kind) => Enum.IsDefined(kind) &&
         kind is not (EffectKind.Attack or EffectKind.Wait);
 
-    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context)
+    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null)
     {
         bool canDebuff = !context.PlayerHasArtifact;
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
-            if (profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
+            if (!EffectPolicy.CanTargetMonster(kind, monsterId) ||
+                profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
                 continue;
             var (weight, bonus) = Weights(kind, buff.RoomWeight);
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;
-            var style = ActionEffect.IsDefensiveBuff(kind) ? IntentStyle.Defend : IntentStyle.Buff;
+            var style = ActionEffect.StyleFor(kind);
             bool threshold = ActionEffect.UsesThreshold(kind);
             int current = threshold ? context.Thresholds?.GetValueOrDefault(kind) ?? 0 : 0;
             if (current > 0 && !buff.Stackable)

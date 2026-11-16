@@ -11,7 +11,7 @@ internal sealed class RuleConfiguration
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public RuleConfiguration(JsonElement settings, JsonElement profiles)
+    public RuleConfiguration(JsonElement settings, JsonElement profiles, MonsterMovePresets movePresets)
     {
         var actions = settings.GetProperty("actions");
         var opening = settings.GetProperty("opening");
@@ -81,9 +81,11 @@ internal sealed class RuleConfiguration
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
         TurnPrior = Read<ActionContext>(settings.GetProperty("simulation").GetProperty("turnContext"));
         var defaults = profiles.GetProperty("defaults");
-        KeepVanilla = profiles.TryGetProperty("keepVanilla", out var keep) ? Read<string[]>(keep).ToHashSet() : [];
+        MovePresets = movePresets;
         Monsters = profiles.GetProperty("monsters").EnumerateObject().ToDictionary(field => field.Name,
             field => ReadMonster(field.Value, defaults));
+        Planner = new ActionPlanner(PoolSettings);
+        Catalog = new ActionCatalog(Actions);
     }
 
     public PoolSettings PoolSettings { get; }
@@ -92,16 +94,31 @@ internal sealed class RuleConfiguration
     public OpeningDraws Draws { get; }
     public Dictionary<string, StatusValue> OpeningValues { get; }
     public Dictionary<string, MonsterRules> Monsters { get; }
-    public HashSet<string> KeepVanilla { get; }
+    internal MonsterMovePresets MovePresets { get; }
+    internal ActionPlanner Planner { get; }
+    private ActionCatalog Catalog { get; }
     public ActionContext TurnPrior { get; }
     public int HardCardLimitFirstTurn { get; }
     internal OpeningOption OpeningOption(string id, MonsterProfile profile, int rooms, int? threshold = null,
         EffectKind? existingCard = null) =>
         OpeningValuation.Option(id, OpeningValues[id], profile, rooms, Draws.Strength, PoolSettings.ChaosProgress,
             EffectPolicy.IsThreshold(id) ? threshold ?? 0 : null, Actions, existingCard);
-    internal IEnumerable<string> OpeningStatesFor(MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
+    internal IEnumerable<string> OpeningStatesFor(string id, MonsterRules monster) => monster.OpeningStates.Length == 0 ? [] :
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
-            .Distinct().Where(id => id != "STUN" || !monster.FixedOpening);
+            .Distinct().Where(state => !EffectPolicy.TryGetKind(state, out var kind) || EffectPolicy.CanTargetMonster(kind, id));
+
+    internal ActionPlan PlanMove(string id, Pools previous, MonsterProfile profile, ActionContext context,
+        Random random, bool canRandomize = true) => canRandomize
+        ? Planner.Plan(previous, profile, Catalog.Generate(profile, context, id), random,
+            buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target))
+        : new ActionPlan(null, previous, previous);
+
+    internal ActionContext TurnContext(int rooms, int enemyCount, int round) => TurnPrior with
+    {
+        Rooms = rooms,
+        ExpectedDamageAgainstMonster = PlayerAction.At(rooms) / Math.Max(1, enemyCount),
+        AllowHardCardLimit = round >= HardCardLimitFirstTurn
+    };
 
     internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique;
     internal static MonsterRules ReadMonster(JsonElement entry, JsonElement defaults)
@@ -130,41 +147,40 @@ internal sealed class RuleConfiguration
             Favorites: entry.TryGetProperty("favorites", out var favorites) ? Read<Dictionary<EffectKind, double>>(favorites) : null);
         return new MonsterRules(profile,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
-            entry.TryGetProperty("fixedOpening", out var fixedOpening) && fixedOpening.GetBoolean(),
             Read<string[]>(Setting("openingStates")),
             entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
-            entry.TryGetProperty("randomizeWhenPower", out var required) ? required.GetString() : null,
             entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0,
-            entry.TryGetProperty("randomMoves", out var randomMoves) ? Read<string[]>(randomMoves).ToHashSet(StringComparer.Ordinal) : null,
-            entry.TryGetProperty("keepVanillaWhileAllyAlive", out var ally) ? ally.GetString() : null,
-            entry.TryGetProperty("randomizeAllMoves", out var all) && all.GetBoolean(), phases);
+            phases, entry.TryGetProperty("animations", out var animations) ? Read<Dictionary<IntentStyle, string>>(animations) : null);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
 }
 
 internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
-    bool FixedOpening, string[] OpeningStates, HashSet<string> KeepMoves, string? RandomizeWhenPower, double FullBlockChance,
-    HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false,
-    IReadOnlyDictionary<string, MonsterPhase>? Phases = null)
+    string[] OpeningStates, HashSet<string> KeepMoves, double FullBlockChance,
+    IReadOnlyDictionary<string, MonsterPhase>? Phases = null, IReadOnlyDictionary<IntentStyle, string>? Animations = null)
 {
     internal bool HasEnabledStage => Phases is not { Count: > 0 } || Phases.Values.Any(phase => phase.Enabled);
 
-    internal bool AllowsMove(string id) => !KeepMoves.Contains(id) && (RandomMoves?.Contains(id) ?? true) &&
-        PhaseForMove(id)?.Enabled != false;
+    internal bool AllowsMove(string? id) => Enabled && (id == null || !KeepMoves.Contains(id) && PhaseForMove(id)?.Enabled != false);
 
     internal MonsterPhase? PhaseForMove(string moveId) =>
         Phases?.Values.FirstOrDefault(phase => phase.Moves.Contains(moveId, StringComparer.Ordinal));
 
     internal string? DefaultPhase => Phases?.Keys.FirstOrDefault();
 
-    internal string? RequiredPower(MonsterPhase? phase) => phase?.RandomizeWhenPower ?? RandomizeWhenPower;
+    internal string? AnimationFor(IntentStyle style) => Animations?.GetValueOrDefault(style) ?? (style switch
+    {
+        IntentStyle.Buff => Animations?.GetValueOrDefault(IntentStyle.Defend),
+        IntentStyle.Defend => Animations?.GetValueOrDefault(IntentStyle.Buff),
+        _ => null
+    });
 }
 
 internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionValue = null, double? AttackFrequency = null,
     double? Volatility = null, double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
     IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null,
-    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null, string? RandomizeWhenPower = null)
+    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null)
 {
     internal MonsterProfile Apply(MonsterProfile profile) => profile with
     {

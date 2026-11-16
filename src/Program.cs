@@ -16,7 +16,7 @@ if (args.Length > 0 && args[0] == "--calibrate-effects")
         throw new ArgumentOutOfRangeException(nameof(seeds));
     using var calibrationSettings = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "settings.json")));
     using var calibrationProfiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "monster-profiles.json")));
-    EffectCalibration.Run(new RuleConfiguration(calibrationSettings.RootElement, calibrationProfiles.RootElement), seeds);
+    EffectCalibration.Run(new RuleConfiguration(calibrationSettings.RootElement, calibrationProfiles.RootElement, ReadMoves(configDir)), seeds);
     return;
 }
 
@@ -30,7 +30,7 @@ int seed = args.Length > 0 ? int.Parse(args[0], CultureInfo.InvariantCulture) : 
 string monsterId = (args.Length > 1 ? args[1] : sample.GetProperty("defaultMonsterId").GetString()!).ToUpperInvariant();
 string ascension = args.Length > 2 ? args[2] : sample.GetProperty("defaultActionValueTier").GetString()!;
 using var profiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "monster-profiles.json")));
-var rules = new RuleConfiguration(root, profiles.RootElement);
+var rules = new RuleConfiguration(root, profiles.RootElement, ReadMoves(folder));
 var entry = profiles.RootElement.GetProperty("monsters").GetProperty(monsterId);
 var configured = rules.Monsters[monsterId];
 if (ascension is not ("standard" or "deadlyEnemies"))
@@ -39,7 +39,8 @@ string? phaseId = args.Length > 6 ? args[6] : configured.DefaultPhase;
 var phase = phaseId == null ? null : configured.Phases?.GetValueOrDefault(phaseId) ??
     throw new ArgumentException($"Unknown phase for {monsterId}: {phaseId}.");
 var profile = rules.PoolSettings.Adjust(phase?.Apply(configured.Profile) ?? configured.Profile, ascension == "deadlyEnemies");
-if (!configured.Enabled || phase?.Enabled == false || rules.KeepVanilla.Contains(monsterId))
+if (!configured.Enabled || phase?.Enabled == false ||
+    rules.MovePresets.MoveIds(monsterId) is { Length: > 0 } known && !known.Any(configured.AllowsMove))
 {
     Console.WriteLine($"{monsterId}: original actions retained.");
     return;
@@ -50,7 +51,7 @@ int rooms = args.Length > 5 ? int.Parse(args[5], CultureInfo.InvariantCulture) :
 double hp = entry.GetProperty("hp").GetDouble();
 var allyInputs = sample.GetProperty("allies").EnumerateArray().ToArray();
 var enemies = new[] { new SimulationEnemy(monsterId, hp,
-    FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32(), FixedOpening: configured.FixedOpening) }
+    FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32()) }
     .Concat(allyInputs.Select(ally => ally.Deserialize<SimulationEnemy>(inputs)!)).ToArray();
 double allyHp = enemies.Skip(1).Sum(enemy => enemy.Hp);
 profile = profile with
@@ -69,16 +70,17 @@ Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expe
 OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
-        .Where(id => !(id == "STUN" && enemy.FixedOpening) &&
-            !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
+        .Where(id => !(id is "DOOM" or "DEMISE" && enemy.ScriptedDeath))
         .Select(id => rules.OpeningOption(id, owner, rooms)).ToArray();
 }
-var options = Options(enemies[0], rules.OpeningStatesFor(configured), profile);
+var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
+var options = Options(enemies[0], rules.OpeningStatesFor(monsterId, configured)
+    .Where(id => id != "STUN" || configured.AllowsMove(sequence?.First)), profile);
 foreach (var option in options)
     Console.WriteLine($"{option.State.Id,-19} " + string.Join(", ", option.Doses!.Select(dose =>
         $"{dose.State.Amount}{(dose.State.GeneratedCard is { } card ? $" [{card}]" : "")}: {dose.Value:+0.00;-0.00;0.00}")));
 
-var openingRandom = new Random(seed);
+var openingRandom = MoveRandom.For(unchecked((uint)seed), rooms + 1, 0, 0);
 var choicesByMonster = new Dictionary<string, IReadOnlyList<OpeningOption>> { [monsterId] = options };
 var actionValues = new Dictionary<string, double> { [monsterId] = profile.ActionValue };
 foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue", out _)))
@@ -110,12 +112,12 @@ Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
 foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpening, seed,
     sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
-    rooms: rooms, enemyCount: enemies.Length, phase: phase))
+    rooms: rooms, enemyCount: enemies.Length, phaseId: phaseId))
 {
     var action = turn.Plan;
     string moveName = action.Action?.Id ?? (turn.Imbalanced ? "imbalanced" : "skipped");
     if (turn.OriginalMove is { } original)
-        moveName = action.Action == null ? $"{original.Id} (vanilla)" : $"{original.Id} -> {moveName}";
+        moveName = action.Action == null ? $"{original} (vanilla)" : $"{original} -> {moveName}";
     Console.WriteLine(
         $"{turn.Round,2} {moveName,-16} panel {action.Action?.Damage ?? 0,3:F0}  " +
         $"actual score {action.Action?.ActualScore ?? 0,4:F1}  " +
@@ -125,6 +127,14 @@ foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpenin
         $"hits {turn.Hits}");
 }
 
-internal sealed record SimulationEnemy(string Id, double Hp, int FirstEnemyAction = 1,
-    bool FixedOpening = false, bool ScriptedDeath = false);
+static MonsterMovePresets ReadMoves(string folder)
+{
+    string path = Path.Combine(folder, "monster-moves.json");
+    using var stream = File.Exists(path) ? File.OpenRead(path) :
+        typeof(RuleConfiguration).Assembly.GetManifestResourceStream("monster-moves.json")!;
+    using var document = JsonDocument.Parse(stream);
+    return RuleConfiguration.Read<MonsterMovePresets>(document.RootElement);
+}
+
+internal sealed record SimulationEnemy(string Id, double Hp, int FirstEnemyAction = 1, bool ScriptedDeath = false);
 

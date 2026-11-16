@@ -200,6 +200,24 @@ internal static class PrototypeChecks
             .Where(effect => ActionEffect.IsMonsterBuff(effect.Kind)).Select(effect => effect.Kind).ToHashSet();
         if (!rushBuffs.SetEquals([EffectKind.Strength]))
             throw new InvalidOperationException("Phase buff restrictions must also exclude defensive buffs.");
+        var steam = Status("amount", 0.6, 6);
+        var steamCatalog = new ActionCatalog(catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
+        {
+            [EffectKind.SteamEruption] = steam with { Weight = -1 },
+            [EffectKind.Regen] = Status("amount", 0.25, 5)
+        } });
+        var steamProfile = estimate with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.SteamEruption] = 4 } };
+        var steamActions = steamCatalog.Generate(steamProfile, new ActionContext(6), "WATERFALL_GIANT").ToArray();
+        if (steamActions.Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]) ||
+            steamActions.Single(action => action.Effects is [{ Kind: EffectKind.Regen, Amount: 5 }]).Style != IntentStyle.Defend)
+            throw new InvalidOperationException("Disabled Steam must stay disabled and Regen must use the defense pool.");
+        steamCatalog = new ActionCatalog(catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
+            { [EffectKind.SteamEruption] = steam } });
+        if (!steamCatalog.Generate(steamProfile, new ActionContext(6), "WATERFALL_GIANT")
+                .Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]) ||
+            steamCatalog.Generate(steamProfile, new ActionContext(6), "FLYCONID")
+                .Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]))
+            throw new InvalidOperationException("The native Steam power only works on Waterfall Giant.");
         var shellCatalog = new ActionCatalog(catalogSettings with
         {
             Buffs = new Dictionary<EffectKind, StatusValue> { [EffectKind.HardenedShell] = shell }

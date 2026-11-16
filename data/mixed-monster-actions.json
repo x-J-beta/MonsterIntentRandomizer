@@ -2,7 +2,7 @@
   "targetVersion": "v0.113.0",
   "steamBuild": 26625880,
   "source": "本机 sts2.dll 中的招式状态 ID 和执行逻辑；逐招面板见 monster-action-baselines.json。",
-  "profiles": "monster-profiles.json 中的 randomMoves 是可随机招式的名单。其余原版状态由游戏状态机处理。行动力使用获准招式的攻击与附带效果作为基准，攻击频次以获准招式所在回合为分母。",
+  "profiles": "monster-profiles.json 中的 keepMoves 列出由游戏状态机执行的原版招式。行动力使用可随机招式的攻击与附带效果作为基准。",
   "monsters": {
     "THE_INSATIABLE": {"previous":{"actionValue":20,"deadlyEnemies":22.33,"attackFrequency":1.25,"preferences":{"attack":75,"buff":25,"defend":0,"playerDebuff":0},"fixedOpening":null,"openingStates":null},"preserved":["LIQUIFY_GROUND_MOVE"],"note":"液化地面联动流沙和状态牌"},
     "KNOWLEDGE_DEMON": {"previous":{"actionValue":20.6,"deadlyEnemies":22.6,"attackFrequency":1.25,"preferences":{"attack":50,"buff":12.5,"defend":12.5,"playerDebuff":25},"fixedOpening":null,"openingStates":null},"preserved":["CURSE_OF_KNOWLEDGE_MOVE"],"note":"诅咒知识包含原版选项与计数"},

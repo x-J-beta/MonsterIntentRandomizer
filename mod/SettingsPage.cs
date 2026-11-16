@@ -250,9 +250,9 @@ internal static class SettingsPage
         panel.AddChild(availability);
         var randomize = new CheckButton { Text = "启用该怪物的随机出招" };
         panel.AddChild(randomize);
-        var requiredPower = new LineEdit { PlaceholderText = "留空则不限状态，例如 BURROWED" };
-        panel.AddChild(new Label { Text = "仅拥有此状态时随机（状态 ID）" });
-        panel.AddChild(requiredPower);
+        var keptMoves = new LineEdit { PlaceholderText = "例如 DAMPEN_MOVE, HEX" };
+        panel.AddChild(new Label { Text = "保留的原版招式 ID（逗号分隔）" });
+        panel.AddChild(keptMoves);
         var values = new[]
         {
             (Group: "", Key: "actionValue", Label: "基础行动力"),
@@ -289,13 +289,14 @@ internal static class SettingsPage
             EditMonster((monster, parent) => EditableFavorites(monster, parent)[key] ??= JsonValue.Create(3.0), refresh: true);
         };
         randomize.Toggled += value => EditMonster((monster, _) => monster["enabled"] = value, refresh: true);
-        requiredPower.TextChanged += value => EditMonster((monster, parent) =>
+        keptMoves.TextChanged += value => EditMonster((_, parent) =>
         {
-            string id = value.Trim().ToUpperInvariant();
-            if (id.Length == 0 && ReferenceEquals(monster, parent))
-                monster.AsObject().Remove("randomizeWhenPower");
+            var moves = value.Split([',', '、', '，'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(id => id.ToUpperInvariant()).Distinct().ToArray();
+            if (moves.Length == 0)
+                parent.AsObject().Remove("keepMoves");
             else
-                monster["randomizeWhenPower"] = id;
+                parent["keepMoves"] = JsonSerializer.SerializeToNode(moves);
         });
         list.ItemSelected += i =>
         {
@@ -312,7 +313,7 @@ internal static class SettingsPage
                 entries.Clear();
                 list.Clear();
                 randomize.Disabled = true;
-                requiredPower.Editable = false;
+                keptMoves.Editable = false;
                 foreach (var (id, monster) in monsters.OrderBy(pair => pair.Value?["name"]?.GetValue<string>()))
                 {
                     string name = monster?["name"]?.GetValue<string>() ?? id;
@@ -348,17 +349,17 @@ internal static class SettingsPage
         {
             var (parent, monster) = SelectedNodes(document);
             bool isPhase = selected?.PhaseId != null;
-            bool excluded = document["keepVanilla"]?.AsArray().Any(id => id?.GetValue<string>() == selected?.MonsterId) ?? false;
             bool parentDisabled = isPhase && parent?["enabled"]?.GetValue<bool>() == false;
-            bool active = monster != null && !excluded && !parentDisabled && monster["enabled"]?.GetValue<bool>() != false;
+            bool active = monster != null && !parentDisabled && monster["enabled"]?.GetValue<bool>() != false;
             randomize.Text = isPhase ? "启用该阶段的随机出招" : "启用该怪物的随机出招";
-            randomize.Disabled = monster == null || excluded || parentDisabled;
+            randomize.Disabled = monster == null || parentDisabled;
             randomize.SetPressedNoSignal(active);
-            requiredPower.Editable = active;
-            requiredPower.Text = (monster?["randomizeWhenPower"] ?? parent?["randomizeWhenPower"])?.GetValue<string>() ?? "";
+            keptMoves.Editable = parent != null;
+            keptMoves.Text = parent?["keepMoves"] is JsonArray kept
+                ? string.Join(", ", kept.Select(move => move!.GetValue<string>())) : "";
             var allowed = monster?["allowedBuffs"] is JsonArray buffs
                 ? RuleConfiguration.Read<EffectKind[]>(JsonSerializer.SerializeToElement(buffs)) : null;
-            availability.Text = excluded ? "专属行为保留原版" : parentDisabled ? "画像 JSON 中的总开关已关闭" :
+            availability.Text = parentDisabled ? "画像 JSON 中的总开关已关闭" :
                 allowed != null ? $"可随机强化　{string.Join("、", allowed.Select(kind => IntentDetails.Names(kind).Chinese))}" : "";
             for (int i = 0; i < values.Length; i++)
             {
@@ -400,6 +401,7 @@ internal static class SettingsPage
 
             foreach (var kind in Enum.GetValues<EffectKind>().OrderBy(kind => IntentDetails.Names(kind).Chinese))
                 if (ActionCatalog.CanFavor(kind) &&
+                    EffectPolicy.CanTargetMonster(kind, selected?.MonsterId) &&
                     (allowed == null || !ActionEffect.IsMonsterBuff(kind) || allowed.Contains(kind)) &&
                     configured?.Any(pair => string.Equals(pair.Key, kind.ToString(), StringComparison.OrdinalIgnoreCase)) != true)
                     effects.AddItem(IntentDetails.Names(kind).Chinese, (int)kind);

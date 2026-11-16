@@ -12,6 +12,10 @@ public sealed record EffectPolicy(bool Stackable = true, bool Unique = false, Ef
         Enum.TryParse(id.Replace("_", ""), true, out kind);
     internal static bool IsThreshold(string id) => TryGetKind(id, out var kind) && ActionEffect.UsesThreshold(kind);
 
+    // Native Steam Eruption starts Waterfall Giant's death sequence and casts its owner to that model.
+    internal static bool CanTargetMonster(EffectKind kind, string? id) =>
+        kind != EffectKind.SteamEruption || id == "WATERFALL_GIANT";
+
     public static EffectPolicy Default(EffectKind kind) => new(
         Stackable: !(ActionEffect.IsRareBuff(kind) ||
             kind is EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Tender or EffectKind.Slippery or

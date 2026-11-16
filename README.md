@@ -16,9 +16,11 @@
 
 ## 哪些怪物会随机
 
-在 [画像文件](data/monster-profiles.json) 中，`keepVanilla` 保留整只怪物的原版行为，`keepMoves` 保留指定的原版招式。这些招式在原版循环中每次出现时均按原版执行。无厌沙虫、知识恶魔、女王等也可用 `randomMoves` 指定可随机的招式。 [专属招式核对记录](data/mixed-monster-actions.json)
+在 [画像文件](data/monster-profiles.json) 或逐怪参数中，用 `keepMoves` 列出需要保留的原版招式 ID。模拟器用 [预定义招式顺序](data/monster-moves.json) 和正式战斗共用的选招算法生成轨迹。
 
-瀑布巨兽保留首招「增压」，执行后获得专属能力「蒸汽积蓄」。从第二回合起，存活时每个自身回合结束获得原版数量的蒸汽喷发。蒸汽喷发独立于画像和随机出招。
+画像的 `animations` 可指定 `attack`、`buff`、`defend` 和 `playerDebuff` 动画触发名。强化与防御可以共用动画。复合招式含攻击时使用攻击动画。
+
+瀑布巨兽保留原版「增压」和死亡后的爆炸流程，画像偏好「蒸汽喷发」。在强化池里将其默认权重 `-1` 改为正值，即可参与随机出招。
 
 ## 构建
 

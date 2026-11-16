@@ -11,10 +11,10 @@ const archive = read(data('monster-action-baselines.json'));
 const existingAudit = existsSync(auditPath) ? read(auditPath).monsters : {};
 const styles = ['attack', 'buff', 'defend', 'playerDebuff'];
 const references = { act1: 5, act2: 18, act3: 33 };
-const excluded = new Set(profiles.keepVanilla);
+const { moves: nativeMoves } = read(data('monster-moves.json'));
 const defensivePowers = new Set([
     'BARRICADE', 'CURL_UP', 'DEXTERITY', 'FLUTTER', 'HARDENED_SHELL', 'HARD_TO_KILL',
-    'INTANGIBLE', 'MALLEABLE', 'PLATING', 'SLIPPERY'
+    'INTANGIBLE', 'MALLEABLE', 'PLATING', 'SLIPPERY', 'REGEN', 'REGENERATION', 'ARTIFACT', 'THORNS', 'TEMPORARY_THORNS'
 ]);
 const effectAliases = {
     CHAINS_OF_BINDING: 'Soulbind', MIND_ROT: 'DrawDown', WASTE_AWAY: 'EnergyDown',
@@ -29,13 +29,11 @@ const midpoint = range => Array.isArray(range) && range.every(Number.isFinite)
 
 function moveSubset(monster, profile) {
     const states = monster.stateMachine?.states ?? [];
-    const allows = profile.randomMoves ? new Set(profile.randomMoves) : null;
     const kept = new Set(profile.keepMoves ?? []);
     const eligible = monster.moves.filter(move => {
         const statesForMove = states.filter(state => state.move_id === move.id);
-        if (allows)
-            return statesForMove.some(state => allows.has(state.id) && !kept.has(state.id));
-        return !kept.has(move.id) && (!statesForMove.length || statesForMove.some(state => !kept.has(state.id))) &&
+        const moveIds = statesForMove.length ? statesForMove.map(state => state.id) : [move.id, `${move.id}_MOVE`];
+        return (statesForMove.length ? moveIds.some(id => !kept.has(id)) : moveIds.every(id => !kept.has(id))) &&
             ['direct_attack', 'non_attack'].includes(move.kind) &&
             !move.nonAttackEffects.some(effect => ['summon', 'escape', 'special'].includes(effect.kind));
     });
@@ -52,7 +50,7 @@ function moveSubset(monster, profile) {
 function moveValues(move, profile, factors) {
     const result = Object.fromEntries(styles.map(style => [style, 0]));
     const missing = new Set();
-    const hasSteamEruption = move.nonAttackEffects.some(effect => effect.id === 'STEAM_ERUPTION');
+    let hasClassifiedBuff = move.nonAttackEffects.some(effect => effect.id === 'STEAM_ERUPTION');
     if (move.kind === 'direct_attack') {
         if (!Number.isFinite(move.directAttackValue.normal))
             missing.add('attack');
@@ -64,6 +62,7 @@ function moveValues(move, profile, factors) {
         if (id === 'STEAM_ERUPTION')
             continue;
         const player = String(effect.target ?? '').toLowerCase().includes('player');
+        hasClassifiedBuff ||= !player && effect.kind === 'power' && defensivePowers.has(id);
         const style = effect.kind === 'block' || effect.kind.startsWith('heal') || defensivePowers.has(id) && !player
             ? 'defend' : player || effect.kind.includes('debuff') || effect.kind.includes('status_card')
                 ? 'playerDebuff' : effect.kind === 'power' || effect.kind === 'unspecified_buff' ? 'buff' : null;
@@ -95,7 +94,7 @@ function moveValues(move, profile, factors) {
         DebuffStrong: 'playerDebuff', Status: 'playerDebuff', CardDebuff: 'playerDebuff'
     };
     for (const intent of move.intents)
-        if (intentStyles[intent] && result[intentStyles[intent]] === 0 && !(intent === 'Buff' && hasSteamEruption))
+        if (intentStyles[intent] && result[intentStyles[intent]] === 0 && !(intent === 'Buff' && hasClassifiedBuff))
             missing.add(intentStyles[intent]);
     for (const style of missing)
         if (result[style] === 0)
@@ -106,7 +105,8 @@ function moveValues(move, profile, factors) {
 const audit = {};
 for (const monster of archive.monsters) {
     const profile = profiles.monsters[monster.id];
-    if (!profile || excluded.has(monster.id) || profile.enabled === false)
+    const known = nativeMoves[monster.id] ?? [];
+    if (!profile || profile.enabled === false || known.length > 0 && known.every(id => profile.keepMoves?.includes(id)))
         continue;
     const moves = moveSubset(monster, profile);
     const stage = profile.stage ?? ({ 'Act 2 - Hive': 'act2', 'Act 3 - Glory': 'act3' }[monster.encounters?.[0]?.act]) ?? 'act1';

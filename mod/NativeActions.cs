@@ -16,11 +16,17 @@ namespace MonsterIntentRandomizer;
 internal static class NativeActions
 {
     internal const string MoveId = "MIR_RANDOM_MOVE";
+    private const float AnimationLeadTime = 0.2f;
 
-    internal static MoveState Build(MonsterModel monster, ActionCandidate candidate) =>
-        new(MoveId, targets => Execute(monster, candidate.Effects!, targets),
-            candidate.Effects!.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] :
-                candidate.Effects.Select(CreateIntent).ToArray());
+    internal static MoveState Build(MonsterModel monster, ActionCandidate candidate, MonsterRules rules)
+    {
+        var effects = candidate.Effects!;
+        string? animation = effects.Count == 0 ? null : rules.AnimationFor(candidate.IsAttack
+            ? IntentStyle.Attack : ActionEffect.StyleFor(effects[0].Kind));
+        return new MoveState(MoveId, targets => Execute(monster, effects, targets,
+                candidate.IsAttack ? animation : null, candidate.IsAttack ? null : animation),
+            effects.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] : effects.Select(CreateIntent).ToArray());
+    }
 
     private static AbstractIntent CreateIntent(ActionEffect effect) => IntentDetails.Register(effect, effect.Kind switch
     {
@@ -35,7 +41,8 @@ internal static class NativeActions
         _ => new DebuffIntent()
     });
 
-    private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets)
+    private static async Task Execute(MonsterModel monster, IReadOnlyList<ActionEffect> effects, IReadOnlyList<Creature> targets,
+        string? attackAnimation, string? supportAnimation)
     {
         Creature self = monster.Creature;
         var choice = new ThrowingPlayerChoiceContext();
@@ -55,6 +62,11 @@ internal static class NativeActions
             }
             if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
                 continue;
+            if (!string.IsNullOrWhiteSpace(supportAnimation))
+            {
+                await CreatureCmd.TriggerAnim(self, supportAnimation, AnimationLeadTime);
+                supportAnimation = null;
+            }
             if (effect.Threshold == null)
                 CombatIntegration.RecordEffect(combat, effect.Kind);
 
@@ -62,8 +74,13 @@ internal static class NativeActions
             switch (effect.Kind)
             {
                 case EffectKind.Attack:
-                    await DamageCmd.Attack(amount).FromMonster(monster).WithHitCount(effect.Hits)
-                        .WithNoAttackerAnim().WithHitFx("vfx/vfx_attack_blunt").Execute(choice);
+                    var attack = DamageCmd.Attack(amount).FromMonster(monster).WithHitCount(effect.Hits)
+                        .WithHitFx("vfx/vfx_attack_blunt");
+                    if (string.IsNullOrWhiteSpace(attackAnimation))
+                        attack.WithNoAttackerAnim();
+                    else
+                        attack.WithAttackerAnim(attackAnimation, AnimationLeadTime);
+                    await attack.Execute(choice);
                     break;
                 case EffectKind.Block:
                     await CreatureCmd.GainBlock(self, amount, ValueProp.Move, null);
@@ -176,6 +193,7 @@ internal static class NativeActions
         "STRENGTH" or "STRENGTH_DOWN" => Get<StrengthPower>,
         "RITUAL" => Get<RitualPower>,
         "VIGOR" => Get<VigorPower>,
+        "STEAM_ERUPTION" => Get<SteamEruptionPower>,
         "ENRAGE" => Get<EnragePower>,
         "SLIPPERY" => Get<SlipperyPower>,
         "REGEN" => Get<RegenPower>,
@@ -274,6 +292,7 @@ internal static class NativeActions
             "STRENGTH" or "STRENGTH_DOWN" => await Apply<StrengthPower>(),
             "RITUAL" => await Apply<RitualPower>(),
             "VIGOR" => await Apply<VigorPower>(),
+            "STEAM_ERUPTION" => await Apply<SteamEruptionPower>(),
             "ENRAGE" => await Apply<EnragePower>(),
             "PAINFUL_STABS" => await ApplyGenerator<RandomizedPainfulStabsPower>(),
             "PERSONAL_HIVE" => await ApplyGenerator<RandomizedPersonalHivePower>(),

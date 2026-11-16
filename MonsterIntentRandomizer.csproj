@@ -10,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="src/**/*.cs" />
+    <EmbeddedResource Include="data/monster-moves.json" LogicalName="monster-moves.json" />
   </ItemGroup>
 </Project>

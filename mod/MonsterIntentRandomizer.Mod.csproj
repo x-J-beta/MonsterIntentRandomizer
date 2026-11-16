@@ -15,6 +15,7 @@
     <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs;../src/EffectCalibration.cs" />
     <EmbeddedResource Include="../data/settings.json" LogicalName="settings.json" />
     <EmbeddedResource Include="../data/monster-profiles.json" LogicalName="monster-profiles.json" />
+    <EmbeddedResource Include="../data/monster-moves.json" LogicalName="monster-moves.json" />
     <Reference Include="sts2" HintPath="$(GameAssemblyDir)\sts2.dll" Private="false" />
     <Reference Include="GodotSharp" HintPath="$(GameAssemblyDir)\GodotSharp.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameAssemblyDir)\0Harmony.dll" Private="false" />

@@ -10,7 +10,7 @@ const published = new Map((await readPublishedMonsters()).map(monster => [monste
 const profileText = readFileSync(profilesPath, 'utf8');
 const profiles = JSON.parse(profileText);
 const previousAudit = existsSync(auditPath) ? JSON.parse(readFileSync(auditPath, 'utf8')).monsters : {};
-const excluded = new Set(profiles.keepVanilla);
+const { moves: nativeMoves } = JSON.parse(readFileSync(new URL('../data/monster-moves.json', import.meta.url), 'utf8'));
 const difficulties = ['normal', 'ascension'];
 const maxGrowthTurns = 5;
 const round = number => Math.round(number * 100) / 100;
@@ -85,9 +85,11 @@ function growthWindow(opening, loop, difficulty, turns) {
 }
 
 function calibrate(monster, profile) {
-    if (excluded.has(monster.id) || profile.enabled === false)
+    const movesToKeep = new Set(profile.keepMoves ?? []);
+    const knownMoves = nativeMoves[monster.id] ?? [];
+    if (profile.enabled === false || knownMoves.length > 0 && knownMoves.every(id => movesToKeep.has(id)))
         return { method: 'vanilla' };
-    if (profile.randomMoves)
+    if (movesToKeep.size > 0)
         return { method: 'reviewedMixedProfile', values: [profile.actionValue, previousAudit[monster.id]?.proposed?.[1] ?? profile.actionValue] };
 
     const referenceMoves = new Map(published.get(monster.id).moves.map(move => [move.id, move]));
@@ -97,11 +99,6 @@ function calibrate(monster, profile) {
         return { method: 'noKnownAttack' };
     if (attacks.some(move => difficulties.some(difficulty => !Number.isFinite(move.directAttackValue[difficulty]))))
         return { method: 'unknownDamage' };
-
-    if (monster.id === 'TUNNELER' && profile.randomizeWhenPower === 'BURROWED') {
-        const move = attacks.find(move => move.id === 'FROM_BELOW');
-        return { method: 'burrowed', moves: [move.id], values: difficulties.map(difficulty => knownCost(move, difficulty)) };
-    }
 
     const cycle = monster.deterministicCycle;
     if (!cycle) {

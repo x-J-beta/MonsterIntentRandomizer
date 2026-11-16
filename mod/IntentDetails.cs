@@ -117,6 +117,7 @@ internal static class IntentDetails
         {
             EffectKind.Attack => ("攻击", "Attack"), EffectKind.Block => ("格挡", "Block"), EffectKind.Heal => ("回复", "Heal"),
             EffectKind.Strength => ("力量", "Strength"), EffectKind.Ritual => ("仪式", "Ritual"),
+            EffectKind.SteamEruption => ("蒸汽喷发", "Steam Eruption"),
             EffectKind.Regen => ("再生", "Regeneration"),
             EffectKind.Plating => ("甲覆", "Plating"),
             EffectKind.HardenedShell => ("坚硬外壳", "Hardened Shell"), EffectKind.HardToKill => ("难以杀灭", "Hard to Kill"),

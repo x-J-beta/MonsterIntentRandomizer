@@ -37,7 +37,6 @@ internal static class CustomPowerIcons
     private static PowerModel? NativeIcon(PowerModel power) => power switch
     {
         RandomizedCardPower cards => cards.NativePower,
-        SteamBuildupPower => ModelDb.Power<SteamEruptionPower>(),
         _ => null
     };
 

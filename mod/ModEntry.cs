@@ -25,10 +25,11 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 27;
+    private const int SettingsRevision = 28;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
-    internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
+    private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
+    internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles, MovePresets);
 
     internal static void Load()
     {
@@ -71,13 +72,12 @@ internal static class ModSettings
         var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         if (stored.Revision < 26)
             UpgradePhaseProfiles(profiles, defaultProfiles);
-        UpgradeMoveExclusions(profiles, defaultProfiles);
-        if (stored.Revision >= 25)
-            return stored with { Profiles = JsonSerializer.SerializeToElement(profiles), Revision = SettingsRevision };
-
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
-        var actions = settings["actions"]!.AsObject();
         var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
+        if (stored.Revision >= 25)
+            return Updated();
+
+        var actions = settings["actions"]!.AsObject();
         if (stored.Revision < 21)
         {
             actions.Remove("specialDebuffChance");
@@ -168,13 +168,12 @@ internal static class ModSettings
         CleanProfile(profiles["defaults"]);
         foreach (var (_, profile) in monsters)
             CleanProfile(profile);
-        var allMoves = defaultProfiles.Where(pair => pair.Value?["randomizeAllMoves"]?.GetValue<bool>() == true)
-            .Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        var allMoves = new HashSet<string>(["AXEBOT", "BOWLBUG_EGG", "BOWLBUG_ROCK", "INFESTED_PRISM",
+            "LOUSE_PROGENITOR", "SCROLL_OF_BITING", "THE_FORGOTTEN", "THE_LOST", "TOADPOLE"], StringComparer.Ordinal);
         foreach (string id in allMoves)
         {
             if (monsters[id] is not JsonObject profile)
                 continue;
-            profile["randomizeAllMoves"] = true;
             if (profile["enabled"]?.GetValue<bool>() == false)
                 profile["enabled"] = true;
             foreach (string key in new[] { "fixedOpening", "randomMoves", "keepMoves", "randomizeWhenPower" })
@@ -185,24 +184,13 @@ internal static class ModSettings
             if (monsters[id] is not JsonObject profile)
                 continue;
             profile.Remove("randomizeAllMoves");
-            profile["randomMoves"] = defaultProfiles[id]!["randomMoves"]!.DeepClone();
+            profile.Remove("randomMoves");
             if (id is "LAGAVULIN_MATRIARCH" or "SLUMBERING_BEETLE")
             {
                 profile.Remove("fixedOpening");
                 profile["openingStates"] = new JsonArray();
             }
         }
-        if (giant != null)
-            giant["fixedOpening"] = true;
-        if (monsters["AEONGLASS"] is JsonObject aeonglass)
-        {
-            aeonglass["keepMoves"] ??= new JsonArray();
-            var moves = aeonglass["keepMoves"]!.AsArray();
-            if (!moves.Any(move => move?.GetValue<string>() == "INCREASING_INTENSITY_MOVE"))
-                moves.Add("INCREASING_INTENSITY_MOVE");
-        }
-        if (monsters["QUEEN"] is JsonObject queen)
-            queen["keepVanillaWhileAllyAlive"] ??= "TORCH_HEAD_AMALGAM";
         if (profiles["keepVanilla"] is JsonArray excluded)
         {
             allMoves.UnionWith(["TORCH_HEAD_AMALGAM", "WATERFALL_GIANT", "LAGAVULIN_MATRIARCH", "SLUMBERING_BEETLE"]);
@@ -212,12 +200,17 @@ internal static class ModSettings
 
         return Updated();
 
-        StoredSettings Updated() => stored with
+        StoredSettings Updated()
         {
-            Settings = JsonSerializer.SerializeToElement(settings),
-            Profiles = JsonSerializer.SerializeToElement(profiles),
-            Revision = SettingsRevision
-        };
+            UpgradeMoveRules(profiles, defaultProfiles, stored.Revision);
+            settings["buffs"]!["SteamEruption"] ??= defaultSettings["buffs"]!["SteamEruption"]!.DeepClone();
+            return stored with
+            {
+                Settings = JsonSerializer.SerializeToElement(settings),
+                Profiles = JsonSerializer.SerializeToElement(profiles),
+                Revision = SettingsRevision
+            };
+        }
 
         static void CleanProfile(JsonNode? profile)
         {
@@ -255,37 +248,45 @@ internal static class ModSettings
         }
     }
 
-    private static void UpgradeMoveExclusions(JsonNode profiles, JsonObject defaults)
+    private static void UpgradeMoveRules(JsonNode profiles, JsonObject defaults, int revision)
     {
-        var excluded = (profiles["keepVanilla"] ??= new JsonArray()).AsArray();
-        foreach (string id in new[] { "CRUSHER", "ROCKET", "LIVING_SHIELD" })
-            if (!excluded.Any(item => item?.GetValue<string>() == id))
-                excluded.Add(id);
-
-        var previousAllowlists = new Dictionary<string, string[]>
+        var excluded = MoveSet(profiles["keepVanilla"]);
+        if (revision < 27)
+            excluded.UnionWith(["CRUSHER", "ROCKET", "LIVING_SHIELD"]);
+        profiles.AsObject().Remove("keepVanilla");
+        var monsters = profiles["monsters"]!.AsObject();
+        foreach (var (id, entry) in monsters)
         {
-            ["CRUSHER"] = ["THRASH_MOVE", "BUG_STING_MOVE", "ADAPT_MOVE", "GUARDED_STRIKE_MOVE"],
-            ["LIVING_SHIELD"] = ["SMASH_MOVE"],
-            ["MAGI_KNIGHT"] = [],
-            ["PHANTASMAL_GARDENER"] = ["BITE_MOVE", "LASH_MOVE", "FLAIL_MOVE"],
-            ["SNEAKY_GREMLIN"] = ["TACKLE_MOVE"],
-            ["SPECTRAL_KNIGHT"] = ["SOUL_SLASH", "SOUL_FLAME"],
-            ["THIEVING_HOPPER"] = ["NAB_MOVE", "HAT_TRICK_MOVE"]
-        };
-        foreach (var (id, previous) in previousAllowlists)
-        {
-            if (profiles["monsters"]?[id] is not JsonObject profile)
-                continue;
-            if (previous.Length > 0 && JsonNode.DeepEquals(profile["randomMoves"], JsonSerializer.SerializeToNode(previous)))
-                profile.Remove("randomMoves");
-            if (defaults[id]?["keepMoves"] is not JsonArray nativeMoves)
-                continue;
-
-            var kept = (profile["keepMoves"] ??= new JsonArray()).AsArray();
-            foreach (var move in nativeMoves)
-                if (!kept.Any(item => JsonNode.DeepEquals(item, move)))
-                    kept.Add(move?.DeepClone());
+            var profile = entry!.AsObject();
+            profile["animations"] ??= defaults[id]?["animations"]?.DeepClone();
+            var kept = MoveSet(profile["keepMoves"]);
+            var known = MovePresets.MoveIds(id);
+            var stock = MoveSet(defaults[id]?["keepMoves"]);
+            if (excluded.Contains(id))
+                kept.UnionWith(known);
+            else if (!known.All(stock.Contains))
+                kept.UnionWith(stock);
+            if (profile["randomMoves"] is JsonArray allowlist)
+                kept.UnionWith(known.Except(MoveSet(allowlist)));
+            if (profile["fixedOpening"]?.GetValue<bool>() == true && MovePresets.SequenceFor(id)?.First is { } first)
+                kept.Add(first);
+            if (kept.Count > 0)
+                profile["keepMoves"] = JsonSerializer.SerializeToNode(kept);
+            foreach (string key in new[] { "randomMoves", "fixedOpening", "randomizeWhenPower", "keepVanillaWhileAllyAlive", "randomizeAllMoves" })
+                profile.Remove(key);
+            if (profile["phases"] is JsonObject phases)
+                foreach (var (_, phase) in phases)
+                    (phase as JsonObject)?.Remove("randomizeWhenPower");
         }
+
+        if (monsters["WATERFALL_GIANT"] is JsonObject giant)
+        {
+            var favorites = (giant["favorites"] ??= new JsonObject()).AsObject();
+            favorites["SteamEruption"] ??= defaults["WATERFALL_GIANT"]!["favorites"]!["SteamEruption"]!.DeepClone();
+        }
+
+        static HashSet<string> MoveSet(JsonNode? node) => node is JsonArray array
+            ? array.Select(item => item!.GetValue<string>()).ToHashSet(StringComparer.Ordinal) : [];
     }
 
     private static void UpgradeMonsterCoverage(JsonNode profiles, JsonObject defaults)
@@ -304,7 +305,7 @@ internal static class ModSettings
             beast["phases"] ??= definition["phases"]!.DeepClone();
             if (beast["randomMoves"] == null ||
                 JsonNode.DeepEquals(beast["randomMoves"], new JsonArray("STOMP_MOVE", "CRUSH_MOVE")))
-                beast["randomMoves"] = definition["randomMoves"]!.DeepClone();
+                beast.AsObject().Remove("randomMoves");
         }
         foreach (string id in added)
         {
@@ -332,7 +333,7 @@ internal static class ModSettings
                 profile["randomMoves"] != null && !JsonNode.DeepEquals(profile["randomMoves"], oldMoves))
                 return;
             var definition = defaults[id]!;
-            profile["randomMoves"] = definition["randomMoves"]!.DeepClone();
+            profile.AsObject().Remove("randomMoves");
             profile["favorites"] ??= definition["favorites"]!.DeepClone();
             if (removeFixedOpening)
                 profile.Remove("fixedOpening");
@@ -448,7 +449,7 @@ internal static class ModSettings
 
     internal static RuleConfiguration Parse(StoredSettings stored)
     {
-        var rules = new RuleConfiguration(stored.Settings, stored.Profiles);
+        var rules = new RuleConfiguration(stored.Settings, stored.Profiles, MovePresets);
         if (rules.Draws.Attempts < 0 || rules.Draws.MaxPerMonster < 0 || rules.Draws.MaxEncounterValueMultiplier < 0 ||
             rules.Draws.None < 0 || rules.Draws.Positive < 0 || rules.Draws.Negative < 0)
             throw new ArgumentException("开场权重、次数和倍率须为非负数。");
