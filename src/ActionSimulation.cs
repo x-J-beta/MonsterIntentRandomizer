@@ -12,6 +12,8 @@ internal static class ActionSimulation
         IReadOnlyList<OpeningPick> opening, int seed, int rounds,
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
+        bool specialStatusSpent = opening.Any(pick => pick.State.IsSpecialStatus);
+        opening = opening.Where(pick => pick.MonsterId == monsterId).ToArray();
         var monster = rules.Monsters[monsterId];
         var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
         var imbalanceRandom = new Random(seed ^ 0x4B82C097);
@@ -21,18 +23,20 @@ internal static class ActionSimulation
         var generatedCards = new Dictionary<EffectKind, EffectKind>();
         var usedEffects = new HashSet<EffectKind>();
         int vigor = 0;
+        int drawDown = 0, energyDown = 0;
         foreach (var pick in opening)
             if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
                 RecordEffect(kind, pick.State.Amount, 0, pick.State.GeneratedCard);
         var history = new ActionHistory();
         bool previousAttack = false;
-        bool specialDebuffSpent = false;
         bool imbalanced = opening.Any(pick => pick.State.Id == "IMBALANCED");
         int completedMoves = 0;
         var turns = new List<SimulatedTurn>(rounds);
         for (int turn = 1; turn <= rounds; turn++)
         {
+            drawDown = Math.Max(0, drawDown - 5);
+            energyDown = Math.Max(0, energyDown - 3);
             var prior = rules.TurnContext(rooms, enemyCount, turn);
             int strength = prior.Strength + history.AddedStrength + history.RitualStrength + opening.Sum(pick =>
                 pick.State.Id switch
@@ -42,15 +46,20 @@ internal static class ActionSimulation
                     _ => 0
                 });
             bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < monster.FullBlockChance;
+            var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
+                .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet();
+            if (drawDown > 0 && !rules.Actions.PolicyFor(EffectKind.DrawDown).Stackable)
+                active.Add(EffectKind.DrawDown);
+            if (energyDown > 0 && !rules.Actions.PolicyFor(EffectKind.EnergyDown).Stackable)
+                active.Add(EffectKind.EnergyDown);
             var context = prior with
             {
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
-                SpecialDebuffAvailable = !specialDebuffSpent,
+                SpecialStatusAvailable = !specialStatusSpent,
                 Thresholds = thresholds,
                 GeneratedCards = generatedCards,
-                ActiveEffects = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
-                    .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet()
+                ActiveEffects = active
             };
             bool hasMove = turn >= firstEnemyAction && !skipFromImbalance && !opening.Any(pick => pick.State.Id == "STUN" &&
                     turn < firstEnemyAction + pick.State.Amount);
@@ -72,7 +81,7 @@ internal static class ActionSimulation
                 history = history.Record(action);
                 foreach (var effect in action.Effects!)
                     RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
-                specialDebuffSpent |= action.Effects!.Any(effect => effect.IsSpecialDebuff);
+                specialStatusSpent |= action.Effects!.Any(effect => effect.IsSpecialStatus);
             }
             else
                 history = history with { RitualStrength = history.RitualStrength + history.AddedRitual };
@@ -82,6 +91,16 @@ internal static class ActionSimulation
         void RecordEffect(EffectKind kind, int amount, int round, EffectKind? card)
         {
             usedEffects.Add(kind);
+            if (kind == EffectKind.DrawDown)
+            {
+                drawDown += amount;
+                return;
+            }
+            if (kind == EffectKind.EnergyDown)
+            {
+                energyDown += amount;
+                return;
+            }
             if (ActionEffect.UsesThreshold(kind))
                 thresholds[kind] = amount;
             if (card.HasValue)

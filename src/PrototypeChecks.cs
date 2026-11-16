@@ -295,6 +295,14 @@ internal static class PrototypeChecks
             throw new InvalidOperationException("Opening upgrades must retain the original card and lower the threshold.");
         Equal((72.0 / openedWithering.State.Amount - 12) * 2.5 / 4, openedWithering.Value,
             "opening and combat share the generated card price");
+        var sharedOpening = OpeningValuation.Draw(new Dictionary<string, IReadOnlyList<OpeningOption>>
+        {
+            ["first"] = [witheringOpening],
+            ["second"] = [new(new OpeningState("ENVENOM", 1), 2)]
+        }, new Dictionary<string, double> { ["first"] = 40, ["second"] = 40 },
+            new OpeningDraws(0, 1, 0, 12, 1, 3), new Random(11));
+        if (sharedOpening.Count != 1)
+            throw new InvalidOperationException("Different specials must share a single opening slot across monsters.");
         var generated = catalog.Generate(varied, context).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
@@ -318,10 +326,14 @@ internal static class PrototypeChecks
             Equal((stacks - 0.6) * 0.6 * 20, secondAct.Single(action => action.Id == $"Soulbind {stacks}").Value, "soulbind stack curve");
         Equal(4, secondAct.Single(action => action.Id == "DrawDown 1").Value, "draw reduction uses player turn value");
         Equal(6.6, secondAct.Single(action => action.Id == "EnergyDown 1").Value, "energy reduction uses player turn value");
-        if (!generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)) ||
-            catalog.Generate(varied, context with { SpecialDebuffAvailable = false })
-                .Any(action => action.Effects!.Any(effect => effect.IsSpecialDebuff)))
-            throw new InvalidOperationException("Special debuffs should be available until the encounter limit is reached.");
+        var spent = context with { SpecialStatusAvailable = false };
+        var afterSpecialStatus = catalog.Generate(varied, spent).SelectMany(action => action.Effects!).ToArray();
+        if (!generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialStatus)) ||
+            afterSpecialStatus.Any(effect => effect.IsSpecialStatus) ||
+            generatorCatalog.Generate(generatorProfile, spent).Any(action => action.Effects!.Any(effect => effect.IsSpecialStatus)) ||
+            !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.StrengthDown) ||
+            !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.DrawDown))
+            throw new InvalidOperationException("The shared encounter limit should block exactly the special statuses.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixedProfile = varied with

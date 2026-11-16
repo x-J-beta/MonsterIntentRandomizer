@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 33;
+    private const int SettingsRevision = 34;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -216,6 +216,7 @@ internal static class ModSettings
             if (stored.Revision < 32)
                 UpgradeDisabledWeights(settings);
             UpgradeStatReductionWeights(settings, defaultSettings);
+            AddStatReductionFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -249,10 +250,25 @@ internal static class ModSettings
 
         var defaultWeights = defaults["actions"]!["weights"]!;
         foreach (var (id, baseWeight, perRoom) in new (string, double, double)[]
-            { ("StrengthDown", -0.15, 0.008), ("DexterityDown", RoomWeight.DisabledBase, 0) })
+            { ("StrengthDown", -0.15, 0.008), ("StrengthDown", -0.12, 0.02),
+                ("DexterityDown", RoomWeight.DisabledBase, 0), ("DexterityDown", -0.10, 0.015) })
             if (weights[id] is JsonObject weight && weight["base"]?.GetValue<double>() == baseWeight &&
                 (weight["perRoom"]?.GetValue<double>() ?? 0) == perRoom)
                 weights[id] = defaultWeights[id]!.DeepClone();
+    }
+
+    private static void AddStatReductionFavorites(JsonObject monsters, JsonObject defaults)
+    {
+        foreach (string id in new[] { "LAGAVULIN_MATRIARCH", "THE_LOST", "THE_FORGOTTEN" })
+        {
+            if (monsters[id] is not JsonObject monster)
+                continue;
+            var favorites = (monster["favorites"] ??= new JsonObject()).AsObject();
+            var defaultFavorites = defaults[id]!["favorites"]!;
+            foreach (string effect in new[] { "StrengthDown", "DexterityDown" })
+                if (defaultFavorites[effect] is { } weight)
+                    favorites[effect] ??= weight.DeepClone();
+        }
     }
 
     private static void UpgradeDisabledWeights(JsonNode settings)
@@ -489,7 +505,8 @@ internal static class ModSettings
         var weights = (actions["weights"] ??= new JsonObject()).AsObject();
         foreach (var (id, defaultWeight) in defaults["weights"]!.AsObject())
         {
-            if (!ActionEffect.IsRareDebuff(Enum.Parse<EffectKind>(id)))
+            if (id is not ("Ringing" or "Smoggy" or "Tender" or "Shrink" or "StrengthDown" or "DexterityDown" or
+                "Soulbind" or "DrawDown" or "EnergyDown" or "MindRot" or "WasteAway" or "Sloth" or "Disintegration"))
                 continue;
             if (weights[id] is not JsonObject weight)
             {

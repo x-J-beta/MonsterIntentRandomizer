@@ -160,7 +160,7 @@ public sealed class ActionPlanner(PoolSettings settings)
             otherTarget -= extra.Value;
             var chosen = extra.Effects![0];
             extras.RemoveAll(candidate => candidate.Effects![0].Kind == chosen.Kind ||
-                (chosen.IsSpecialDebuff && candidate.Effects[0].IsSpecialDebuff));
+                (chosen.IsSpecialStatus && candidate.Effects[0].IsSpecialStatus));
         }
 
         var action = Compose(parts);

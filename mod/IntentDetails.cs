@@ -94,10 +94,10 @@ internal static class IntentDetails
                 (en, $"Applies {en} to the player for the rest of combat."),
             EffectKind.Shrink => chinese ? (zh, "对玩家施加缩小，持续到施加者死亡。") :
                 (en, "Applies Shrink to the player until the caster dies."),
-            EffectKind.DrawDown => chinese ? (zh, $"玩家每回合少抽 {n} 张牌。") :
-                (en, $"The player draws {n} fewer cards per turn."),
-            EffectKind.EnergyDown => chinese ? (zh, $"玩家每回合少获得 {n} 点能量。") :
-                (en, $"The player gains {n} less Energy per turn."),
+            EffectKind.DrawDown => chinese ? (zh, $"玩家下回合开始时少抽 {n} 张牌，扣不完则顺延。") :
+                (en, $"At the start of next turn, the player draws {n} fewer cards. Any unused reduction carries over."),
+            EffectKind.EnergyDown => chinese ? (zh, $"玩家下回合开始时扣除 {n} 点能量，扣不完则顺延。") :
+                (en, $"At the start of next turn, the player loses {n} Energy. Any unused reduction carries over."),
             EffectKind.Soulbind => chinese ? (zh, $"对玩家施加 {n} 层魂缚锁链。") :
                 (en, $"Applies {n} Chains of Binding to the player."),
             EffectKind.Block or EffectKind.Heal => chinese ? (zh, $"自身{zh} {n} 点。") : (en, $"Self: {n} {en}."),

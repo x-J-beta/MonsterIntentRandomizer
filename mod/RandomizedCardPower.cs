@@ -1,4 +1,3 @@
-using HarmonyLib;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -11,32 +10,21 @@ using MegaCrit.Sts2.Core.ValueProps;
 
 namespace MonsterIntentRandomizer;
 
-public abstract class RandomizedCardPower : PowerModel
+public abstract class RandomizedCardPower : CustomPower
 {
-    private static readonly Func<LocManager, string, LocTable> GetTable =
-        AccessTools.MethodDelegate<Func<LocManager, string, LocTable>>(AccessTools.Method(typeof(LocManager), "GetTable"));
     protected abstract EffectKind Kind { get; }
-    protected abstract (string Chinese, string English) DescriptionText { get; }
-    internal abstract PowerModel NativePower { get; }
     internal EffectKind? ConfiguredCard { get; set; }
     internal EffectKind Card => ConfiguredCard ?? TriggeredCardBuffs.Types[Kind].Card;
     public override PowerType Type => PowerType.Buff;
     public override PowerStackType StackType => PowerStackType.Counter;
-    public override LocString Title => NativePower.Title;
 
     public override LocString Description
     {
         get
         {
-            var manager = LocManager.Instance;
-            var table = GetTable(manager, "powers");
-            string key = Id.Entry + ".description";
-            bool chinese = manager.Language == "zhs";
-            if (!table.IsLocalKey(key))
-                table.MergeWith(new() { [key] = chinese ? DescriptionText.Chinese : DescriptionText.English });
-            var text = table.GetLocString(key);
+            var text = base.Description;
             var names = IntentDetails.Names(Card);
-            text.Add("Card", chinese ? names.Chinese : names.English);
+            text.Add("Card", LocManager.Instance.Language == "zhs" ? names.Chinese : names.English);
             return text;
         }
     }

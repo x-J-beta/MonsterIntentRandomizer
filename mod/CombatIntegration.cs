@@ -31,9 +31,8 @@ internal static class CombatIntegration
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
         public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
         public Dictionary<EffectKind, (Creature Owner, int Round)> UniquePlans { get; } = new();
-        public Creature? SpecialDebuffOwner { get; set; }
-        public int SpecialDebuffRound { get; set; }
-        public bool SpecialDebuffSpent { get; set; }
+        public (Creature Owner, int Round)? SpecialStatusPlan { get; set; }
+        public bool SpecialStatusSpent { get; set; }
         public bool Ready { get; set; }
         public int Rooms { get; init; }
         public int CompletedPlayerTurns { get; set; }
@@ -119,7 +118,10 @@ internal static class CombatIntegration
                 if (pick.State.GeneratedCard.HasValue && EffectPolicy.TryGetKind(pick.State.Id, out var kind))
                     price *= TriggeredCardBuffs.Scale(kind, pick.State.GeneratedCard, rules.Actions, profile);
                 if (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0)
+                {
                     encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
+                    encounter.SpecialStatusSpent |= pick.State.IsSpecialStatus;
+                }
                 state.Balance = state.Balance with
                 {
                     ActionValue = state.Balance.ActionValue - price
@@ -167,11 +169,8 @@ internal static class CombatIntegration
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
                     if (encounter.Rules.UniqueAction(effect.Kind))
                         encounter.UniquePlans[effect.Kind] = (creature, round);
-                if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialDebuff) == true)
-                {
-                    encounter.SpecialDebuffOwner = creature;
-                    encounter.SpecialDebuffRound = round;
-                }
+                if (enemy.Plan.Action?.Effects?.Any(effect => effect.IsSpecialStatus) == true)
+                    encounter.SpecialStatusPlan = (creature, round);
             }
 
             // The original state machine keeps its branch and stun history. Only the advertised/executed move changes.
@@ -217,11 +216,11 @@ internal static class CombatIntegration
 
     internal static bool ManagesCombat(ICombatState combat) => Encounters.TryGetValue(combat, out _);
 
-    internal static bool SpendSpecialDebuff(ICombatState combat)
+    internal static bool SpendSpecialStatus(ICombatState combat)
     {
-        if (!Encounters.TryGetValue(combat, out var encounter) || encounter.SpecialDebuffSpent)
+        if (!Encounters.TryGetValue(combat, out var encounter) || encounter.SpecialStatusSpent)
             return false;
-        encounter.SpecialDebuffSpent = true;
+        encounter.SpecialStatusSpent = true;
         return true;
     }
 
@@ -329,8 +328,9 @@ internal static class CombatIntegration
                 !CanUseEffect(combat, self, player, kind) ||
                 (encounter.UniquePlans.TryGetValue(kind, out var reserved) && reserved.Round == combat.RoundNumber &&
                     reserved.Owner != self && reserved.Owner.IsAlive)).ToHashSet(),
-            SpecialDebuffAvailable = !encounter.SpecialDebuffSpent &&
-                (encounter.SpecialDebuffRound != combat.RoundNumber || encounter.SpecialDebuffOwner == self)
+            SpecialStatusAvailable = !encounter.SpecialStatusSpent &&
+                !(encounter.SpecialStatusPlan is { } special && special.Round == combat.RoundNumber &&
+                    special.Owner != self && special.Owner.IsAlive)
         };
     }
 

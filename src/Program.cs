@@ -113,7 +113,7 @@ var planner = new ActionPlanner(rules.PoolSettings);
 var balances = planner.Start(profile, openingValue);
 Console.WriteLine($"opening pool: {balances.ActionValue:F2} (starts at {planner.Start(profile).ActionValue:F2} before state)");
 Console.WriteLine("\nAction-pool trace (conditioning on continued survival):");
-foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, ownOpening, seed,
+foreach (var turn in ActionSimulation.Trace(rules, monsterId, profile, selected, seed,
     sample.GetProperty("traceTurns").GetInt32(), firstEnemyAction: enemies[0].FirstEnemyAction,
     rooms: rooms, enemyCount: enemies.Length, phaseId: phaseId))
 {

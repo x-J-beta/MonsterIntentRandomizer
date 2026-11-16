@@ -34,19 +34,13 @@ public sealed class RandomizedPainfulStabsPower : RandomizedCardPower
 [HarmonyPatch]
 internal static class CustomPowerIcons
 {
-    private static PowerModel? NativeIcon(PowerModel power) => power switch
-    {
-        RandomizedCardPower cards => cards.NativePower,
-        _ => null
-    };
-
     [HarmonyPrefix]
     [HarmonyPatch(typeof(PowerModel), nameof(PowerModel.PackedIconPath), MethodType.Getter)]
     private static bool UsePackedIcon(PowerModel __instance, ref string __result)
     {
-        if (NativeIcon(__instance) is not { } source)
+        if (__instance is not CustomPower custom)
             return true;
-        __result = source.PackedIconPath;
+        __result = custom.NativePower.PackedIconPath;
         return false;
     }
 
@@ -54,9 +48,9 @@ internal static class CustomPowerIcons
     [HarmonyPatch(typeof(PowerModel), nameof(PowerModel.BigIcon), MethodType.Getter)]
     private static bool UseBigIcon(PowerModel __instance, ref Texture2D __result)
     {
-        if (NativeIcon(__instance) is not { } source)
+        if (__instance is not CustomPower custom)
             return true;
-        __result = source.BigIcon;
+        __result = custom.NativePower.BigIcon;
         return false;
     }
 }

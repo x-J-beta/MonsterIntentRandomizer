@@ -61,7 +61,7 @@ internal static class NativeActions
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
             }
-            if (effect.IsSpecialDebuff && !CombatIntegration.SpendSpecialDebuff(combat))
+            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat))
                 continue;
             if (!string.IsNullOrWhiteSpace(supportAnimation))
             {
@@ -135,10 +135,10 @@ internal static class NativeActions
                     await PowerCmd.Apply<ChainsOfBindingPower>(choice, living, amount, self, null);
                     break;
                 case EffectKind.DrawDown:
-                    await PowerCmd.Apply<MindRotPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<NextTurnDrawDownPower>(choice, living, amount, self, null);
                     break;
                 case EffectKind.EnergyDown:
-                    await PowerCmd.Apply<WasteAwayPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<NextTurnEnergyDownPower>(choice, living, amount, self, null);
                     break;
                 case var card when ActionEffect.IsCard(card):
                     await InsertStatus(living, effect);
@@ -276,8 +276,8 @@ internal static class NativeActions
             EffectKind.Poison => target.HasPower<PoisonPower>(),
             EffectKind.Shrink => target.HasPower<ShrinkPower>(),
             EffectKind.Soulbind => target.HasPower<ChainsOfBindingPower>(),
-            EffectKind.DrawDown => target.HasPower<MindRotPower>(),
-            EffectKind.EnergyDown => target.HasPower<WasteAwayPower>(),
+            EffectKind.DrawDown => target.HasPower<NextTurnDrawDownPower>(),
+            EffectKind.EnergyDown => target.HasPower<NextTurnEnergyDownPower>(),
             EffectKind.DexterityDown => target.HasPower<DexterityPower>(),
             _ => OpeningPower(EffectPolicy.Id(kind))?.Invoke(target) != null
         };

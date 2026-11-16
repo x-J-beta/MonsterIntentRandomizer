@@ -153,8 +153,10 @@ internal static class EffectCalibration
             playerHp -= poison;
             poison = Math.Max(0, poison - 1);
             int energy = Math.Max(0, 3 - energyDown);
+            energyDown = Math.Max(0, energyDown - 3);
             int played = 0, skills = 0, bound = soulbind, lostThisRound = 0, tainted = 0;
             Draw(Math.Max(0, 5 - drawDown));
+            drawDown = Math.Max(0, drawDown - 5);
             while (playerHp > 0 && (mainHp > 0 || allyHp > 0) && (ringing == 0 || played < 1))
             {
                 int best = -1;

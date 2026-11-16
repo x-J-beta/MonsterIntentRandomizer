@@ -49,11 +49,9 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown;
-    public bool IsSpecialDebuff => IsRareDebuff(Kind);
-    public static bool IsRareDebuff(EffectKind kind) => kind is EffectKind.Ringing or EffectKind.Smoggy or
-        EffectKind.Tender or EffectKind.Shrink or EffectKind.StrengthDown or EffectKind.DexterityDown or
-        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.MindRot or EffectKind.WasteAway or
-        EffectKind.Sloth or EffectKind.Disintegration;
+    public bool IsSpecialStatus => IsSpecialStatusKind(Kind);
+    public static bool IsSpecialStatusKind(EffectKind kind) => kind is EffectKind.Smoggy or EffectKind.Tender or
+        EffectKind.Shrink or EffectKind.Soulbind or EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PainfulStabs;
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
@@ -83,7 +81,7 @@ public sealed record ActionContext(
     bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
-    bool SpecialDebuffAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
+    bool SpecialStatusAvailable = true, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
     IReadOnlyDictionary<EffectKind, EffectKind>? GeneratedCards = null);
 
 public sealed record ActionValuationSettings(
@@ -140,7 +138,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
                 continue;
             var (weight, bonus) = Weights(kind, buff.RoomWeight);
-            if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
+            if (weight + bonus <= 0 || !IsAvailable(kind))
                 continue;
             var style = ActionEffect.StyleFor(kind);
             bool threshold = ActionEffect.UsesThreshold(kind);
@@ -172,9 +170,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (ActionEffect.IsMonsterBuff(kind))
                 continue;
             var (weight, bonus) = Weights(kind, settings.Weights?.GetValueOrDefault(kind));
-            if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
-                continue;
-            if (ActionEffect.IsRareDebuff(kind) && !context.SpecialDebuffAvailable)
+            if (weight + bonus <= 0 || !IsAvailable(kind))
                 continue;
 
             int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;
@@ -235,6 +231,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             double favorite = profile.Favorites?.GetValueOrDefault(kind) ?? 0;
             return (roomFactor, favorite * (roomWeight?.IsDisabled == true ? 1 : roomFactor));
         }
+
+        bool IsAvailable(EffectKind kind) => context.ActiveEffects?.Contains(kind) != true &&
+            (context.SpecialStatusAvailable || !ActionEffect.IsSpecialStatusKind(kind));
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)
         {
