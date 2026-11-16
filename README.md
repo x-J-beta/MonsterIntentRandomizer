@@ -2,7 +2,7 @@
 
 为《杀戮尖塔 2》v0.113 系列随机生成怪物招式和开场状态。怪物的行动力、攻击频次和招式偏好来自独立画像。关键脚本招式可保留原版行为，随机意图会在怪物行动前显示。
 
-[English quick start](#english-quick-start) · [创意工坊发布说明](PUBLISHING.md)
+[Steam 创意工坊 / Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3840913980) · [English quick start](#english-quick-start) · [创意工坊发布说明](PUBLISHING.md)
 
 ![战斗中随机生成的怪物意图与状态](workshop/image.png)
 
