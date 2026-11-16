@@ -31,7 +31,9 @@ internal static class CombatIntegration
         public Random Random { get; } = random;
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
-        public HashSet<EffectKind> InsertedCurses { get; } = [];
+        public HashSet<EffectKind> UsedPlayerEffects { get; } = [];
+        public double HpScale { get; init; } = 1;
+        public bool Multiplayer { get; init; }
         public HashSet<EffectKind> FixedStatuses { get; init; } = [];
         public int SpecialStatusesSpent { get; set; }
         public int? LastMoveRandomSkipRollRound { get; set; }
@@ -51,25 +53,32 @@ internal static class CombatIntegration
         public double ActualThresholdCost { get; set; }
         public MoveState? RandomMove { get; set; }
         public ActionPlan? Plan { get; set; }
-        public HashSet<EffectKind> PendingEffects { get; } = [];
+        public Dictionary<EffectKind, bool> PendingEffects { get; } = [];
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Hook), nameof(Hook.BeforeCombatStart))]
     private static void StartFight(ICombatState? combatState, ref Task __result)
     {
-        if (combatState == null || !ModSettings.Current.Enabled ||
-            RunManager.Instance.NetService.Type != NetGameType.Singleplayer || combatState.Players.Count != 1)
+        if (combatState == null)
             return;
-
-        var rules = ModSettings.Rules;
-        __result = SetUpAfterOriginal(__result, combatState, rules);
+        var network = RunManager.Instance.NetService;
+        Task<RuleConfiguration?>? rules = network.Type switch
+        {
+            NetGameType.Singleplayer when ModSettings.Current.Enabled => Task.FromResult<RuleConfiguration?>(ModSettings.Rules),
+            NetGameType.Host or NetGameType.Client => MultiplayerRules.For(network),
+            _ => null
+        };
+        if (rules != null)
+            __result = SetUpAfterOriginal(__result, combatState, rules, network.Type != NetGameType.Singleplayer);
     }
 
-    private static async Task SetUpAfterOriginal(Task original, ICombatState combat, RuleConfiguration rules)
+    private static async Task SetUpAfterOriginal(Task original, ICombatState combat, Task<RuleConfiguration?> rulesReady,
+        bool multiplayer)
     {
         await original;
-        if (!IsCurrentCombat(combat) || Encounters.TryGetValue(combat, out _))
+        var rules = await rulesReady;
+        if (rules == null || !IsCurrentCombat(combat) || Encounters.TryGetValue(combat, out _))
             return;
 
         try
@@ -78,6 +87,9 @@ internal static class CombatIntegration
             var encounter = new EncounterRules(rules, CombatRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor))
             {
                 Rooms = rooms,
+                Multiplayer = multiplayer,
+                HpScale = multiplayer ? (double)Creature.ScaleHpForMultiplayer(1m, combat.Encounter,
+                    combat.Players.Count, combat.RunState.CurrentActIndex) : 1,
                 FixedStatuses = rules.FixedKnightStatuses(combat.Enemies.Select(enemy => enemy.ModelId.Entry))
             };
             Encounters.Add(combat, encounter);
@@ -107,8 +119,7 @@ internal static class CombatIntegration
             }
 
             var draws = OpeningValuation.Draw(candidates, actionValues, rules.Draws, encounter.Random);
-            // A newly added Artifact should not consume a simultaneously drawn penalty.
-            foreach (var pick in draws.OrderBy(pick => pick.State.Id == "ARTIFACT"))
+            foreach (var pick in draws)
             {
                 if (!IsCurrentCombat(combat))
                     return;
@@ -175,8 +186,9 @@ internal static class CombatIntegration
                 enemy.ActualThresholdCost = 0;
                 enemy.PendingEffects.Clear();
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
-                    if (effect.Unique)
-                        enemy.PendingEffects.Add(effect.Kind);
+                    if (effect.Unique || (ActionEffect.IsPlayerEffect(effect.Kind) &&
+                        !encounter.Rules.Actions.PolicyFor(effect.Kind, creature.ModelId.Entry).Stackable))
+                        enemy.PendingEffects[effect.Kind] = effect.Unique;
             }
 
             // The original state machine keeps its branch and stun history. Only the advertised/executed move changes.
@@ -245,7 +257,7 @@ internal static class CombatIntegration
         return true;
     }
 
-    internal static bool CanUseEffect(ICombatState combat, Creature self, Creature player, EffectKind kind)
+    internal static bool CanUseEffect(ICombatState combat, Creature self, EffectKind kind)
     {
         if (!EffectPolicy.CanTargetMonster(kind, self.Monster?.Id.Entry))
             return false;
@@ -254,15 +266,18 @@ internal static class CombatIntegration
         if (encounter.FixedStatuses.Contains(kind))
             return false;
         var policy = encounter.Rules.Actions.PolicyFor(kind, self.Monster?.Id.Entry);
-        var target = ActionEffect.TargetFor(kind) == EffectTarget.Self ? self : player;
-        return policy.Stackable || !(ActionEffect.IsCurseCard(kind)
-            ? encounter.InsertedCurses.Contains(kind) : NativeActions.HasActionEffect(kind, target));
+        return policy.Stackable || (ActionEffect.IsPlayerEffect(kind)
+            ? !encounter.UsedPlayerEffects.Contains(kind) : !NativeActions.HasSelfEffect(kind, self));
     }
 
-    internal static void RecordCurseInsertion(ICombatState combat, EffectKind kind)
+    internal static void RecordPlayerEffect(ICombatState combat, Creature owner, EffectKind kind)
     {
         if (Encounters.TryGetValue(combat, out var encounter))
-            encounter.InsertedCurses.Add(kind);
+        {
+            encounter.UsedPlayerEffects.Add(kind);
+            if (encounter.Enemies.TryGetValue(owner, out var enemy))
+                enemy.PendingEffects.Remove(kind);
+        }
     }
 
     internal static void RecordThresholdCost(ICombatState combat, Creature owner, double cost)
@@ -274,7 +289,7 @@ internal static class CombatIntegration
     private static async Task CompletePlayerTurn(Task original, ICombatState combat, EncounterRules encounter)
     {
         await original;
-        if (encounter.Rules.PlayerAction.UseCombatDamage && IsCurrentCombat(combat))
+        if (!encounter.Multiplayer && encounter.Rules.PlayerAction.UseCombatDamage && IsCurrentCombat(combat))
         {
             double damage = CombatManager.Instance.History.Entries.OfType<DamageReceivedEntry>()
                 .Where(entry => entry.Receiver.Side == CombatSide.Enemy &&
@@ -325,7 +340,6 @@ internal static class CombatIntegration
 
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
-        var player = combat.PlayerCreatures[0];
         int round = combat.RoundNumber;
         var pending = encounter.Enemies.Where(entry => entry.Key != self && entry.Key.IsAlive &&
             entry.Value.PlannedRound == round && entry.Value.SettledRound < round)
@@ -334,33 +348,34 @@ internal static class CombatIntegration
             combat.RoundNumber, encounter.AveragePlayerDamage) with
         {
             ExistingBlock = 0, // This action's Block and the next player attack follow the enemy block reset.
-            MissingHp = self.MaxHp - self.CurrentHp,
+            MissingHp = (self.MaxHp - self.CurrentHp) / encounter.HpScale,
             Strength = (self.GetPower<StrengthPower>()?.Amount ?? 0) + (self.GetPower<VigorPower>()?.Amount ?? 0),
             Weakened = self.HasPower<WeakPower>(),
-            PlayerHasArtifact = player.HasPower<ArtifactPower>(),
-            PlayerAlreadyRestricted = player.HasPower<TangledPower>() || player.HasPower<RingingPower>() || player.HasPower<SmoggyPower>(),
             Thresholds = (encounter.Rules.Actions.Buffs?.Keys ?? []).Where(ActionEffect.UsesThreshold)
                 .ToDictionary(kind => kind, kind => NativeActions.ThresholdFor(self, EffectPolicy.Id(kind))),
             GeneratedCards = TriggeredCardBuffs.Types.Keys
                 .Select(kind => (Kind: kind, Power: RandomizedCardPower.Find(self, kind)))
                 .Where(entry => entry.Power != null).ToDictionary(entry => entry.Kind, entry => entry.Power!.Card),
             ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
-                !CanUseEffect(combat, self, player, kind) ||
-                (pending.Contains(kind) && ActionEffect.TargetFor(kind) == EffectTarget.Player &&
-                    !encounter.Rules.Actions.PolicyFor(kind).Stackable)).ToHashSet(),
+                !CanUseEffect(combat, self, kind) ||
+                (ActionEffect.IsPlayerEffect(kind) &&
+                    !encounter.Rules.Actions.PolicyFor(kind, self.ModelId.Entry).Stackable &&
+                    pending.Any(effect => effect.Key == kind))).ToHashSet(),
             SpecialStatusesRemaining = Math.Max(0,
-                encounter.Rules.PoolSettings.SpecialStatusLimit - encounter.SpecialStatusesSpent - pending.Length)
+                encounter.Rules.PoolSettings.SpecialStatusLimit - encounter.SpecialStatusesSpent -
+                    pending.Count(effect => effect.Value))
         };
     }
 
     private static MonsterProfile WithSurvival(MonsterProfile profile, Creature self, ICombatState combat, EncounterRules encounter) =>
         profile with
         {
-            BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp,
-                combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp),
+            BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp / encounter.HpScale,
+                combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp) /
+                    encounter.HpScale,
                 encounter.Rooms, encounter.AveragePlayerDamage),
             PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms, encounter.AveragePlayerDamage),
-            CurrentHp = self.CurrentHp,
+            CurrentHp = self.CurrentHp / encounter.HpScale,
             RoomsEntered = encounter.Rooms + 1,
             MonstersBehind = combat.Enemies.SkipWhile(enemy => enemy != self).Skip(1).Count(enemy => enemy.IsAlive)
         };
@@ -372,7 +387,8 @@ internal static class CombatIntegration
     private static void SkipMoveSample(EncounterRules encounter, int round)
     {
         var pools = encounter.Rules.PoolSettings;
-        if (!pools.ExternalMoveRandomSkip || pools.Chaos <= 0.3 || encounter.LastMoveRandomSkipRollRound == round)
+        if (encounter.Multiplayer || !pools.ExternalMoveRandomSkip || pools.Chaos <= 0.3 ||
+            encounter.LastMoveRandomSkipRollRound == round)
             return;
 
         encounter.LastMoveRandomSkipRollRound = round;

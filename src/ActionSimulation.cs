@@ -13,7 +13,7 @@ internal static class ActionSimulation
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
         int specialStatusesSpent = opening.Count(pick => pick.State.Unique);
-        var insertedCurses = new HashSet<EffectKind>();
+        var usedPlayerEffects = new HashSet<EffectKind>();
         opening = opening.Where(pick => pick.MonsterId == monsterId).ToArray();
         var monster = rules.Monsters[monsterId];
         var fixedStatuses = rules.FixedKnightStatuses(enemyCount > 1 &&
@@ -25,7 +25,6 @@ internal static class ActionSimulation
         var thresholds = new Dictionary<EffectKind, int>();
         var generatedCards = new Dictionary<EffectKind, EffectKind>();
         int vigor = 0;
-        int drawDown = 0, energyDown = 0;
         foreach (var pick in opening)
             if (EffectPolicy.TryGetKind(pick.State.Id, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
@@ -37,8 +36,6 @@ internal static class ActionSimulation
         var turns = new List<SimulatedTurn>(rounds);
         for (int turn = 1; turn <= rounds; turn++)
         {
-            drawDown = Math.Max(0, drawDown - 5);
-            energyDown = Math.Max(0, energyDown - 3);
             var prior = rules.TurnContext(rooms, enemyCount, turn);
             int strength = prior.Strength + history.AddedStrength + history.RitualStrength + opening.Sum(pick =>
                 pick.State.Id switch
@@ -49,12 +46,8 @@ internal static class ActionSimulation
                 });
             bool skipFromImbalance = imbalanced && previousAttack && random.NextDouble() < monster.FullBlockChance;
             var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
-                .Concat(insertedCurses.Where(kind => !rules.Actions.PolicyFor(kind).Stackable)).ToHashSet();
+                .Concat(usedPlayerEffects.Where(kind => !rules.Actions.PolicyFor(kind, monsterId).Stackable)).ToHashSet();
             active.UnionWith(fixedStatuses);
-            if (drawDown > 0 && !rules.Actions.PolicyFor(EffectKind.DrawDown).Stackable)
-                active.Add(EffectKind.DrawDown);
-            if (energyDown > 0 && !rules.Actions.PolicyFor(EffectKind.EnergyDown).Stackable)
-                active.Add(EffectKind.EnergyDown);
             var context = prior with
             {
                 Strength = strength + vigor,
@@ -95,19 +88,9 @@ internal static class ActionSimulation
 
         void RecordEffect(EffectKind kind, int amount, int round, EffectKind? card)
         {
-            if (ActionEffect.IsCurseCard(kind))
+            if (ActionEffect.IsPlayerEffect(kind))
             {
-                insertedCurses.Add(kind);
-                return;
-            }
-            if (kind == EffectKind.DrawDown)
-            {
-                drawDown += amount;
-                return;
-            }
-            if (kind == EffectKind.EnergyDown)
-            {
-                energyDown += amount;
+                usedPlayerEffects.Add(kind);
                 return;
             }
             if (ActionEffect.UsesThreshold(kind))

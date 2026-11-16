@@ -48,10 +48,8 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         kind is EffectKind.Enthralled or EffectKind.Normality or EffectKind.BadLuck or EffectKind.Debt;
     public static bool UsesThreshold(EffectKind kind) =>
         kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.WitheringPresence;
-    public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
-        EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
-        EffectKind.Dampen or EffectKind.Hex || IsCurseCard(Kind);
+    internal static bool IsPlayerEffect(EffectKind kind) =>
+        kind is not (EffectKind.Attack or EffectKind.Wait) && TargetFor(kind) == EffectTarget.Player;
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
 }
@@ -75,9 +73,7 @@ public sealed record ActionContext(
     double ExpectedDamageAgainstMonster,
     int Strength = 0,
     bool Weakened = false,
-    bool PlayerHasArtifact = false,
     double ExistingBlock = 0,
-    bool PlayerAlreadyRestricted = false,
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
     int SpecialStatusesRemaining = 1, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
@@ -133,7 +129,6 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null,
         double extraBuffHits = 0)
     {
-        bool canDebuff = !context.PlayerHasArtifact;
         var buffProfile = extraBuffHits == 0 ? profile : profile with { AttackFrequency = profile.AttackFrequency + extraBuffHits };
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
@@ -191,28 +186,12 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Heal:
                         Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
                         break;
-                    case EffectKind.Weak when canDebuff:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.Vulnerable when canDebuff:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.Tangled when canDebuff && !context.PlayerAlreadyRestricted:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.Ringing or EffectKind.Smoggy when amount == 1 && canDebuff && !context.PlayerAlreadyRestricted &&
+                    case EffectKind.Ringing or EffectKind.Smoggy when amount == 1 &&
                         context.AllowHardCardLimit && settings.MaxHardCardLimits > 0:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.Tender when amount == 1 && canDebuff:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.StrengthDown or EffectKind.DexterityDown when canDebuff:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case EffectKind.Frail or EffectKind.Poison when canDebuff:
-                    case EffectKind.Shrink when canDebuff && amount == 1:
-                    case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.Dampen or EffectKind.Hex when canDebuff:
+                    case EffectKind.Tender or EffectKind.Shrink when amount == 1:
+                    case var debuff when debuff is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
+                        EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Frail or EffectKind.Poison or
+                        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.Dampen or EffectKind.Hex:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
                     case var curse when ActionEffect.IsCurseCard(curse):

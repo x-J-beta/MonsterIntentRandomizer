@@ -1,0 +1,9 @@
+{
+  "title": "怪物意图随机 / Monster Intent Randomizer",
+  "description": "[h1]怪物意图随机[/h1]\n为《杀戮尖塔 2》随机生成怪物的开场状态和招式。怪物各有行动预算、攻击频次和招式偏好。随机意图会提前显示，召唤、阶段转换等关键招式可沿用原版。\n\n[list]\n[*] 设置 → 常规 → 怪物意图随机 · 设置。两个滑动条分别调整全局行动力和混沌，自动保存。\n[*] 完整设置提供逐怪画像、状态估值和战斗模拟。\n[*] 联机使用同一版模组。客户端进房时接收主机的战斗设置。主机改动设置后需重新建房。\n[/list]\n\n[h1]Monster Intent Randomizer[/h1]\nRandomizes monster moves and starting effects in Slay the Spire 2. Each monster has its own move budget, attack frequency, and move preferences. Random intents show before the monster acts. Key scripted moves can retain their original behavior.\n\n[list]\n[*] Open Settings → General → Monster Intent Randomizer · Settings. Global Action Power and Chaos sliders save automatically.\n[*] Advanced Settings includes monster profiles, effect values, and a combat simulator.\n[*] In co-op, everyone uses the same build and joining players receive the host's gameplay settings. Create a new lobby after changing the host settings.\n[/list]",
+  "visibility": "private",
+  "changeNote": "初版 / Initial release",
+  "tags": [],
+  "dependencies": [],
+  "contentDescriptors": []
+}

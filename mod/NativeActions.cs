@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Commands.Builders;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Cards;
@@ -27,7 +28,29 @@ internal static class NativeActions
             ? IntentStyle.Attack : ActionEffect.StyleFor(effects[0].Kind));
         return new MoveState(MoveId, targets => Execute(monster, effects, targets,
                 candidate.IsAttack ? animation : null, candidate.IsAttack ? null : animation, animatedAttackHits),
-            effects.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] : effects.Select(CreateIntent).ToArray());
+            effects.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] :
+                effects.Select(effect => CreateIntent(Preview(monster.Creature, effect))).ToArray());
+    }
+
+    private static ActionEffect Preview(Creature self, ActionEffect effect)
+    {
+        if (self.CombatState is not { Players.Count: > 1 } combat)
+            return effect;
+        if (effect.Kind == EffectKind.Block)
+        {
+            int block = (int)Hook.ModifyBlock(combat, self, effect.Amount, ValueProp.Move, null, null, out _);
+            return effect with { Amount = Math.Max(0, block) };
+        }
+        PowerModel? power = effect.Kind switch
+        {
+            EffectKind.Artifact => ModelDb.Power<ArtifactPower>(),
+            EffectKind.HardenedShell => ModelDb.Power<HardenedShellPower>(),
+            EffectKind.Plating => ModelDb.Power<PlatingPower>(),
+            EffectKind.Regen => ModelDb.Power<RegenPower>(),
+            EffectKind.Slippery => ModelDb.Power<SlipperyPower>(),
+            _ => null
+        };
+        return power == null ? effect : effect with { Amount = (int)ScaledAmount(self, power, effect.Amount) };
     }
 
     private static AbstractIntent CreateIntent(ActionEffect effect) => IntentDetails.Register(effect, effect.Kind switch
@@ -53,10 +76,7 @@ internal static class NativeActions
             if (self.IsDead || self.CombatState is not { } combat)
                 return;
 
-            var living = targets.Where(target => target.IsAlive && target.CombatState == combat).ToArray();
-            if (living.Length == 0)
-                return;
-            if (!CombatIntegration.CanUseEffect(combat, self, living[0], effect.Kind))
+            if (!CombatIntegration.CanUseEffect(combat, self, effect.Kind))
             {
                 if (effect.Kind == EffectKind.VitalSpark)
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
@@ -64,6 +84,8 @@ internal static class NativeActions
             }
             if (effect.Unique && !CombatIntegration.SpendSpecialStatus(combat, self, effect.Kind))
                 continue;
+            if (ActionEffect.IsPlayerEffect(effect.Kind))
+                CombatIntegration.RecordPlayerEffect(combat, self, effect.Kind);
             if (!string.IsNullOrWhiteSpace(supportAnimation))
             {
                 await CreatureCmd.TriggerAnim(self, supportAnimation, AnimationLeadTime);
@@ -95,40 +117,40 @@ internal static class NativeActions
                     }
                     break;
                 case EffectKind.Weak:
-                    await PowerCmd.Apply<WeakPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<WeakPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Vulnerable:
-                    await PowerCmd.Apply<VulnerablePower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<VulnerablePower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Tangled:
-                    await PowerCmd.Apply<TangledPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<TangledPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Ringing:
-                    await PowerCmd.Apply<RingingPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<RingingPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.StrengthDown:
-                    await PowerCmd.Apply<StrengthPower>(choice, living, -amount, self, null);
+                    await PowerCmd.Apply<StrengthPower>(choice, targets, -amount, self, null);
                     break;
                 case EffectKind.DexterityDown:
-                    await PowerCmd.Apply<DexterityPower>(choice, living, -amount, self, null);
+                    await PowerCmd.Apply<DexterityPower>(choice, targets, -amount, self, null);
                     break;
                 case EffectKind.Smoggy:
-                    await PowerCmd.Apply<SmoggyPower>(choice, living, 1, self, null);
+                    await PowerCmd.Apply<SmoggyPower>(choice, targets, 1, self, null);
                     break;
                 case EffectKind.Tender:
-                    await PowerCmd.Apply<TenderPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<TenderPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Frail:
-                    await PowerCmd.Apply<FrailPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<FrailPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Poison:
-                    await PowerCmd.Apply<PoisonPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<PoisonPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Shrink:
-                    await PowerCmd.Apply<ShrinkPower>(choice, living, -1, self, null);
+                    await PowerCmd.Apply<ShrinkPower>(choice, targets, -1, self, null);
                     break;
                 case EffectKind.Dampen:
-                    foreach (var target in living)
+                    foreach (var target in targets)
                     {
                         if (target.GetPower<DampenPower>() is { } activeDampen)
                         {
@@ -141,21 +163,19 @@ internal static class NativeActions
                     }
                     break;
                 case EffectKind.Hex:
-                    await PowerCmd.Apply<HexPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<HexPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Soulbind:
-                    await PowerCmd.Apply<ChainsOfBindingPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<ChainsOfBindingPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.DrawDown:
-                    await PowerCmd.Apply<NextTurnDrawDownPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<NextTurnDrawDownPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.EnergyDown:
-                    await PowerCmd.Apply<NextTurnEnergyDownPower>(choice, living, amount, self, null);
+                    await PowerCmd.Apply<NextTurnEnergyDownPower>(choice, targets, amount, self, null);
                     break;
                 case var _ when effect.IsInsertedCard:
-                    await InsertStatus(living, effect);
-                    if (ActionEffect.IsCurseCard(effect.Kind))
-                        CombatIntegration.RecordCurseInsertion(combat, effect.Kind);
+                    await InsertStatus(targets, effect);
                     break;
             }
         }
@@ -256,7 +276,7 @@ internal static class NativeActions
         "IMBALANCED" => Get<ImbalancedPower>,
         "PERSONAL_HIVE" => target => (PowerModel?)target.GetPower<RandomizedPersonalHivePower>() ?? target.GetPower<PersonalHivePower>(),
         "VITAL_SPARK" => Get<VitalSparkPower>,
-        "WITHERING_PRESENCE" => target => (PowerModel?)target.GetPower<RandomizedWitheringPresencePower>() ??
+        "WITHERING_PRESENCE" => target => (PowerModel?)RandomizedCardPower.Find(target, EffectKind.WitheringPresence) ??
             target.GetPowerInstances<WitheringPresencePower>().FirstOrDefault(),
         "ENVENOM" => Get<EnvenomPower>,
         "PAPER_CUTS" => Get<PaperCutsPower>,
@@ -268,48 +288,39 @@ internal static class NativeActions
 
     internal static bool SupportsOpening(string id) => id == "STUN" || OpeningPower(id) != null;
 
-    internal static bool HasActionEffect(EffectKind kind, Creature target)
-    {
-        if (ActionEffect.IsCard(kind))
-        {
-            string id = EffectPolicy.Id(kind);
-            return target.Player?.PlayerCombatState is { } combat && combat.Hand.Cards.Concat(combat.DrawPile.Cards)
-                .Concat(combat.DiscardPile.Cards).Any(card => card.Id.Entry == id);
-        }
-        return kind switch
-        {
-            EffectKind.Block => target.Block > 0,
-            EffectKind.Tangled => target.HasPower<TangledPower>(),
-            EffectKind.Ringing => target.HasPower<RingingPower>(),
-            EffectKind.Smoggy => target.HasPower<SmoggyPower>(),
-            EffectKind.Tender => target.HasPower<TenderPower>(),
-            EffectKind.Frail => target.HasPower<FrailPower>(),
-            EffectKind.Poison => target.HasPower<PoisonPower>(),
-            EffectKind.Shrink => target.HasPower<ShrinkPower>(),
-            EffectKind.Dampen => target.HasPower<DampenPower>(),
-            EffectKind.Hex => target.HasPower<HexPower>(),
-            EffectKind.Soulbind => target.HasPower<ChainsOfBindingPower>(),
-            EffectKind.DrawDown => target.HasPower<NextTurnDrawDownPower>(),
-            EffectKind.EnergyDown => target.HasPower<NextTurnEnergyDownPower>(),
-            EffectKind.DexterityDown => target.HasPower<DexterityPower>(),
-            _ => OpeningPower(EffectPolicy.Id(kind))?.Invoke(target) != null
-        };
-    }
+    internal static bool HasSelfEffect(EffectKind kind, Creature target) => kind == EffectKind.Block
+        ? target.Block > 0 : OpeningPower(EffectPolicy.Id(kind))?.Invoke(target) != null;
 
     private static bool HasOpening(Creature target, string id) => id == "STUN"
         ? target.IsStunned : OpeningPower(id)?.Invoke(target) != null;
 
     internal static int ThresholdFor(Creature target, string id) => id switch
     {
-        "HARDENED_SHELL" => target.GetPower<HardenedShellPower>()?.Amount ?? 0,
+        "HARDENED_SHELL" => target.GetPower<HardenedShellPower>() is { } shell ?
+            BaseAmount(target, shell, shell.Amount) : 0,
         "HARD_TO_KILL" => target.GetPower<HardToKillPower>()?.Amount ?? 0,
-        "WITHERING_PRESENCE" => target.GetPower<RandomizedWitheringPresencePower>()?.Amount ?? 0,
+        "WITHERING_PRESENCE" => RandomizedCardPower.Find(target, EffectKind.WitheringPresence)?.Amount ?? 0,
         _ => 0
     };
 
     internal static bool CanApplyOpening(Creature target, OpeningOption option) =>
-        target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
-        (option.Stackable || !HasOpening(target, option.State.Id));
+        option.Stackable || !HasOpening(target, option.State.Id);
+
+    private static decimal ScaledAmount(Creature target, PowerModel power, decimal amount) =>
+        amount != 0 && target.CombatState is { Players.Count: > 1 } combat &&
+            (target.IsPrimaryEnemy || target.IsSecondaryEnemy) && power.ShouldScaleInMultiplayer
+            ? power.GetScaledAmountForMultiplayer(combat, target, amount, target, null)
+            : amount;
+
+    private static int BaseAmount(Creature target, PowerModel power, int actualAmount)
+    {
+        if (actualAmount <= 0)
+            return actualAmount;
+        // Native enemy power scaling uses a multiplier and, for Artifact, a flat offset.
+        decimal first = ScaledAmount(target, power, 1);
+        decimal step = ScaledAmount(target, power, 2) - first;
+        return (int)Math.Ceiling((actualAmount - first + step) / step);
+    }
 
     internal static async Task<int> ApplyOpening(Creature target, OpeningState state)
     {
@@ -335,7 +346,7 @@ internal static class NativeActions
             "PERSONAL_HIVE" when TriggeredCardBuffs.UsesNative(EffectKind.PersonalHive, target.Monster?.Id.Entry) =>
                 await Apply<PersonalHivePower>(),
             "PERSONAL_HIVE" => await ApplyGenerator<RandomizedPersonalHivePower>(),
-            "WITHERING_PRESENCE" => await ApplyGenerator<RandomizedWitheringPresencePower>(),
+            "WITHERING_PRESENCE" => await ApplyWitheringPresence(),
             "ENVENOM" => await Apply<EnvenomPower>(),
             "PAPER_CUTS" => await Apply<PaperCutsPower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),
@@ -361,9 +372,13 @@ internal static class NativeActions
 
         async Task<int> Apply<T>() where T : PowerModel
         {
-            int before = target.GetPower<T>()?.Amount ?? 0;
-            await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
-            return (target.GetPower<T>()?.Amount ?? 0) - before;
+            var existing = target.GetPower<T>();
+            int before = existing?.Amount ?? 0;
+            // The native command scales a new instance. For an instance currently on the creature, scale the added amount here.
+            decimal amount = existing == null ? state.Amount : ScaledAmount(target, existing, state.Amount);
+            var power = await PowerCmd.Apply<T>(choice, target, amount, target, null);
+            int applied = (target.GetPower<T>()?.Amount ?? 0) - before;
+            return power == null ? applied : BaseAmount(target, power, applied);
         }
 
         async Task<int> ApplyIntangible()
@@ -381,37 +396,49 @@ internal static class NativeActions
             var power = target.GetPower<T>();
             if (power == null)
                 await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
-            else if (state.Amount < power.Amount)
-                await PowerCmd.ModifyAmount(choice, power, state.Amount - power.Amount, target, null);
-            return target.GetPower<T>()?.Amount ?? 0;
+            else
+            {
+                int threshold = (int)ScaledAmount(target, power, state.Amount);
+                if (threshold < power.Amount)
+                    await PowerCmd.ModifyAmount(choice, power, threshold - power.Amount, target, null);
+            }
+            return ThresholdFor(target, state.Id);
         }
 
         async Task<int> ApplyGenerator<T>() where T : RandomizedCardPower
         {
             var power = target.GetPower<T>();
             int before = power?.Amount ?? 0;
-            bool threshold = EffectPolicy.IsThreshold(state.Id);
             if (power == null)
             {
                 power = (T)ModelDb.Power<T>().ToMutable();
                 power.ConfiguredCard = state.GeneratedCard;
-                if (threshold)
-                    power.Target = target.CombatState?.PlayerCreatures.FirstOrDefault(player => player.IsAlive);
                 await PowerCmd.Apply(choice, power, target, state.Amount, target, null);
             }
             else if (state.GeneratedCard == null || state.GeneratedCard == power.Card)
-            {
-                if (power is RandomizedWitheringPresencePower withering)
-                {
-                    if (state.Amount < before)
-                        await withering.ReduceThreshold(choice, state.Amount);
-                }
-                else
-                    await PowerCmd.ModifyAmount(choice, power, state.Amount, target, null);
-            }
+                await PowerCmd.ModifyAmount(choice, power, state.Amount, target, null);
+            return (target.GetPower<T>()?.Amount ?? 0) - before;
+        }
 
-            int appliedAmount = target.GetPower<T>()?.Amount ?? 0;
-            return threshold ? appliedAmount : appliedAmount - before;
+        async Task<int> ApplyWitheringPresence()
+        {
+            if (target.CombatState is not { } combat)
+                return 0;
+            foreach (var player in combat.PlayerCreatures)
+            {
+                var existing = target.GetPowerInstances<RandomizedWitheringPresencePower>()
+                    .FirstOrDefault(power => power.Target == player);
+                if (existing == null)
+                {
+                    var power = (RandomizedWitheringPresencePower)ModelDb.Power<RandomizedWitheringPresencePower>().ToMutable();
+                    power.ConfiguredCard = state.GeneratedCard;
+                    power.Target = player;
+                    await PowerCmd.Apply(choice, power, target, state.Amount, target, null);
+                }
+                else if ((state.GeneratedCard == null || state.GeneratedCard == existing.Card) && state.Amount < existing.Amount)
+                    await existing.ReduceThreshold(choice, state.Amount);
+            }
+            return ThresholdFor(target, state.Id);
         }
     }
 

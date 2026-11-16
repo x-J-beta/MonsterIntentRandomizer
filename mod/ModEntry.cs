@@ -36,9 +36,10 @@ internal static class ModSettings
     {
         try
         {
-            if (File.Exists(SavePath))
+            string path = SavePath;
+            if (File.Exists(path))
             {
-                var stored = Upgrade(JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(SavePath))!);
+                var stored = Upgrade(JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(path))!);
                 var rules = Parse(stored);
                 Current = stored;
                 Rules = rules;

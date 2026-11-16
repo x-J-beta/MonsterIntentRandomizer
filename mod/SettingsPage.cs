@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 
 namespace MonsterIntentRandomizer;
@@ -11,56 +12,154 @@ internal static class SettingsPage
 {
     private const string ButtonName = "MonsterIntentRandomizerSettingsButton";
     private const string WindowName = "MonsterIntentRandomizerSettings";
+    private const string QuickWindowName = "MonsterIntentRandomizerQuickSettings";
+    private const string ActionValueMultiplier = "actionValueMultiplier";
+    private const string Chaos = "chaos";
+    private const string ChineseTiming = "单人从下一场战斗生效。联机使用主机建房时的设置。";
+    private const string EnglishTiming = "Changes apply next combat in solo play. Co-op uses the host's settings from when the lobby was created.";
+    private static bool Chinese => LocManager.Instance.Language is "zhs" or "zht";
+    private static string SettingsTitle => Chinese ? "怪物意图随机 · 设置" : "Monster Intent Randomizer · Settings";
 
     private static void Postfix(NSettingsScreen __instance)
     {
         var panel = __instance.GetNodeOrNull<NSettingsPanel>("%GeneralSettings");
-        if (panel?.Content is not { } content || content.GetNodeOrNull<Button>(ButtonName) != null)
+        if (panel?.Content is not { } content)
             return;
+        if (content.GetNodeOrNull<Button>(ButtonName) is { } existing)
+        {
+            existing.Text = SettingsTitle;
+            return;
+        }
 
         var button = new Button
         {
-            Name = ButtonName, Text = "怪物意图随机 · 设置", CustomMinimumSize = new Vector2(0, 52)
+            Name = ButtonName, Text = SettingsTitle, CustomMinimumSize = new Vector2(0, 52)
         };
         button.AddThemeFontSizeOverride("font_size", 25);
-        button.Pressed += () => Open(__instance);
+        button.Pressed += () => OpenQuick(__instance);
         content.AddChild(button);
         content.MoveChild(button, 0);
         panel.CallDeferred("RefreshSize");
     }
 
-    private static void Open(NSettingsScreen screen)
+    private static void OpenQuick(NSettingsScreen screen)
     {
         if (screen.GetNodeOrNull<Window>(WindowName) is { } existing)
         {
             existing.GrabFocus();
             return;
         }
-
-        var dialog = new Window
+        if (screen.GetNodeOrNull<Window>(QuickWindowName) is { } quick)
         {
-            Name = WindowName, Title = "怪物意图随机 · 设置", Size = new Vector2I(1280, 870),
-            MinSize = new Vector2I(720, 500), Transient = true, Exclusive = true, Visible = false
+            quick.GrabFocus();
+            return;
+        }
+
+        bool chinese = Chinese;
+        var (dialog, body) = CreateDialog(screen, QuickWindowName, new Vector2I(760, 410), new Vector2I(540, 410));
+        var description = new Label
+        {
+            Text = chinese
+                ? "本模组按怪物画像随机生成开场状态和招式。提高行动力倍率会增加出招预算。" +
+                    "提高混沌会扩大招式波动，并提高部分高级状态的出现机会。滑动条自动保存。" + ChineseTiming
+                : "Monsters roll starting effects and moves from their profiles. Higher Action Power raises their move budget. " +
+                    "Higher Chaos adds variety and makes some advanced effects more likely. Sliders save automatically. " + EnglishTiming,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart
         };
-        screen.AddChild(dialog);
+        description.AddThemeFontSizeOverride("font_size", 19);
+        body.AddChild(description);
+        var saveTimer = new Godot.Timer { OneShot = true, WaitTime = 0.3, ProcessMode = Node.ProcessModeEnum.Always };
+        dialog.AddChild(saveTimer);
+        var pending = new Dictionary<string, double>();
+        var pools = ModSettings.Rules.PoolSettings;
+        AddSlider(chinese ? "全局行动力倍率" : "Global Action Power", ActionValueMultiplier, 0.01, Math.Max(5, pools.ActionValueMultiplier),
+            pools.ActionValueMultiplier, "0.00 ×");
+        AddSlider(chinese ? "混沌值" : "Chaos", Chaos, 0, 1, pools.Chaos, "0.00");
+        var message = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
+        body.AddChild(message);
+        var full = new Button { Text = chinese ? "完整设置" : "Advanced Settings", CustomMinimumSize = new Vector2(0, 45) };
+        full.AddThemeFontSizeOverride("font_size", 22);
+        body.AddChild(full);
+
+        saveTimer.Timeout += () => SaveChanges();
+        dialog.CloseRequested += () =>
+        {
+            if (SaveChanges())
+                dialog.QueueFree();
+        };
+        full.Pressed += () =>
+        {
+            if (!SaveChanges())
+                return;
+            dialog.Hide();
+            dialog.QueueFree();
+            OpenFull(screen);
+        };
+        dialog.PopupCenteredClamped(dialog.Size, 0.96f);
+
+        void AddSlider(string title, string key, double minimum, double maximum, double value, string valueFormat)
+        {
+            var row = new HBoxContainer();
+            var label = new Label { Text = title, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            var display = new Label { Text = value.ToString(valueFormat) };
+            label.AddThemeFontSizeOverride("font_size", 22);
+            display.AddThemeFontSizeOverride("font_size", 22);
+            row.AddChild(label);
+            row.AddChild(display);
+            body.AddChild(row);
+            var slider = new HSlider
+            {
+                Name = key,
+                MinValue = minimum,
+                MaxValue = maximum,
+                Step = 0.01,
+                CustomMinimumSize = new Vector2(0, 28)
+            };
+            slider.SetValueNoSignal(value);
+            body.AddChild(slider);
+            slider.ValueChanged += changed =>
+            {
+                display.Text = changed.ToString(valueFormat);
+                pending[key] = Math.Round(changed, 2);
+                saveTimer.Start();
+            };
+        }
+
+        bool SaveChanges()
+        {
+            saveTimer.Stop();
+            if (pending.Count == 0)
+                return true;
+            try
+            {
+                var current = ModSettings.Current;
+                var settings = JsonNode.Parse(current.Settings.GetRawText())!;
+                foreach (var (key, value) in pending)
+                    settings["pools"]![key] = value;
+                ModSettings.Save(current with { Settings = JsonSerializer.SerializeToElement(settings) });
+                pending.Clear();
+                message.Hide();
+                return true;
+            }
+            catch (Exception error)
+            {
+                message.Text = chinese ? $"保存失败。{error.Message}" : $"Could not save settings. {error.Message}";
+                message.Show();
+                return false;
+            }
+        }
+    }
+
+    private static void OpenFull(NSettingsScreen screen)
+    {
+        var (dialog, body) = CreateDialog(screen, WindowName, new Vector2I(1280, 870), new Vector2I(720, 500));
         dialog.CloseRequested += dialog.QueueFree;
 
-        var panel = new PanelContainer();
-        dialog.AddChild(panel);
-        panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        var inset = new MarginContainer();
-        foreach (string edge in new[] { "left", "right", "top", "bottom" })
-            inset.AddThemeConstantOverride($"margin_{edge}", 18);
-        panel.AddChild(inset);
-        var body = new VBoxContainer();
-        body.AddThemeConstantOverride("separation", 12);
-        inset.AddChild(body);
-
-        var enabled = new CheckButton { Text = "启用单人怪物意图随机", ButtonPressed = ModSettings.Current.Enabled };
+        var enabled = new CheckButton { Text = "启用怪物意图随机", ButtonPressed = ModSettings.Current.Enabled };
         body.AddChild(enabled);
         var intentDetails = new CheckButton { Text = "显示意图的具体效果", ButtonPressed = ModSettings.Current.ShowIntentDetails };
         body.AddChild(intentDetails);
-        body.AddChild(new Label { Text = "战斗参数从下一场战斗生效。" });
+        body.AddChild(new Label { Text = ChineseTiming });
         var tabs = new TabContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         body.AddChild(tabs);
 
@@ -102,9 +201,9 @@ internal static class SettingsPage
 
         var quickInputs = new List<(string[] Path, SpinBox Input)>();
         var quickToggles = new List<(string Section, string Key, bool Default, CheckButton Input)>();
-        AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", "actionValueMultiplier");
+        AddNumber("全局行动力倍率", 0.01, 5, 0.01, "pools", ActionValueMultiplier);
         AddNumber("高进阶行动力倍率", 1, 5, 0.01, "pools", "highAscensionActionValueMultiplier");
-        AddNumber("混沌值", 0, 1, 0.01, "pools", "chaos");
+        AddNumber("混沌值", 0, 1, 0.01, "pools", Chaos);
         AddToggle("实战出招随机跳样", "每轮用系统随机数判定一次。触发时，跳过一个出招随机数。",
             "pools", "externalMoveRandomSkip", defaultValue: true);
         AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
@@ -268,6 +367,28 @@ internal static class SettingsPage
                 message.Text = "请先修复配置 JSON。";
             }
         }
+    }
+
+    private static (Window Dialog, VBoxContainer Body) CreateDialog(NSettingsScreen screen, string name,
+        Vector2I size, Vector2I minimumSize)
+    {
+        var dialog = new Window
+        {
+            Name = name, Title = SettingsTitle, Size = size, MinSize = minimumSize,
+            Transient = true, Exclusive = true, Visible = false
+        };
+        screen.AddChild(dialog);
+        var panel = new PanelContainer();
+        dialog.AddChild(panel);
+        panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        var inset = new MarginContainer();
+        foreach (string edge in new[] { "left", "right", "top", "bottom" })
+            inset.AddThemeConstantOverride($"margin_{edge}", 18);
+        panel.AddChild(inset);
+        var body = new VBoxContainer();
+        body.AddThemeConstantOverride("separation", 12);
+        inset.AddChild(body);
+        return (dialog, body);
     }
 
     private static Action AddMonsterControls(VBoxContainer panel, TextEdit profiles, Label message)

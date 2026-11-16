@@ -9,6 +9,9 @@ obj/
 local-runs/
 dist/
 .scratch/
+workshop/content/
+workshop/mod_id.txt
+屏幕截图 *.png
 data/*.json.bak
 __pycache__/
 

@@ -35,7 +35,7 @@ public abstract class RandomizedCardPower : CustomPower
     internal static RandomizedCardPower? Find(Creature owner, EffectKind kind) => kind switch
     {
         EffectKind.PersonalHive => owner.GetPower<RandomizedPersonalHivePower>(),
-        EffectKind.WitheringPresence => owner.GetPower<RandomizedWitheringPresencePower>(),
+        EffectKind.WitheringPresence => owner.GetPowerInstances<RandomizedWitheringPresencePower>().FirstOrDefault(),
         EffectKind.PainfulStabs => owner.GetPower<RandomizedPainfulStabsPower>(),
         _ => null
     };
@@ -65,6 +65,7 @@ public sealed class RandomizedPersonalHivePower : RandomizedCardPower
 public sealed class RandomizedWitheringPresencePower : RandomizedCardPower
 {
     private int? remaining;
+    public override PowerInstanceType InstanceType => PowerInstanceType.Instanced;
     protected override EffectKind Kind => EffectKind.WitheringPresence;
     internal override PowerModel NativePower => ModelDb.Power<WitheringPresencePower>();
     protected override (string Chinese, string English) DescriptionText =>

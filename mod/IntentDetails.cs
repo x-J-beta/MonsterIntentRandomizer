@@ -63,20 +63,25 @@ internal static class IntentDetails
     private static (string Name, string Details) Describe(ActionEffect effect)
     {
         bool chinese = LocManager.Instance.Language == "zhs";
+        bool multiplayer = CombatManager.Instance.DebugOnlyGetState() is { Players.Count: > 1 };
+        string player = multiplayer ? "全体玩家" : "玩家";
+        string playerEach = multiplayer ? "每名玩家" : "玩家";
+        string playerEn = multiplayer ? "each player" : "the player";
         int n = effect.Amount;
         var (zh, en) = Names(effect.Kind);
         if (effect.IsInsertedCard)
         {
             string destinations = DescribeDestinations(effect, chinese);
-            return chinese ? (zh, $"加入 {n} 张{zh}（{destinations}）。") : (en, $"Adds {n} {en} ({destinations}).");
+            return chinese ? (zh, $"向{playerEach}加入 {n} 张{zh}（{destinations}）。") :
+                (en, $"Adds {n} {en} to {playerEn} ({destinations}).");
         }
         if (effect.GeneratedCard is { } card)
         {
             var names = Names(card);
             return effect.Kind switch
             {
-                EffectKind.WitheringPresence => chinese ? (zh, $"玩家每打出 {n} 张牌，向手牌加入 1 张{names.Chinese}。") :
-                    (en, $"Every {n} cards played, adds one {names.English} to the player's hand."),
+                EffectKind.WitheringPresence => chinese ? (zh, $"{playerEach}每打出 {n} 张牌，向其手牌加入 1 张{names.Chinese}。") :
+                    (en, $"For every {n} cards played by {playerEn}, adds one {names.English} to their hand."),
                 EffectKind.PersonalHive => chinese ? (zh, $"受到攻击命中时，向攻击者的抽牌堆洗入 {n} 张{names.Chinese}。") :
                     (en, $"When hit by an attack, adds {n} {names.English} to the attacker's draw pile."),
                 _ => chinese ? (zh, $"每段打穿格挡的攻击向玩家的弃牌堆加入 {n} 张{names.Chinese}。") :
@@ -91,29 +96,29 @@ internal static class IntentDetails
                 (en, $"Gains {n} Thorns through the next player turn."),
             EffectKind.PainfulStabs => chinese ? (zh, $"每段打穿格挡的攻击向玩家弃牌堆加入 {n} 张伤口。") :
                 (en, $"Adds {n} Wounds to the player's discard pile per unblocked attack hit."),
-            EffectKind.Smoggy or EffectKind.Tender => chinese ? (zh, $"对玩家施加{zh}，持续到战斗结束。") :
-                (en, $"Applies {en} to the player for the rest of combat."),
-            EffectKind.Shrink => chinese ? (zh, "对玩家施加缩小，持续到施加者死亡。") :
-                (en, "Applies Shrink to the player until the caster dies."),
-            EffectKind.Dampen => chinese ? (zh, "使玩家已升级的牌降级，施加者死亡后恢复。") :
-                (en, "Downgrades the player's upgraded cards until the caster dies."),
-            EffectKind.Hex => chinese ? (zh, "给玩家可附加恶咒的牌赋予虚无，持续到施加者死亡。") :
-                (en, "Makes eligible cards Ethereal until the caster dies."),
-            EffectKind.DrawDown => chinese ? (zh, $"玩家下回合开始时少抽 {n} 张牌，扣不完则顺延。") :
-                (en, $"At the start of next turn, the player draws {n} fewer cards. Any unused reduction carries over."),
-            EffectKind.EnergyDown => chinese ? (zh, $"玩家下回合开始时扣除 {n} 点能量，扣不完则顺延。") :
-                (en, $"At the start of next turn, the player loses {n} Energy. Any unused reduction carries over."),
-            EffectKind.Soulbind => chinese ? (zh, $"对玩家施加 {n} 层魂缚锁链。") :
-                (en, $"Applies {n} Chains of Binding to the player."),
+            EffectKind.Smoggy or EffectKind.Tender => chinese ? (zh, $"对{player}施加{zh}，持续到战斗结束。") :
+                (en, $"Applies {en} to {playerEn} for the rest of combat."),
+            EffectKind.Shrink => chinese ? (zh, $"对{player}施加缩小，持续到施加者死亡。") :
+                (en, $"Applies Shrink to {playerEn} until the caster dies."),
+            EffectKind.Dampen => chinese ? (zh, $"使{player}已升级的牌降级，施加者死亡后恢复。") :
+                (en, $"Downgrades upgraded cards for {playerEn} until the caster dies."),
+            EffectKind.Hex => chinese ? (zh, $"给{player}可附加恶咒的牌赋予虚无，持续到施加者死亡。") :
+                (en, $"Makes eligible cards Ethereal for {playerEn} until the caster dies."),
+            EffectKind.DrawDown => chinese ? (zh, $"{playerEach}下回合开始时少抽 {n} 张牌，扣不完则顺延。") :
+                (en, $"At the start of next turn, {playerEn} draws {n} fewer cards. Any unused reduction carries over."),
+            EffectKind.EnergyDown => chinese ? (zh, $"{playerEach}下回合开始时扣除 {n} 点能量，扣不完则顺延。") :
+                (en, $"At the start of next turn, {playerEn} loses {n} Energy. Any unused reduction carries over."),
+            EffectKind.Soulbind => chinese ? (zh, $"对{player}各施加 {n} 层魂缚锁链。") :
+                (en, $"Applies {n} Chains of Binding to {playerEn}."),
             EffectKind.Block or EffectKind.Heal => chinese ? (zh, $"自身{zh} {n} 点。") : (en, $"Self: {n} {en}."),
             EffectKind.HardenedShell => chinese ? (zh, $"将每回合失去的生命上限设为 {n}。") :
                 (en, $"Sets its maximum HP loss per turn to {n}."),
             EffectKind.HardToKill => chinese ? (zh, $"将单次伤害或生命减少的上限设为 {n}。") :
                 (en, $"Sets its damage and HP loss cap per instance to {n}."),
-            EffectKind.StrengthDown or EffectKind.DexterityDown => chinese ? (zh, $"使玩家{zh} {n} 点。") :
-                (en, $"Applies {n} {en} to the player."),
-            _ when effect.Target == EffectTarget.Player => chinese ? (zh, $"对玩家施加 {n} 层{zh}。") :
-                (en, $"Applies {n} {en} to the player."),
+            EffectKind.StrengthDown or EffectKind.DexterityDown => chinese ? (zh, $"使{playerEach}{zh} {n} 点。") :
+                (en, $"Applies {n} {en} to {playerEn}."),
+            _ when effect.Target == EffectTarget.Player => chinese ? (zh, $"对{playerEach}施加 {n} 层{zh}。") :
+                (en, $"Applies {n} {en} to {playerEn}."),
             _ => chinese ? (zh, $"获得 {n} 层{zh}。") : (en, $"Gains {n} {en}.")
         };
     }
