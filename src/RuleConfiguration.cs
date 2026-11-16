@@ -62,6 +62,10 @@ internal sealed class RuleConfiguration
             ? Read<Dictionary<EffectKind, double>>(ratioConfig) : null;
         if (cardRatios?.Any(entry => !ActionEffect.IsCard(entry.Key) || entry.Value < 0) == true)
             throw new ArgumentException("状态牌的玩家行动力系数须为非负数。");
+        var laterMonsterPercent = actions.TryGetProperty("laterMonsterPercent", out var laterMonsterConfig)
+            ? Read<Dictionary<EffectKind, double>>(laterMonsterConfig) : null;
+        if (laterMonsterPercent?.Values.Any(percent => percent < -100) == true)
+            throw new ArgumentException("每个后续怪物的估值变化须至少为 -100%。");
         Actions = new ActionValuationSettings(
             new ActionValuation(valuation),
             actions.GetProperty("weakDamageReduction").GetDouble(),
@@ -70,7 +74,7 @@ internal sealed class RuleConfiguration
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, policies, buffs, PoolSettings.Chaos, cardRatios, PlayerAction.At(0));
+            minimums, policies, buffs, PoolSettings.Chaos, cardRatios, PlayerAction.At(0), laterMonsterPercent);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),
@@ -78,6 +82,8 @@ internal sealed class RuleConfiguration
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
         foreach (var (kind, buff) in buffs)
             OpeningValues[EffectPolicy.Id(kind)] = buff;
+        if (OpeningValues.Values.Any(state => state.LaterMonsterPercent < -100))
+            throw new ArgumentException("每个后续怪物的估值变化须至少为 -100%。");
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
         TurnPrior = Read<ActionContext>(settings.GetProperty("simulation").GetProperty("turnContext"));
         var defaults = profiles.GetProperty("defaults");

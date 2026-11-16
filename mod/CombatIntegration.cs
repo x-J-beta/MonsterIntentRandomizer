@@ -357,7 +357,8 @@ internal static class CombatIntegration
                 encounter.Rooms, encounter.AveragePlayerDamage),
             PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms, encounter.AveragePlayerDamage),
             CurrentHp = self.CurrentHp,
-            RoomsEntered = encounter.Rooms + 1
+            RoomsEntered = encounter.Rooms + 1,
+            MonstersBehind = combat.Enemies.SkipWhile(enemy => enemy != self).Skip(1).Count(enemy => enemy.IsAlive)
         };
 
 

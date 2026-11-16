@@ -60,7 +60,8 @@ profile = profile with
     BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
     PlayerActionValue = rules.PlayerAction.At(rooms),
     CurrentHp = hp,
-    RoomsEntered = rooms + 1
+    RoomsEntered = rooms + 1,
+    MonstersBehind = enemies.Skip(1).Count(enemy => enemy.Hp > 0)
 };
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
     ? profileStage.GetString()! : sample.GetProperty("defaultStage").GetString()!;
@@ -98,7 +99,8 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
                 AttackFrequency = ally.TryGetProperty("attackFrequency", out var frequency) ? frequency.GetDouble() : 1,
                 BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(enemies.Single(enemy => enemy.Id == id).Hp,
                     enemies.Where(enemy => enemy.Id != id).Sum(enemy => enemy.Hp), rooms),
-                CurrentHp = enemies.Single(enemy => enemy.Id == id).Hp
+                CurrentHp = enemies.Single(enemy => enemy.Id == id).Hp,
+                MonstersBehind = enemies.SkipWhile(enemy => enemy.Id != id).Skip(1).Count(enemy => enemy.Hp > 0)
             });
 }
 var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, openingRandom);

@@ -87,9 +87,11 @@ public sealed record MonsterProfile(
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
     IReadOnlyList<StatusPlacement>? CardPlacements = null, double PlayerActionValue = 0,
     double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1,
-    IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null)
+    IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null,
+    int MonstersBehind = 0)
 {
     public double HpPerSurvivalTurn => BaseExpectedSurvivalTurns > 0 ? CurrentHp / BaseExpectedSurvivalTurns : 0;
+    internal double LaterMonsterMultiplier(double percent) => Math.Pow(1 + percent / 100, MonstersBehind);
 
     internal int CapAmount(int maximum, double? hpPerTurnFactor) => hpPerTurnFactor is double factor
         ? (int)Math.Clamp(Math.Floor(HpPerSurvivalTurn * factor + 1e-9), 0, maximum)

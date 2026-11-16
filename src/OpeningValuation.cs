@@ -14,7 +14,7 @@ public sealed record OpeningDraws(double None, double Positive, double Negative,
 public sealed record StatusValue(Dictionary<string, double> Formula, int Amount = 1, double Weight = 1,
     int? MaxAmount = null, double WeightPerRoom = 0, int MinAmount = 1,
     double? HpPerSurvivalTurnCap = null, bool Common = false, bool Stackable = false, bool Unique = false,
-    Dictionary<EffectKind, double>? GeneratedCards = null)
+    Dictionary<EffectKind, double>? GeneratedCards = null, double LaterMonsterPercent = 0)
 {
     internal ActionValuation CompiledFormula { get; } = new(new Dictionary<EffectKind, Dictionary<string, double>>
         { [EffectKind.Attack] = Formula ?? throw new ArgumentException("开场状态和共用强化须配置估值公式。") });
@@ -33,7 +33,8 @@ public sealed record StatusValue(Dictionary<string, double> Formula, int Amount 
 public static class OpeningValuation
 {
     public static double Evaluate(StatusValue state, MonsterProfile profile, int amount) =>
-        amount == 0 ? 0 : state.CompiledFormula.Evaluate(EffectKind.Attack, profile, Math.Abs(amount), effectiveAmount: Math.Abs(amount));
+        amount == 0 ? 0 : state.CompiledFormula.Evaluate(EffectKind.Attack, profile, Math.Abs(amount),
+            effectiveAmount: Math.Abs(amount)) * profile.LaterMonsterMultiplier(state.LaterMonsterPercent);
 
     public static double ThresholdCost(StatusValue state, MonsterProfile profile, int before, int after) =>
         after <= 0 || (before > 0 && after >= before) ? 0 :

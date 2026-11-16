@@ -27,6 +27,7 @@ internal static class SimulationPage
         var rooms = SettingsPage.NumberRow(panel, "已经历房间", 0, 100, 1);
         var hp = SettingsPage.NumberRow(panel, "怪物当前血量", 1, 9999, 1);
         var allyHp = SettingsPage.NumberRow(panel, "其他怪物当前血量之和", 0, 9999, 1);
+        var monstersBehind = SettingsPage.NumberRow(panel, "后续出手的怪物数", 0, 20, 1);
         var run = new Button { Name = "RunSimulation", Text = "按当前参数模拟" };
         panel.AddChild(run);
         var output = new TextEdit
@@ -75,7 +76,8 @@ internal static class SimulationPage
                 string id = ids[monster.Selected];
                 output.Text = Run(rules, id, highAscension.ButtonPressed,
                     (int)seed.Value, (int)rounds.Value,
-                    (int)rooms.Value, hp.Value, allyHp.Value, phase.Visible && phase.Selected >= 0 ? phases[phase.Selected] : null);
+                    (int)rooms.Value, hp.Value, allyHp.Value, (int)monstersBehind.Value,
+                    phase.Visible && phase.Selected >= 0 ? phases[phase.Selected] : null);
             }
             catch (Exception error)
             {
@@ -150,7 +152,7 @@ internal static class SimulationPage
     }
 
     private static string Run(RuleConfiguration rules, string id, bool highAscension, int seed, int rounds,
-        int rooms, double hp, double allyHp, string? phaseId)
+        int rooms, double hp, double allyHp, int monstersBehind, string? phaseId)
     {
         var monster = rules.Monsters[id];
         if (!monster.Enabled || rules.MovePresets.MoveIds(id) is { Length: > 0 } known && !known.Any(monster.AllowsMove))
@@ -163,7 +165,8 @@ internal static class SimulationPage
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
             PlayerActionValue = rules.PlayerAction.At(rooms),
             CurrentHp = hp,
-            RoomsEntered = rooms + 1
+            RoomsEntered = rooms + 1,
+            MonstersBehind = monstersBehind
         };
         var sequence = rules.MovePresets.SequenceFor(id, phaseId);
         var candidates = rules.OpeningStatesFor(id, monster)
@@ -174,10 +177,11 @@ internal static class SimulationPage
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws,
             MoveRandom.For(unchecked((uint)seed), rooms + 1, 0, 0));
         var turns = ActionSimulation.Trace(rules, id, profile, opening, seed, rounds,
-            rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1, phaseId: phaseId);
+            rooms: rooms, enemyCount: Math.Max(allyHp > 0 ? 2 : 1, monstersBehind + 1), phaseId: phaseId);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
         var result = new StringBuilder();
         result.AppendLine($"{id}　　已经历 {rooms} 个房间　　种子 {seed.ToString(CultureInfo.InvariantCulture)}");
+        result.AppendLine($"后续出手的怪物 {monstersBehind} 只");
         if (phase != null)
             result.AppendLine(phase.Name);
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");

@@ -115,6 +115,13 @@ internal static class ValuationPage
             if (id == "Attack")
                 return;
 
+            AddNumber(content, "每个后续怪物的估值变化 (%)", config["laterMonsterPercent"]?[id]?.GetValue<double>() ?? 0,
+                0.1, (root, number) =>
+                {
+                    var actionsConfig = root["actions"]!;
+                    actionsConfig["laterMonsterPercent"] ??= new JsonObject();
+                    actionsConfig["laterMonsterPercent"]![id] = number;
+                }, minimum: -100);
             AddCheck(content, "可叠加", policy?["stackable"]?.GetValue<bool>() ?? defaultPolicy.Stackable,
                 (root, value) => SetPolicy(root, id, "stackable", value));
             if (ActionEffect.IsSpecialStatusKind(kind))
@@ -137,6 +144,8 @@ internal static class ValuationPage
             var state = At(JsonNode.Parse(settings.Text)!);
             content.AddChild(new Label { Text = shared ? "目标：自身 · 开场和出招共用" : "目标：自身" });
             AddFormula(content, root => At(root)["formula"]!.AsObject(), state["formula"]!.AsObject(), openingFormula: true);
+            AddNumber(content, "每个后续怪物的估值变化 (%)", state["laterMonsterPercent"]?.GetValue<double>() ?? 0,
+                0.1, (root, number) => At(root)["laterMonsterPercent"] = number, minimum: -100);
             if (shared)
                 AddCheck(content, "开场通用候选", state["common"]?.GetValue<bool>() ?? false,
                     (root, value) => At(root)["common"] = value);

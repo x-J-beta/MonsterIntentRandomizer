@@ -97,15 +97,20 @@ public sealed record ActionValuationSettings(
     IReadOnlyDictionary<EffectKind, int>? MinimumAmounts = null,
     IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
     IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
-    IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null, double CardStartingPlayerActionValue = 16)
+    IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null, double CardStartingPlayerActionValue = 16,
+    IReadOnlyDictionary<EffectKind, double>? LaterMonsterPercent = null)
 {
     internal double CardUnitValue(EffectKind card, MonsterProfile profile, int amount = 1)
     {
         double baseline = CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
         double ratio = Math.Max(baseline, CardPlayerActionValueRatios?.GetValueOrDefault(card) ?? 0);
         double baseValue = Valuation.Evaluate(card, profile, amount) / amount;
-        return Math.Max(0, baseValue - ratio * CardStartingPlayerActionValue) + ratio * profile.PlayerActionValue;
+        return (Math.Max(0, baseValue - ratio * CardStartingPlayerActionValue) + ratio * profile.PlayerActionValue) *
+            LaterMonsterMultiplier(card, profile);
     }
+
+    internal double LaterMonsterMultiplier(EffectKind kind, MonsterProfile profile) =>
+        profile.LaterMonsterMultiplier(LaterMonsterPercent?.GetValueOrDefault(kind) ?? 0);
 
     public EffectPolicy PolicyFor(EffectKind kind, string? monsterId = null) => Buffs?.GetValueOrDefault(kind) is { } buff
         ? new EffectPolicy(buff.Stackable || TriggeredCardBuffs.UsesNative(kind, monsterId), buff.Unique, EffectTarget.Self)
@@ -244,7 +249,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0, StatusPile? pile = null)
         {
-            double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount);
+            double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount) *
+                settings.LaterMonsterMultiplier(kind, profile);
             if (value > 0)
                 extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, 1));
         }

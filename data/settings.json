@@ -191,7 +191,7 @@
       "DEMISE": { "maxAmount": 3, "formula": { "amount*actionValue": -0.065 } },
       "DOOM": { "maxAmount": 15, "formula": { "amount": -0.32 } },
       "NEUROSURGE": { "common": true, "maxAmount": 3, "weight": 0.35, "formula": { "amount*survivalTurns": -0.32 } },
-      "IMBALANCED": { "maxAmount": 1, "formula": { "amount*actionValue": -0.14 }, "common": true, "weight": 0.9 },
+      "IMBALANCED": { "maxAmount": 1, "formula": { "amount*actionValue": -0.14 }, "laterMonsterPercent": 20, "common": true, "weight": 0.9 },
       "STUN": { "maxAmount": 1, "formula": { "amount*actionValue": -0.82 }, "common": true, "weight": 0.15 },
       "POISON": { "common": true, "maxAmount": 7, "formula": { "amount": -0.85 }, "weight": 0.35 },
       "SLOW": { "common": true, "maxAmount": 1, "formula": { "actionValue": -0.18 }, "weight": 0.14 }
@@ -239,8 +239,8 @@
     "PersonalHive": { "common": false, "maxAmount": 1, "formula": { "amount*survivalTurns": 1.5 }, "weight": -0.13714285714285715, "weightPerRoom": 0.008571428571428572, "stackable": false, "generatedCards": { "Dazed": 3, "Wound": 1, "Soot": 1, "Debris": 1, "Slimed": 1 } },
     "VitalSpark": { "common": false, "maxAmount": 1, "formula": { "Amount*AttackFrequency": 2.6 }, "weight": -0.12000000000000002, "weightPerRoom": 0.006666666666666668, "stackable": false, "unique": true },
     "WitheringPresence": { "common": false, "minAmount": 2, "maxAmount": 6, "formula": { "survivalTurns*inverseAmount": 18 }, "weight": -0.29999999999999716, "weightPerRoom": 0.010000000000000002, "stackable": true, "unique": true, "generatedCards": { "Wither": 3, "Burn": 2, "Infection": 1, "Toxic": 1, "Beckon": 0.5 } },
-    "Envenom": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.95 }, "weight": -0.105, "weightPerRoom": 0.0075, "stackable": false },
-    "PaperCuts": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1.55 }, "weight": -0.07000000000000002, "weightPerRoom": 0.003500000000000001, "stackable": false },
-    "PainfulStabs": { "common": true, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1 }, "weight": -0.12, "weightPerRoom": 0.006, "stackable": false, "generatedCards": { "Wound": 3, "Soot": 1, "Debris": 1, "Slimed": 1, "Burn": 0.5 } }
+    "Envenom": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 0.95 }, "laterMonsterPercent": -25, "weight": -0.105, "weightPerRoom": 0.0075, "stackable": false },
+    "PaperCuts": { "common": false, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1.55 }, "laterMonsterPercent": -15, "weight": -0.07000000000000002, "weightPerRoom": 0.003500000000000001, "stackable": false },
+    "PainfulStabs": { "common": true, "maxAmount": 1, "formula": { "amount*attackFrequency*survivalTurns": 1 }, "laterMonsterPercent": -15, "weight": -0.12, "weightPerRoom": 0.006, "stackable": false, "generatedCards": { "Wound": 3, "Soot": 1, "Debris": 1, "Slimed": 1, "Burn": 0.5 } }
   }
 }

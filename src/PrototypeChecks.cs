@@ -17,6 +17,11 @@ internal static class PrototypeChecks
         var estimate = new MonsterProfile(10, 0.15, 1.5, 0.35, 4, new Dictionary<IntentStyle, double>());
         Equal(-3, OpeningValuation.Evaluate(Status("amount*actionValue", -0.3), estimate, 1), "opening vulnerable");
         Equal(9, OpeningValuation.Evaluate(Status("amount*actionValue", 0.9), estimate, 1), "opening intangible");
+        var followedByTwo = estimate with { MonstersBehind = 2 };
+        Equal(-2.016, OpeningValuation.Evaluate(Status("amount*actionValue", -0.14) with { LaterMonsterPercent = 20 },
+            followedByTwo, 1), "later monsters increase the magnitude of an opening penalty");
+        Equal(5.625, OpeningValuation.Evaluate(Status("fixed", 10) with { LaterMonsterPercent = -25 },
+            followedByTwo, 1), "later monsters compound a buff discount");
         Equal(-3.6, OpeningValuation.Evaluate(Status("amount*attackFrequency", -1.2) with { Amount = -1 }, estimate, -2),
             "negative strength uses hit frequency");
         Equal(-2, OpeningValuation.Evaluate(Status("amount", -0.4), estimate, 5), "flat doom");
@@ -331,6 +336,12 @@ internal static class PrototypeChecks
         Equal(3 * 1.33, highPlayerAction.Single(action => action.Id == "Dazed 1 @Top").Value,
             "player action value replaces a portion of starting card value before pile placement");
         Equal(2.5 * 0.75, generated.Single(action => action.Id == "Wound 1 @Discard").Value, "wound value in the discard pile");
+        var orderedCatalog = new ActionCatalog(catalogSettings with
+        {
+            LaterMonsterPercent = new Dictionary<EffectKind, double> { [EffectKind.Wound] = -25 }
+        });
+        Equal(2.5 * 0.75 * 0.75 * 0.75, orderedCatalog.Generate(varied with { MonstersBehind = 2 }, context)
+            .Single(action => action.Id == "Wound 1 @Discard").Value, "direct status cards scale their whole estimate");
         Equal(4, Pure(EffectKind.Tangled).Value, "tangled uses player turn value");
         Equal(25.5, valuation.Evaluate(EffectKind.Smoggy, varied with { PlayerActionValue = 30 }, 1),
             "smoggy uses the player action value");

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 37;
+    private const int SettingsRevision = 38;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -229,8 +229,10 @@ internal static class ModSettings
                 .Select(kind => kind.ToString()).ToArray();
             if (stored.Revision < 36)
                 AddActionDefaults(settings, defaultSettings, curseIds);
-            else
+            else if (stored.Revision == 36)
                 UpgradeCurseStacking(settings, curseIds);
+            AddLaterMonsterValuationDefaults(settings, defaultSettings);
+            AddDefaultFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -291,6 +293,28 @@ internal static class ModSettings
         foreach (string effect in effects)
             if (policies?[effect] is JsonObject policy && JsonNode.DeepEquals(policy, oldDefault))
                 policy.Remove("stackable");
+    }
+
+    private static void AddLaterMonsterValuationDefaults(JsonNode settings, JsonNode defaults)
+    {
+        const string field = "laterMonsterPercent";
+        foreach (string id in new[] { "Envenom", "PaperCuts", "PainfulStabs" })
+            if (settings["buffs"]?[id] is JsonObject state)
+                state[field] ??= defaults["buffs"]![id]![field]!.DeepClone();
+        if (settings["opening"]?["states"]?["IMBALANCED"] is JsonObject imbalance)
+            imbalance[field] ??= defaults["opening"]!["states"]!["IMBALANCED"]![field]!.DeepClone();
+    }
+
+    private static void AddDefaultFavorites(JsonObject monsters, JsonObject defaults)
+    {
+        foreach (var (id, monster) in monsters)
+        {
+            if (monster is not JsonObject entry || defaults[id]?["favorites"] is not JsonObject defaultFavorites)
+                continue;
+            var favorites = (entry["favorites"] ??= new JsonObject()).AsObject();
+            foreach (var (effect, weight) in defaultFavorites)
+                favorites[effect] ??= weight?.DeepClone();
+        }
     }
 
     private static void UpgradeStatReductionWeights(JsonNode settings, JsonNode defaults)
