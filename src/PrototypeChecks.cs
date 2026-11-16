@@ -64,9 +64,11 @@ internal static class PrototypeChecks
         var lateWeight = new RoomWeight(-0.3, 0.02);
         Equal(0, lateWeight.At(7), "normal chaos keeps the late effect locked");
         Equal(0, lateWeight.At(6, 0.125), "moderate chaos still needs room progression");
-        Equal(0.0025, lateWeight.At(7, 0.125), "chaos unlocks negative base weights earlier");
-        Equal(1, lateWeight.At(0, 1), "full chaos can unlock a late effect at the start");
-        Equal(0, new RoomWeight(-1, 0.02).At(90, 1), "explicitly disabled weights stay disabled");
+        Equal(0, new RoomWeight(-0.1, 0.003).At(32, 0.5), "moderate chaos barely advances slow weights");
+        Equal(0.4, new RoomWeight(-0.8, 0.05).At(20, 0.5), "moderate chaos advances steeper weights");
+        Equal(0.02, lateWeight.At(1, 1), "full chaos removes the lock while preserving the room increment");
+        Equal(0, new RoomWeight(RoomWeight.DisabledBase, 0.02).At(90, 1), "explicitly disabled weights stay disabled");
+        Equal(0.05, new RoomWeight(-1, 0.05).At(1, 1), "minus one is an ordinary negative base weight");
         if (OpeningValuation.Draw(openingOptions, openingActionValues,
                 draws with { Negative = 0, MaxEncounterValueMultiplier = 0.25, Strength = maxChaos.OpeningStrength },
                 new Random(11)).Count != 1)
@@ -128,7 +130,7 @@ internal static class PrototypeChecks
         var attackRolls = new Random(51);
         double waitRate = Enumerable.Range(0, 2400).Count(_ =>
             planner.Plan(fixedDesire, profile, choices, attackRolls).Action!.AttackHits == 0) / 2400.0;
-        if (Math.Abs(waitRate - 5.0 / 13) > 0.035 || new RoomWeight(-1, 10).At(20) != 0)
+        if (Math.Abs(waitRate - 5.0 / 13) > 0.035 || new RoomWeight(RoomWeight.DisabledBase, 10).At(20) != 0)
             throw new InvalidOperationException("Wait probability or explicitly disabled weights were ignored.");
         ActionCandidate BuildAttack(int hits, double _) => ActionCandidate.Attack("dynamic", hits, 2, 0, weak: false, 1);
         var forcedMulti = profile with { SingleHitPreference = 0 };
@@ -231,7 +233,7 @@ internal static class PrototypeChecks
         var steam = Status("amount", 0.6, 6);
         var steamCatalog = new ActionCatalog(catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
         {
-            [EffectKind.SteamEruption] = steam with { Weight = -1 },
+            [EffectKind.SteamEruption] = steam with { Weight = RoomWeight.DisabledBase },
             [EffectKind.Regen] = Status("amount", 0.25, 5)
         } });
         var steamProfile = estimate with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.SteamEruption] = 4 } };
@@ -420,7 +422,7 @@ internal static class PrototypeChecks
             new ActionCatalog(settings).Generate(specialized, context with { Rooms = rooms })
                 .Any(action => action.Effects is [{ Kind: EffectKind.Ringing }]);
         if (OffersRinging(lockedSettings, 0) || !OffersRinging(lockedSettings, 25) ||
-            !OffersRinging(lockedSettings with { ChaosProgress = 1 }, 0))
+            !OffersRinging(lockedSettings with { ChaosProgress = 1 }, 1))
             throw new InvalidOperationException("Global room and chaos weights should admit special effects without monster preferences.");
         var preferredSpecial = specialized with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.Ringing] = 5 } };
         if (expanded.Generate(preferredSpecial, context with { AllowHardCardLimit = false })

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 31;
+    private const int SettingsRevision = 32;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -209,9 +209,11 @@ internal static class ModSettings
             }
             if (stored.Revision < 29)
                 UpgradeRoster(profiles["monsters"]!.AsObject(), defaultProfiles);
-            MergeAliasedProfiles(profiles["monsters"]!.AsObject(), defaultProfiles);
+            if (stored.Revision < 31)
+                MergeAliasedProfiles(profiles["monsters"]!.AsObject(), defaultProfiles);
             settings["playerAction"] ??= defaultSettings["playerAction"]!.DeepClone();
             settings["playerAction"]!["useCombatDamage"] ??= false;
+            UpgradeDisabledWeights(settings);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -235,6 +237,22 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void UpgradeDisabledWeights(JsonNode settings)
+    {
+        MoveDisabledValues(settings["actions"]?["weights"], "base");
+        MoveDisabledValues(settings["buffs"], "weight");
+        MoveDisabledValues(settings["opening"]?["states"], "weight");
+
+        static void MoveDisabledValues(JsonNode? group, string field)
+        {
+            if (group is not JsonObject weights)
+                return;
+            foreach (var (_, entry) in weights)
+                if (entry is JsonObject weight && weight[field]?.GetValue<double>() == -1)
+                    weight[field] = RoomWeight.DisabledBase;
         }
     }
 
@@ -465,7 +483,7 @@ internal static class ModSettings
             }
 
             double baseWeight = weight["base"]?.GetValue<double>() ?? 1;
-            if (baseWeight == -1)
+            if (baseWeight is -1 or RoomWeight.DisabledBase)
                 continue;
             weight["base"] = baseWeight * 0.2;
             if (weight["perRoom"]?.GetValue<double>() is double perRoom)

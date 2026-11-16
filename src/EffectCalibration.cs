@@ -48,8 +48,8 @@ internal static class EffectCalibration
     internal static void Run(RuleConfiguration rules, int seeds)
     {
         var cards = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsCard(kind) &&
-            rules.Actions.Weights?.GetValueOrDefault(kind)?.Base != -1);
-        var probes = PowerProbes.Where(probe => rules.Actions.Weights?.GetValueOrDefault(probe.Kind)?.Base != -1)
+            rules.Actions.Weights?.GetValueOrDefault(kind)?.IsDisabled != true);
+        var probes = PowerProbes.Where(probe => rules.Actions.Weights?.GetValueOrDefault(probe.Kind)?.IsDisabled != true)
             .Concat(cards.SelectMany(kind => new[] { StatusPile.Top, StatusPile.Draw, StatusPile.Discard }.Select(pile =>
                 new Probe($"{kind}@{pile}", kind, rules.Actions.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1, pile))))
             .Concat(PowerProbes.Where(probe => probe.Kind is EffectKind.Strength or EffectKind.Ritual or
