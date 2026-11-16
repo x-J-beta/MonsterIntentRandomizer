@@ -23,5 +23,5 @@ Copy-Item -LiteralPath '.\dist\MonsterIntentRandomizer\MonsterIntentRandomizer.d
    .\ModUploader.exe upload -w "D:\path\to\MonsterIntentRandomizer\workshop"
    ```
 
-3. 当前 `visibility` 是 `private`。首次上传可以先检查 Steam 页面上的中英文文案和封面，准备公开时再将可见性设为 `public`。
+3. 当前 `visibility` 是 `public`。上传成功后打开 Steam 工坊条目，检查中英文文案、源码链接和封面。
 4. 更新同一个条目时，重新构建并替换 `content` 中的两个文件，更新 `changeNote`，然后重复上传命令。保留工具生成的 `mod_id.txt`，它用于定位已有条目。发布步骤见 [官方上传说明](https://github.com/megacrit/sts2-mod-uploader#creating-a-new-mod)。
