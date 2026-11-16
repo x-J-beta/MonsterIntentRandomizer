@@ -115,7 +115,8 @@ internal sealed class RuleConfiguration
             foreach (var phase in phases.Values)
                 if (phase.Moves is not { Length: > 0 } || phase.Moves.Any(move => !movesInPhases.Add(move)) ||
                     phase.ActionValue is <= 0 || phase.AttackFrequency is < 0 || phase.Volatility is < 0 ||
-                    phase.NonAttackMultiplier is < 0)
+                    phase.NonAttackMultiplier is < 0 || phase.SingleHitPreference is < 0 || phase.DesireHitPreference is < 0 ||
+                    phase.AllowedBuffs?.Any(kind => !ActionEffect.IsMonsterBuff(kind)) == true)
                     throw new ArgumentException("阶段招式须存在且不可跨阶段重复，行动参数须在有效范围内。");
         }
         var profile = new MonsterProfile(
@@ -147,17 +148,23 @@ internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
     HashSet<string>? RandomMoves = null, string? KeepVanillaWhileAllyAlive = null, bool RandomizeAllMoves = false,
     IReadOnlyDictionary<string, MonsterPhase>? Phases = null)
 {
-    internal bool AllowsMove(string id) => !KeepMoves.Contains(id) && (RandomMoves?.Contains(id) ?? true);
+    internal bool HasEnabledStage => Phases is not { Count: > 0 } || Phases.Values.Any(phase => phase.Enabled);
+
+    internal bool AllowsMove(string id) => !KeepMoves.Contains(id) && (RandomMoves?.Contains(id) ?? true) &&
+        PhaseForMove(id)?.Enabled != false;
 
     internal MonsterPhase? PhaseForMove(string moveId) =>
         Phases?.Values.FirstOrDefault(phase => phase.Moves.Contains(moveId, StringComparer.Ordinal));
 
     internal string? DefaultPhase => Phases?.Keys.FirstOrDefault();
+
+    internal string? RequiredPower(MonsterPhase? phase) => phase?.RandomizeWhenPower ?? RandomizeWhenPower;
 }
 
 internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionValue = null, double? AttackFrequency = null,
     double? Volatility = null, double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
-    IReadOnlyDictionary<EffectKind, double>? Favorites = null)
+    IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null,
+    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null, string? RandomizeWhenPower = null)
 {
     internal MonsterProfile Apply(MonsterProfile profile) => profile with
     {
@@ -166,6 +173,9 @@ internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionV
         Volatility = Volatility ?? profile.Volatility,
         NonAttackMultiplier = NonAttackMultiplier ?? profile.NonAttackMultiplier,
         IntentWeights = Preferences ?? profile.IntentWeights,
-        Favorites = Favorites ?? profile.Favorites
+        Favorites = Favorites ?? profile.Favorites,
+        AllowedBuffs = AllowedBuffs ?? profile.AllowedBuffs,
+        SingleHitPreference = SingleHitPreference ?? profile.SingleHitPreference,
+        DesireHitPreference = DesireHitPreference ?? profile.DesireHitPreference
     };
 }

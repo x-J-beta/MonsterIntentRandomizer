@@ -39,7 +39,7 @@ string? phaseId = args.Length > 6 ? args[6] : configured.DefaultPhase;
 var phase = phaseId == null ? null : configured.Phases?.GetValueOrDefault(phaseId) ??
     throw new ArgumentException($"Unknown phase for {monsterId}: {phaseId}.");
 var profile = rules.PoolSettings.Adjust(phase?.Apply(configured.Profile) ?? configured.Profile, ascension == "deadlyEnemies");
-if (!configured.Enabled || rules.KeepVanilla.Contains(monsterId))
+if (!configured.Enabled || phase?.Enabled == false || rules.KeepVanilla.Contains(monsterId))
 {
     Console.WriteLine($"{monsterId}: original actions retained.");
     return;

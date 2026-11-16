@@ -124,6 +124,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
+            if (profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
+                continue;
             var (weight, bonus) = Weights(kind, buff.RoomWeight);
             if (weight + bonus <= 0 || context.ActiveEffects?.Contains(kind) == true)
                 continue;

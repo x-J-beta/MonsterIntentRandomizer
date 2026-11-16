@@ -174,7 +174,7 @@ if (syncArgument >= 0) {
         const profile = saved[id];
         if (!profile || matches(profile.preferences, row.proposed))
             continue;
-        if (matches(profile.preferences, row.previous) || matches(profile.preferences, oldMixed[id]?.previous.preferences)) {
+        if (matches(profile.preferences, row.previous) || matches(profile.preferences, oldMixed[id]?.previous?.preferences)) {
             profile.preferences = row.proposed;
             updated++;
         }

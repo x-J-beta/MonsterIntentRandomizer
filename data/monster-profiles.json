@@ -1,13 +1,8 @@
 {
   "keepVanilla": [
-    "CRUSHER",
     "FAKE_MERCHANT_MONSTER",
     "GAS_BOMB",
-    "LIVING_SHIELD",
-    "PHANTASMAL_GARDENER",
-    "SNEAKY_GREMLIN",
-    "TEST_SUBJECT",
-    "THIEVING_HOPPER"
+    "TEST_SUBJECT"
   ],
   "defaults": {"volatility":0.15,"nonAttackMultiplier":0.45,"openingStates":["WEAK","VULNERABLE","DEMISE","DOOM"]},
   "monsters": {
@@ -31,13 +26,13 @@
     "CALCIFIED_CULTIST": { "name": "钙化邪教徒", "hp": 40, "actionValue": 9.67, "attackFrequency": 0.5, "preferences": { "attack": 85.28, "buff": 14.72, "defend": 0, "playerDebuff": 0 }, "openingStates": ["RITUAL", "STRENGTH", "WEAK", "VULNERABLE", "DEMISE", "DOOM"], "favorites": { "Ritual": 5 } },
     "CEREMONIAL_BEAST": { "name": "仪式兽", "hp": 252, "actionValue": 19, "attackFrequency": 1, "preferences": { "attack": 89.89, "buff": 10.11, "defend": 0, "playerDebuff": 0 }, "randomMoves": ["PLOW_MOVE", "STOMP_MOVE", "CRUSH_MOVE"], "fixedOpening": true,
       "phases": {
-        "rush": { "name": "冲撞阶段", "moves": ["STAMP_MOVE", "PLOW_MOVE"], "actionValue": 23.2, "preferences": { "attack": 78, "buff": 22, "defend": 0, "playerDebuff": 0 }, "favorites": { "Strength": 3 } },
+        "rush": { "name": "冲撞阶段", "moves": ["STAMP_MOVE", "PLOW_MOVE"], "actionValue": 23.2, "preferences": { "attack": 78, "buff": 22, "defend": 0, "playerDebuff": 0 }, "favorites": { "Strength": 3 }, "allowedBuffs": ["Strength"] },
         "broken": { "name": "破防阶段", "moves": ["STUN_MOVE", "BEAST_CRY_MOVE", "STOMP_MOVE", "CRUSH_MOVE"], "actionValue": 19, "preferences": { "attack": 79, "buff": 15, "defend": 0, "playerDebuff": 6 }, "favorites": { "Strength": 2, "Ringing": 4 } }
       } },
     "CHOMPER": { "name": "啃咬机", "hp": 62, "actionValue": 16, "attackFrequency": 1, "preferences": { "attack": 91.95, "buff": 0, "defend": 0, "playerDebuff": 8.05 }, "stage": "act2", "favorites": { "Dazed": 3 } },
     "CORPSE_SLUG": { "name": "噬尸蛞蝓", "hp": 26, "actionValue": 7, "attackFrequency": 1, "preferences": { "attack": 91.74, "buff": 0, "defend": 0, "playerDebuff": 8.26 }, "nonAttackMultiplier": 0.51, "favorites": { "Frail": 3 } },
     "CROSSBOW_RUBY_RAIDER": { "name": "劫掠者弩手", "hp": 20, "actionValue": 14, "attackFrequency": 0.5, "preferences": { "attack": 93.4, "buff": 0, "defend": 6.6, "playerDebuff": 0 }, "nonAttackMultiplier": 0.09 },
-    "CRUSHER": { "name": "碾碎爪", "hp": 209, "actionValue": 12.91, "attackFrequency": 1, "preferences": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 }, "nonAttackMultiplier": 0.39, "stage": "act2" },
+    "CRUSHER": { "name": "碾碎爪", "hp": 209, "actionValue": 12.91, "attackFrequency": 1, "preferences": { "attack": 40, "buff": 20, "defend": 20, "playerDebuff": 20 }, "nonAttackMultiplier": 0.39, "stage": "act2", "randomMoves": ["THRASH_MOVE", "BUG_STING_MOVE", "ADAPT_MOVE", "GUARDED_STRIKE_MOVE"] },
     "CUBEX_CONSTRUCT": { "name": "方柱构装体", "hp": 65, "actionValue": 14, "attackFrequency": 1.33, "preferences": { "attack": 72.7, "buff": 27.3, "defend": 0, "playerDebuff": 0 }, "favorites": { "Strength": 3 } },
     "DAMP_CULTIST": { "name": "潮湿邪教徒", "hp": 52, "actionValue": 5, "attackFrequency": 0.5, "preferences": { "attack": 16.53, "buff": 83.47, "defend": 0, "playerDebuff": 0 }, "openingStates": ["RITUAL", "STRENGTH", "WEAK", "VULNERABLE", "DEMISE", "DOOM"], "favorites": { "Ritual": 5 } },
     "DECIMILLIPEDE_SEGMENT": { "name": "残杀千足虫", "hp": 43, "actionValue": 10.27, "attackFrequency": 1.33, "preferences": { "attack": 77, "buff": 18, "defend": 0, "playerDebuff": 5 }, "stage": "act2", "randomMoves": ["WRITHE_MOVE", "BULK_MOVE", "CONSTRICT_MOVE"], "favorites": { "Strength": 2, "Weak": 2 } },
@@ -72,7 +67,7 @@
     "LEAF_SLIME_M": { "name": "树叶史莱姆（中）", "hp": 34, "actionValue": 8, "attackFrequency": 0.5, "preferences": { "attack": 85.11, "buff": 0, "defend": 0, "playerDebuff": 14.89 }, "favorites": { "Slimed": 5 } },
     "LEAF_SLIME_S": { "name": "树叶史莱姆（小）", "hp": 13, "actionValue": 3, "attackFrequency": 0.5, "preferences": { "attack": 68.18, "buff": 0, "defend": 0, "playerDebuff": 31.82 }, "favorites": { "Slimed": 4 } },
     "LIVING_FOG": { "name": "活雾", "hp": 80, "actionValue": 8, "attackFrequency": 0.5, "preferences": { "attack": 73, "buff": 0, "defend": 0, "playerDebuff": 27 }, "randomMoves": ["ADVANCED_GAS_MOVE", "SUPER_GAS_BLAST_MOVE"], "favorites": { "Smoggy": 3 } },
-    "LIVING_SHIELD": { "name": "活体盾", "hp": 55, "actionValue": 14.75, "attackFrequency": 1, "preferences": { "attack": 50, "buff": 50, "defend": 0, "playerDebuff": 0 }, "stage": "act3" },
+    "LIVING_SHIELD": { "name": "活体盾", "hp": 55, "actionValue": 14.75, "attackFrequency": 1, "preferences": { "attack": 50, "buff": 50, "defend": 0, "playerDebuff": 0 }, "stage": "act3", "randomMoves": ["SMASH_MOVE"] },
     "LOUSE_PROGENITOR": { "name": "虱虫之祖", "hp": 135, "actionValue": 13.3, "attackFrequency": 0.67, "preferences": { "attack": 33.33, "buff": 16.67, "defend": 16.67, "playerDebuff": 33.33 }, "nonAttackMultiplier": 1.3, "stage": "act2", "randomizeAllMoves": true },
     "MAGI_KNIGHT": { "name": "魔法骑士", "hp": 82, "actionValue": 22.5, "attackFrequency": 0.67, "preferences": { "attack": 90.54, "buff": 0, "defend": 5.86, "playerDebuff": 3.6 }, "nonAttackMultiplier": 0.09, "stage": "act3" },
     "MAWLER": { "name": "蛮兽", "hp": 72, "actionValue": 11, "attackFrequency": 1, "preferences": { "attack": 73.53, "buff": 0, "defend": 0, "playerDebuff": 26.47 }, "nonAttackMultiplier": 1.11 },
@@ -86,7 +81,7 @@
     "OWL_MAGISTRATE": { "name": "猫头鹰法官", "hp": 231, "actionValue": 28.4, "attackFrequency": 2, "preferences": { "attack": 64.57, "buff": 11.31, "defend": 0, "playerDebuff": 24.12 }, "stage": "act3" },
     "PAELS_LEGION": { "name": "佩尔的士兵", "hp": 9999, "actionValue": 8, "attackFrequency": 0, "preferences": {"attack":0,"buff":0,"defend":0,"playerDebuff":0}, "enabled": false },
     "PARAFRIGHT": { "name": "寄生惧魔", "hp": 21, "actionValue": 16, "attackFrequency": 1, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 }, "stage": "act2", "randomMoves": ["SLAM_MOVE"] },
-    "PHANTASMAL_GARDENER": { "name": "花园幽灵鳗", "hp": 29, "actionValue": 5, "attackFrequency": 1.25, "preferences": {"attack":75,"buff":25,"defend":0,"playerDebuff":0}, "nonAttackMultiplier": 1 },
+    "PHANTASMAL_GARDENER": { "name": "花园幽灵鳗", "hp": 29, "actionValue": 5, "attackFrequency": 1.25, "preferences": {"attack":75,"buff":25,"defend":0,"playerDebuff":0}, "nonAttackMultiplier": 1, "randomMoves": ["BITE_MOVE", "LASH_MOVE", "FLAIL_MOVE"] },
     "PHROG_PARASITE": { "name": "异蛙寄生虫", "hp": 63, "actionValue": 16, "attackFrequency": 2, "preferences": { "attack": 65, "buff": 0, "defend": 0, "playerDebuff": 35 }, "randomMoves": ["INFECT_MOVE", "LASH_MOVE"], "favorites": { "Infection": 4 }, "cards": [{ "card": "Infection", "pile": "Discard", "weight": 3 }, { "card": "Infection", "pile": "Draw" }] },
     "PUNCH_CONSTRUCT": { "name": "拳击构装体", "hp": 55, "actionValue": 13, "attackFrequency": 1, "preferences": { "attack": 84.3, "buff": 0, "defend": 11.59, "playerDebuff": 4.11 }, "nonAttackMultiplier": 0.31 },
     "QUEEN": { "name": "女王", "hp": 400, "actionValue": 15, "attackFrequency": 2, "preferences": { "attack": 86.21, "buff": 13.79, "defend": 0, "playerDebuff": 0 }, "nonAttackMultiplier": 0.88, "stage": "act3", "randomMoves": ["OFF_WITH_YOUR_HEAD_MOVE", "EXECUTION_MOVE", "ENRAGE_MOVE"], "fixedOpening": true, "openingStates": [], "keepVanillaWhileAllyAlive": "TORCH_HEAD_AMALGAM" },
@@ -101,7 +96,7 @@
     "SLUDGE_SPINNER": { "name": "淤泥旋螺", "hp": 38, "actionValue": 11.43, "attackFrequency": 1, "preferences": { "attack": 83.09, "buff": 11.97, "defend": 0, "playerDebuff": 4.94 }, "favorites": { "Smoggy": 3 } },
     "SLUMBERING_BEETLE": { "name": "熟睡甲虫", "hp": 86, "actionValue": 21, "attackFrequency": 1, "preferences": { "attack": 20, "buff": 80, "defend": 0, "playerDebuff": 0 }, "stage": "act2", "openingStates": [], "randomMoves": ["ROLL_OUT_MOVE"] },
     "SNAPPING_JAXFRUIT": { "name": "闪光贾克斯果", "hp": 32, "actionValue": 4, "attackFrequency": 1, "preferences": { "attack": 55.56, "buff": 44.44, "defend": 0, "playerDebuff": 0 } },
-    "SNEAKY_GREMLIN": { "name": "卑鄙地精", "hp": 12, "actionValue": 9, "attackFrequency": 1, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 } },
+    "SNEAKY_GREMLIN": { "name": "卑鄙地精", "hp": 12, "actionValue": 9, "attackFrequency": 1, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 }, "randomMoves": ["TACKLE_MOVE"] },
     "SOUL_FYSH": { "name": "灵魂异鱼", "hp": 211, "actionValue": 16.07, "attackFrequency": 0.6, "preferences": { "attack": 41.6, "buff": 8.36, "defend": 33.43, "playerDebuff": 16.61 }, "cards": [{ "card": "Beckon", "pile": "Draw", "weight": 3 }, { "card": "Beckon", "pile": "Discard", "weight": 1 }], "openingStates": ["INTANGIBLE", "REGEN", "VULNERABLE", "DEMISE", "DOOM"], "favorites": { "Beckon": 4, "Intangible": 3 } },
     "SOUL_NEXUS": { "name": "灵魂枢纽", "hp": 234, "actionValue": 27.75, "attackFrequency": 2, "preferences": { "attack": 77.57, "buff": 0, "defend": 0, "playerDebuff": 22.43 }, "stage": "act3" },
     "SPECTRAL_KNIGHT": { "name": "幽灵骑士", "hp": 93, "actionValue": 12, "attackFrequency": 1, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 }, "stage": "act3", "randomMoves": ["SOUL_SLASH", "SOUL_FLAME"], "fixedOpening": true },
@@ -116,7 +111,7 @@
     "THE_INSATIABLE": { "name": "无厌沙虫", "hp": 321, "actionValue": 20, "attackFrequency": 1.25, "preferences": { "attack": 93.62, "buff": 6.38, "defend": 0, "playerDebuff": 0 }, "nonAttackMultiplier": 0.25, "stage": "act2", "randomMoves": ["THRASH_MOVE", "THRASH_MOVE_2", "LUNGING_BITE_MOVE", "SALIVATE_MOVE"], "fixedOpening": true, "favorites": { "Strength": 3 } },
     "THE_LOST": { "name": "失落之物", "hp": 93, "actionValue": 8, "attackFrequency": 1, "preferences": { "attack": 50, "buff": 25, "defend": 0, "playerDebuff": 25 }, "stage": "act3", "randomizeAllMoves": true },
     "THE_OBSCURA": { "name": "胧光怪", "hp": 123, "actionValue": 9.2, "attackFrequency": 1, "preferences": { "attack": 88.99, "buff": 0, "defend": 11.01, "playerDebuff": 0 }, "stage": "act2", "randomMoves": ["PIERCING_GAZE_MOVE", "HARDENING_STRIKE_MOVE"], "fixedOpening": true },
-    "THIEVING_HOPPER": { "name": "偷窃草蜢", "hp": 79, "actionValue": 17.33, "attackFrequency": 0.75, "preferences": { "attack": 50, "buff": 25, "defend": 0, "playerDebuff": 25 }, "stage": "act2" },
+    "THIEVING_HOPPER": { "name": "偷窃草蜢", "hp": 79, "actionValue": 17.33, "attackFrequency": 0.75, "preferences": { "attack": 50, "buff": 25, "defend": 0, "playerDebuff": 25 }, "stage": "act2", "randomMoves": ["NAB_MOVE", "HAT_TRICK_MOVE"] },
     "TOADPOLE": { "name": "蟾蜍蝌蚪", "hp": 23, "actionValue": 8, "attackFrequency": 1.54, "preferences": { "attack": 91.68, "buff": 8.32, "defend": 0, "playerDebuff": 0 }, "nonAttackMultiplier": 0.35, "volatility": 0.18, "openingStates": ["THORNS", "PLATING", "WEAK", "VULNERABLE", "DEMISE", "DOOM"], "randomizeAllMoves": true, "favorites": { "Block": 2 } },
     "TORCH_HEAD_AMALGAM": { "name": "火炬头聚合体", "hp": 199, "actionValue": 17.33, "attackFrequency": 1.67, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 }, "stage": "act3" },
     "TOUGH_EGG": { "name": "结实的卵", "hp": 16, "actionValue": 4, "attackFrequency": 1, "preferences": { "attack": 100, "buff": 0, "defend": 0, "playerDebuff": 0 }, "stage": "act2", "randomMoves": ["NIBBLE_MOVE"] },

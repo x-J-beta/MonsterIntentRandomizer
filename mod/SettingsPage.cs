@@ -266,36 +266,40 @@ internal static class SettingsPage
             (Group: "preferences", Key: "playerDebuff", Label: "减益权重")
         };
         var inputs = new List<SpinBox>();
-        string[] ids = [];
-        string? selected = null;
+        var entries = new List<(string MonsterId, string? PhaseId)>();
+        (string MonsterId, string? PhaseId)? selected = null;
         foreach (var (group, key, label) in values)
         {
             var input = NumberRow(panel, label, key == "actionValue" ? 0.01 : 0, 100, 0.01);
             inputs.Add(input);
-            input.ValueChanged += value =>
-                EditMonster(monster => (group.Length == 0 ? monster : monster[group]!)[key] = value);
+            input.ValueChanged += value => EditMonster((monster, parent) =>
+            {
+                if (group.Length == 0)
+                    monster[key] = value;
+                else
+                {
+                    monster[group] ??= parent[group]!.DeepClone();
+                    monster[group]![key] = value;
+                }
+            });
         }
         addFavorite.Pressed += () =>
         {
             string key = ((EffectKind)effects.GetSelectedId()).ToString();
-            EditMonster(monster =>
-            {
-                monster["favorites"] ??= new JsonObject();
-                monster["favorites"]![key] ??= JsonValue.Create(3.0);
-            }, refresh: true);
+            EditMonster((monster, parent) => EditableFavorites(monster, parent)[key] ??= JsonValue.Create(3.0), refresh: true);
         };
-        randomize.Toggled += value => EditMonster(monster => monster["enabled"] = value, refresh: true);
-        requiredPower.TextChanged += value => EditMonster(monster =>
+        randomize.Toggled += value => EditMonster((monster, _) => monster["enabled"] = value, refresh: true);
+        requiredPower.TextChanged += value => EditMonster((monster, parent) =>
         {
             string id = value.Trim().ToUpperInvariant();
-            if (id.Length == 0)
+            if (id.Length == 0 && ReferenceEquals(monster, parent))
                 monster.AsObject().Remove("randomizeWhenPower");
             else
                 monster["randomizeWhenPower"] = id;
         });
         list.ItemSelected += i =>
         {
-            selected = ids[(int)i];
+            selected = entries[(int)i];
             RefreshValues(JsonNode.Parse(profiles.Text)!);
         };
 
@@ -305,23 +309,35 @@ internal static class SettingsPage
             {
                 var document = JsonNode.Parse(profiles.Text)!;
                 var monsters = document["monsters"]!.AsObject();
-                ids = monsters.OrderBy(pair => pair.Value?["name"]?.GetValue<string>())
-                    .Select(pair => pair.Key).ToArray();
+                entries.Clear();
                 list.Clear();
                 randomize.Disabled = true;
                 requiredPower.Editable = false;
-                foreach (var id in ids)
-                    list.AddItem($"{monsters[id]?["name"]?.GetValue<string>() ?? id}  ·  {id}");
-                int index = Array.IndexOf(ids, selected);
-                selected = index >= 0 ? ids[index] : ids.FirstOrDefault();
+                foreach (var (id, monster) in monsters.OrderBy(pair => pair.Value?["name"]?.GetValue<string>()))
+                {
+                    string name = monster?["name"]?.GetValue<string>() ?? id;
+                    if (monster?["phases"] is JsonObject { Count: > 0 } phases)
+                        foreach (var (phaseId, phase) in phases)
+                        {
+                            entries.Add((id, phaseId));
+                            list.AddItem($"{name}（{phase?["name"]?.GetValue<string>() ?? phaseId}）  ·  {id}");
+                        }
+                    else
+                    {
+                        entries.Add((id, null));
+                        list.AddItem($"{name}  ·  {id}");
+                    }
+                }
+                int index = selected is { } current ? Math.Max(0, entries.IndexOf(current)) : 0;
+                selected = entries.Count > 0 ? entries[index] : null;
                 if (selected != null)
-                    list.Select(index < 0 ? 0 : index);
+                    list.Select(index);
                 RefreshValues(document);
             }
             catch (Exception)
             {
                 list.Clear();
-                RefreshFavorites(null, false);
+                RefreshFavorites(null, false, null);
                 foreach (var input in inputs)
                     input.Editable = false;
                 availability.Text = "请先修复画像 JSON。";
@@ -330,28 +346,35 @@ internal static class SettingsPage
 
         void RefreshValues(JsonNode document)
         {
-            var monster = selected != null ? document["monsters"]?[selected] : null;
-            bool excluded = document["keepVanilla"]?.AsArray().Any(id => id?.GetValue<string>() == selected) ?? false;
-            bool active = monster != null && !excluded && monster["enabled"]?.GetValue<bool>() != false;
-            randomize.Disabled = monster == null || excluded;
+            var (parent, monster) = SelectedNodes(document);
+            bool isPhase = selected?.PhaseId != null;
+            bool excluded = document["keepVanilla"]?.AsArray().Any(id => id?.GetValue<string>() == selected?.MonsterId) ?? false;
+            bool parentDisabled = isPhase && parent?["enabled"]?.GetValue<bool>() == false;
+            bool active = monster != null && !excluded && !parentDisabled && monster["enabled"]?.GetValue<bool>() != false;
+            randomize.Text = isPhase ? "启用该阶段的随机出招" : "启用该怪物的随机出招";
+            randomize.Disabled = monster == null || excluded || parentDisabled;
             randomize.SetPressedNoSignal(active);
             requiredPower.Editable = active;
-            requiredPower.Text = monster?["randomizeWhenPower"]?.GetValue<string>() ?? "";
-            availability.Text = excluded ? "专属行为保留原版" : "";
+            requiredPower.Text = (monster?["randomizeWhenPower"] ?? parent?["randomizeWhenPower"])?.GetValue<string>() ?? "";
+            var allowed = monster?["allowedBuffs"] is JsonArray buffs
+                ? RuleConfiguration.Read<EffectKind[]>(JsonSerializer.SerializeToElement(buffs)) : null;
+            availability.Text = excluded ? "专属行为保留原版" : parentDisabled ? "画像 JSON 中的总开关已关闭" :
+                allowed != null ? $"可随机强化　{string.Join("、", allowed.Select(kind => IntentDetails.Names(kind).Chinese))}" : "";
             for (int i = 0; i < values.Length; i++)
             {
                 var (group, key, _) = values[i];
-                var value = group.Length == 0 ? monster?[key] ?? document["defaults"]?[key] : monster?[group]?[key];
+                var value = group.Length == 0 ? monster?[key] ?? parent?[key] ?? document["defaults"]?[key] :
+                    (monster?[group] ?? parent?[group])?[key];
                 if (value == null && key is "singleHitPreference" or "desireHitPreference")
                     value = JsonValue.Create(1.0);
                 bool present = value is JsonValue number && number.TryGetValue<double>(out _);
                 inputs[i].Editable = present && active;
                 inputs[i].SetValueNoSignal(present ? value!.GetValue<double>() : 0);
             }
-            RefreshFavorites(monster?["favorites"] as JsonObject, active);
+            RefreshFavorites((monster?["favorites"] ?? parent?["favorites"]) as JsonObject, active, allowed);
         }
 
-        void RefreshFavorites(JsonObject? configured, bool active)
+        void RefreshFavorites(JsonObject? configured, bool active, EffectKind[]? allowed)
         {
             effects.Clear();
             foreach (var child in favorites.GetChildren())
@@ -369,14 +392,15 @@ internal static class SettingsPage
                 ((Control)input.GetParent()).SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                 input.Editable = active;
                 input.SetValueNoSignal(value?.GetValue<double>() ?? 0);
-                input.ValueChanged += weight => EditMonster(monster => monster["favorites"]![key] = weight);
+                input.ValueChanged += weight => EditMonster((monster, parent) => EditableFavorites(monster, parent)[key] = weight);
                 var remove = new Button { Text = "移除", Disabled = !active };
-                remove.Pressed += () => EditMonster(monster => monster["favorites"]!.AsObject().Remove(key), refresh: true);
+                remove.Pressed += () => EditMonster((monster, parent) => EditableFavorites(monster, parent).Remove(key), refresh: true);
                 row.AddChild(remove);
             }
 
             foreach (var kind in Enum.GetValues<EffectKind>().OrderBy(kind => IntentDetails.Names(kind).Chinese))
                 if (ActionCatalog.CanFavor(kind) &&
+                    (allowed == null || !ActionEffect.IsMonsterBuff(kind) || allowed.Contains(kind)) &&
                     configured?.Any(pair => string.Equals(pair.Key, kind.ToString(), StringComparison.OrdinalIgnoreCase)) != true)
                     effects.AddItem(IntentDetails.Names(kind).Chinese, (int)kind);
             if (effects.ItemCount > 0)
@@ -386,14 +410,26 @@ internal static class SettingsPage
             addFavorite.Disabled = effects.Disabled;
         }
 
-        void EditMonster(Action<JsonNode> edit, bool refresh = false)
+        (JsonNode? Parent, JsonNode? Profile) SelectedNodes(JsonNode document)
+        {
+            if (selected is not { } entry)
+                return (null, null);
+            var parent = document["monsters"]?[entry.MonsterId];
+            return (parent, entry.PhaseId is { } phase ? parent?["phases"]?[phase] : parent);
+        }
+
+        static JsonObject EditableFavorites(JsonNode monster, JsonNode parent) =>
+            (monster["favorites"] ??= parent["favorites"]?.DeepClone() ?? new JsonObject()).AsObject();
+
+        void EditMonster(Action<JsonNode, JsonNode> edit, bool refresh = false)
         {
             try
             {
                 var document = JsonNode.Parse(profiles.Text)!;
-                if (selected == null || document["monsters"]?[selected] is not { } monster)
+                var (parent, monster) = SelectedNodes(document);
+                if (parent == null || monster == null)
                     return;
-                edit(monster);
+                edit(monster, parent);
                 profiles.Text = document.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
                 if (refresh)
                     RefreshValues(document);

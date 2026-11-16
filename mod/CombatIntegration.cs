@@ -156,7 +156,9 @@ internal static class CombatIntegration
             {
                 var context = Snapshot(creature, combat, encounter);
                 var phase = enemy.Rules.PhaseForMove(original.Id);
-                var configured = phase == null ? enemy.Profile : Adjust(encounter.Rules, phase.Apply(enemy.Rules.Profile));
+                var configured = enemy.Rules.Phases is { Count: > 0 }
+                    ? Adjust(encounter.Rules, phase?.Apply(enemy.Rules.Profile) ?? enemy.Rules.Profile)
+                    : enemy.Profile;
                 var profile = WithSurvival(configured, creature, combat, encounter);
                 enemy.Plan = encounter.Planner.Plan(enemy.Balance, profile,
                     encounter.Catalog.Generate(profile, context),
@@ -285,6 +287,7 @@ internal static class CombatIntegration
             creature.Side != CombatSide.Enemy || !creature.IsAlive ||
             encounter.Rules.KeepVanilla.Contains(monster.Id.Entry) ||
             FindProfile(encounter.Rules, monster) is not { Rules.Enabled: true } configured ||
+            !configured.Rules.HasEnabledStage ||
             monster.MoveStateMachine is not { } machine ||
             !SupportsRandomMoves(machine, configured.Rules, !encounter.InitialEnemies.Contains(creature)))
             return null;
@@ -331,7 +334,7 @@ internal static class CombatIntegration
     private static bool KeepsNativeMove(Creature creature, EnemyRules enemy, MoveState move, int round) =>
         (enemy.Rules.FixedOpening && round == 1) || !enemy.Rules.AllowsMove(move.Id) ||
         ProtectedByAlly(creature, enemy.Rules) ||
-        (enemy.Rules.RandomizeWhenPower?.Trim() is { Length: > 0 } id &&
+        (enemy.Rules.RequiredPower(enemy.Rules.PhaseForMove(move.Id))?.Trim() is { Length: > 0 } id &&
             !creature.Powers.Any(power => MatchesPower(power.Id.Entry, id)));
 
     private static bool ProtectedByAlly(Creature creature, MonsterRules rules) =>

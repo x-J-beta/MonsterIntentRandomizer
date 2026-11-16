@@ -79,7 +79,7 @@ public sealed record MonsterProfile(
     double BaseExpectedSurvivalTurns, IReadOnlyDictionary<IntentStyle, double> IntentWeights,
     IReadOnlyList<StatusPlacement>? CardPlacements = null, double PlayerActionValue = 0,
     double CurrentHp = 0, int RoomsEntered = 0, double SingleHitPreference = 1, double DesireHitPreference = 1,
-    IReadOnlyDictionary<EffectKind, double>? Favorites = null)
+    IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null)
 {
     public double HpPerSurvivalTurn => BaseExpectedSurvivalTurns > 0 ? CurrentHp / BaseExpectedSurvivalTurns : 0;
 

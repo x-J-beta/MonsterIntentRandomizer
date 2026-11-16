@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 25;
+    private const int SettingsRevision = 26;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     internal static RuleConfiguration Rules { get; private set; } = new(Defaults.Settings, Defaults.Profiles);
@@ -67,6 +67,12 @@ internal static class ModSettings
         if (stored.Revision >= SettingsRevision)
             return stored;
 
+        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
+        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
+        UpgradePhaseProfiles(profiles, defaultProfiles);
+        if (stored.Revision == 25)
+            return stored with { Profiles = JsonSerializer.SerializeToElement(profiles), Revision = SettingsRevision };
+
         var settings = JsonNode.Parse(stored.Settings.GetRawText())!;
         var actions = settings["actions"]!.AsObject();
         var defaultSettings = JsonNode.Parse(Defaults.Settings.GetRawText())!;
@@ -92,8 +98,6 @@ internal static class ModSettings
                     foreach (string key in new[] { "maxHp", "block", "priority", "firstPlayerWindow", "targetable" })
                         ally.Remove(key);
         }
-        var profiles = JsonNode.Parse(stored.Profiles.GetRawText())!;
-        var defaultProfiles = JsonNode.Parse(Defaults.Profiles.GetRawText())!["monsters"]!.AsObject();
         settings["opening"]!["states"]!["NEUROSURGE"] ??=
             defaultSettings["opening"]!["states"]!["NEUROSURGE"]!.DeepClone();
         UpgradeMonsterCoverage(profiles, defaultProfiles);
@@ -228,6 +232,27 @@ internal static class ModSettings
                 foreach (string key in map.Select(entry => entry.Key)
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
+        }
+    }
+
+    private static void UpgradePhaseProfiles(JsonNode profiles, JsonObject defaults)
+    {
+        var monsters = profiles["monsters"]!.AsObject();
+        if (monsters["CEREMONIAL_BEAST"]?["phases"]?["rush"] is JsonObject rush)
+            rush["allowedBuffs"] ??= defaults["CEREMONIAL_BEAST"]!["phases"]!["rush"]!["allowedBuffs"]!.DeepClone();
+
+        var added = new[] { "CRUSHER", "LIVING_SHIELD", "PHANTASMAL_GARDENER", "SNEAKY_GREMLIN", "THIEVING_HOPPER" };
+        var excluded = profiles["keepVanilla"] as JsonArray;
+        foreach (string id in added)
+        {
+            if (monsters[id] is JsonObject profile)
+                profile["randomMoves"] ??= defaults[id]!["randomMoves"]!.DeepClone();
+            else
+                monsters[id] = defaults[id]!.DeepClone();
+
+            var previous = excluded?.FirstOrDefault(entry => entry?.GetValue<string>() == id);
+            if (previous != null)
+                excluded!.Remove(previous);
         }
     }
 

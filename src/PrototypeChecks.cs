@@ -195,6 +195,11 @@ internal static class PrototypeChecks
         };
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs, CardStartingPlayerActionValue: 10);
         var catalog = new ActionCatalog(catalogSettings);
+        var rush = new MonsterPhase("Rush", ["PLOW_MOVE"], AllowedBuffs: [EffectKind.Strength]);
+        var rushBuffs = catalog.Generate(rush.Apply(estimate), new ActionContext(6)).SelectMany(action => action.Effects!)
+            .Where(effect => ActionEffect.IsMonsterBuff(effect.Kind)).Select(effect => effect.Kind).ToHashSet();
+        if (!rushBuffs.SetEquals([EffectKind.Strength]))
+            throw new InvalidOperationException("Phase buff restrictions must also exclude defensive buffs.");
         var shellCatalog = new ActionCatalog(catalogSettings with
         {
             Buffs = new Dictionary<EffectKind, StatusValue> { [EffectKind.HardenedShell] = shell }

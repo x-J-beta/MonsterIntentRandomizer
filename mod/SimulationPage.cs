@@ -151,6 +151,8 @@ internal static class SimulationPage
         if (!monster.Enabled || rules.KeepVanilla.Contains(id))
             return "这个画像保留原版行动。";
         var phase = phaseId == null ? null : monster.Phases?.GetValueOrDefault(phaseId);
+        if (phase?.Enabled == false)
+            return $"{phase.Name}保留原版行动。";
         var profile = rules.PoolSettings.Adjust(phase?.Apply(monster.Profile) ?? monster.Profile, highAscension) with
         {
             BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
@@ -165,7 +167,7 @@ internal static class SimulationPage
             new Dictionary<string, IReadOnlyList<OpeningOption>> { [id] = candidates },
             new Dictionary<string, double> { [id] = profile.ActionValue }, rules.Draws, new Random(seed));
         bool phaseAllowsRandomization = !protectedByAlly &&
-            (string.IsNullOrWhiteSpace(monster.RandomizeWhenPower) || allowPhase);
+            (string.IsNullOrWhiteSpace(monster.RequiredPower(phase)) || allowPhase);
         var turns = ActionSimulation.Trace(rules, id, profile, opening, seed, rounds,
             phaseAllowsRandomization, rooms: rooms, enemyCount: allyHp > 0 ? 2 : 1, phase: phase);
         var randomized = turns.Where(turn => turn.Plan.Action != null).ToArray();
