@@ -65,7 +65,7 @@ internal static class IntentDetails
         bool chinese = LocManager.Instance.Language == "zhs";
         int n = effect.Amount;
         var (zh, en) = Names(effect.Kind);
-        if (effect.IsStatusCard)
+        if (effect.IsInsertedCard)
         {
             string destinations = DescribeDestinations(effect, chinese);
             return chinese ? (zh, $"加入 {n} 张{zh}（{destinations}）。") : (en, $"Adds {n} {en} ({destinations}).");
@@ -149,6 +149,8 @@ internal static class IntentDetails
             EffectKind.Soot => ("煤灰", "Soot"), EffectKind.Disintegration => ("瓦解", "Disintegration"),
             EffectKind.Debris => ("碎屑", "Debris"), EffectKind.Void => ("虚空", "Void"),
             EffectKind.WasteAway => ("衰朽", "Waste Away"), EffectKind.Slimed => ("黏液", "Slimed"),
+            EffectKind.Enthralled => ("执迷", "Enthralled"), EffectKind.Normality => ("凡庸", "Normality"),
+            EffectKind.BadLuck => ("霉运", "Bad Luck"), EffectKind.Debt => ("债务", "Debt"),
             EffectKind.Artifact => ("人工制品", "Artifact"), EffectKind.Barricade => ("壁垒", "Barricade"),
             EffectKind.Slippery => ("滑溜", "Slippery"),
             EffectKind.Vigor => ("活力", "Vigor"), EffectKind.Enrage => ("激怒", "Enrage"),

@@ -38,7 +38,7 @@ internal static class NativeActions
         EffectKind.Heal => new HealIntent(),
         _ when ActionEffect.IsDefensiveBuff(effect.Kind) => new DefendIntent(),
         _ when effect.Target == EffectTarget.Self => new BuffIntent(),
-        _ when effect.IsStatusCard => new StatusIntent(effect.Amount),
+        _ when effect.IsInsertedCard => new StatusIntent(effect.Amount),
         _ => new DebuffIntent()
     });
 
@@ -151,7 +151,7 @@ internal static class NativeActions
                 case EffectKind.EnergyDown:
                     await PowerCmd.Apply<NextTurnEnergyDownPower>(choice, living, amount, self, null);
                     break;
-                case var card when ActionEffect.IsCard(card):
+                case var _ when effect.IsInsertedCard:
                     await InsertStatus(living, effect);
                     break;
             }
@@ -177,6 +177,10 @@ internal static class NativeActions
         EffectKind.Void => Insert<VoidCard>(targets, effect),
         EffectKind.WasteAway => Insert<WasteAway>(targets, effect),
         EffectKind.Slimed => Insert<Slimed>(targets, effect),
+        EffectKind.Enthralled => Insert<Enthralled>(targets, effect),
+        EffectKind.Normality => Insert<Normality>(targets, effect),
+        EffectKind.BadLuck => Insert<BadLuck>(targets, effect),
+        EffectKind.Debt => Insert<Debt>(targets, effect),
         _ => throw new ArgumentOutOfRangeException(nameof(effect))
     };
 
@@ -270,7 +274,7 @@ internal static class NativeActions
 
     internal static bool HasActionEffect(EffectKind kind, Creature target)
     {
-        if (ActionEffect.IsCard(kind))
+        if (ActionEffect.IsCard(kind) || ActionEffect.IsCurseCard(kind))
         {
             string id = EffectPolicy.Id(kind);
             return target.Player?.PlayerCombatState is { } combat && combat.Hand.Cards.Concat(combat.DrawPile.Cards)

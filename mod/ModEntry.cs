@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 35;
+    private const int SettingsRevision = 36;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -215,9 +215,17 @@ internal static class ModSettings
             settings["playerAction"]!["useCombatDamage"] ??= false;
             if (stored.Revision < 32)
                 UpgradeDisabledWeights(settings);
-            UpgradeStatReductionWeights(settings, defaultSettings);
-            AddStatReductionFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
-            UpgradeChaosAndKnightDebuffs(settings, defaultSettings);
+            if (stored.Revision < 34)
+            {
+                UpgradeStatReductionWeights(settings, defaultSettings);
+                AddStatReductionFavorites(profiles["monsters"]!.AsObject(), defaultProfiles);
+            }
+            if (stored.Revision < 35)
+            {
+                UpgradeChaos(settings, defaultSettings);
+                AddActionDefaults(settings, defaultSettings, "Dampen", "Hex");
+            }
+            AddActionDefaults(settings, defaultSettings, "Enthralled", "Normality", "BadLuck", "Debt");
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -244,7 +252,7 @@ internal static class ModSettings
         }
     }
 
-    private static void UpgradeChaosAndKnightDebuffs(JsonNode settings, JsonNode defaults)
+    private static void UpgradeChaos(JsonNode settings, JsonNode defaults)
     {
         var pools = settings["pools"]!.AsObject();
         var defaultPools = defaults["pools"]!;
@@ -256,13 +264,16 @@ internal static class ModSettings
                 ? (oldThreshold - 1) / 4 : defaultPools["fullChaosBudgetAt"]!.GetValue<double>();
         }
         pools.Remove("chaosMultiplier");
+    }
 
+    private static void AddActionDefaults(JsonNode settings, JsonNode defaults, params string[] effects)
+    {
         var actions = settings["actions"]!;
         var defaultActions = defaults["actions"]!;
         foreach (string section in new[] { "valuation", "maxAmounts", "minAmounts", "weights", "policies" })
         {
             var entries = (actions[section] ??= new JsonObject()).AsObject();
-            foreach (string effect in new[] { "Dampen", "Hex" })
+            foreach (string effect in effects)
                 if (defaultActions[section]?[effect] is { } value)
                     entries[effect] ??= value.DeepClone();
         }

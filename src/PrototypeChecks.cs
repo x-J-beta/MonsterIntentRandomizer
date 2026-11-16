@@ -342,6 +342,31 @@ internal static class PrototypeChecks
             !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.StrengthDown) ||
             !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.DrawDown))
             throw new InvalidOperationException("The shared encounter limit should block exactly the special statuses.");
+        var curseFormulas = new Dictionary<EffectKind, Dictionary<string, double>>
+        {
+            [EffectKind.Enthralled] = new() { ["playerActionValue"] = 0.5 },
+            [EffectKind.Normality] = new() { ["playerActionValue"] = 0.5 },
+            [EffectKind.BadLuck] = new() { ["fixed"] = 20 },
+            [EffectKind.Debt] = new() { ["fixed"] = 10 }
+        };
+        var curseCatalog = new ActionCatalog(catalogSettings with
+        {
+            Valuation = new ActionValuation(curseFormulas),
+            Amounts = curseFormulas.Keys.ToDictionary(kind => kind, _ => new[] { 1 }),
+            Buffs = null
+        });
+        var curseProfile = varied with { PlayerActionValue = 50 };
+        var curseCandidates = curseCatalog.Generate(curseProfile, context).ToArray();
+        foreach (var (kind, expected) in new[] { (EffectKind.Enthralled, 25), (EffectKind.Normality, 25),
+                     (EffectKind.BadLuck, 20), (EffectKind.Debt, 10) })
+        {
+            var curse = curseCandidates.Single(action => action.Effects is [{ Kind: var card }] && card == kind);
+            Equal(expected, curse.Value, $"direct valuation for {kind}");
+            if (curse.Effects is not [{ IsSpecialStatus: true, Pile: StatusPile.Hand }])
+                throw new InvalidOperationException($"{kind} must be a special curse inserted into the hand.");
+        }
+        if (curseCatalog.Generate(curseProfile, spent).Any())
+            throw new InvalidOperationException("Curse cards must respect the shared encounter limit.");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixedProfile = varied with

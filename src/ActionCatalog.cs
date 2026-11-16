@@ -8,7 +8,7 @@ public enum EffectKind
     Thorns, TemporaryThorns, Soulbind, DrawDown, EnergyDown, Regen, Wait,
     HardenedShell, HardToKill, Plating, Wither, Amnesia, MindRot, Sadness, Infection, Sloth,
     Toxic, Soot, Disintegration, Debris, Void, WasteAway, Slimed, Artifact, Barricade, Slippery, Vigor, Enrage, PainfulStabs,
-    SteamEruption, Dampen, Hex
+    SteamEruption, Dampen, Hex, Enthralled, Normality, BadLuck, Debt
 }
 
 public enum EffectTarget { Self, Player }
@@ -26,7 +26,7 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Regen or EffectKind.Strength or EffectKind.Ritual or EffectKind.Thorns or EffectKind.TemporaryThorns
         or EffectKind.Artifact or EffectKind.Vigor or EffectKind.Enrage or EffectKind.SteamEruption || IsDefensiveBuff(kind) || IsRareBuff(kind)
         ? EffectTarget.Self : EffectTarget.Player;
-    public bool IsStatusCard => IsCard(Kind);
+    public bool IsInsertedCard => IsCard(Kind) || IsCurseCard(Kind);
     public static bool IsMonsterBuff(EffectKind kind) => TargetFor(kind) == EffectTarget.Self &&
         kind is not (EffectKind.Block or EffectKind.Heal);
     public static bool IsDefensiveBuff(EffectKind kind) => kind is EffectKind.Intangible or EffectKind.Plating or
@@ -44,16 +44,18 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Wither or EffectKind.Amnesia or EffectKind.MindRot or EffectKind.Sadness or EffectKind.Infection or
         EffectKind.Sloth or EffectKind.Toxic or EffectKind.Soot or EffectKind.Disintegration or EffectKind.Debris or
         EffectKind.Void or EffectKind.WasteAway or EffectKind.Slimed;
+    internal static bool IsCurseCard(EffectKind kind) =>
+        kind is EffectKind.Enthralled or EffectKind.Normality or EffectKind.BadLuck or EffectKind.Debt;
     public static bool UsesThreshold(EffectKind kind) =>
         kind is EffectKind.HardenedShell or EffectKind.HardToKill or EffectKind.WitheringPresence;
     public bool IsPlayerDebuff => Kind is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
-        EffectKind.Dampen or EffectKind.Hex;
+        EffectKind.Dampen or EffectKind.Hex || IsCurseCard(Kind);
     public bool IsSpecialStatus => IsSpecialStatusKind(Kind);
     public static bool IsSpecialStatusKind(EffectKind kind) => kind is EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Shrink or EffectKind.Soulbind or EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PainfulStabs or
-        EffectKind.Dampen or EffectKind.Hex;
+        EffectKind.Dampen or EffectKind.Hex || IsCurseCard(kind);
 
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
@@ -212,6 +214,9 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                     case EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.Dampen or EffectKind.Hex when canDebuff:
                         Add(kind, amount, IntentStyle.PlayerDebuff);
                         break;
+                    case var curse when ActionEffect.IsCurseCard(curse):
+                        Add(kind, amount, IntentStyle.PlayerDebuff, pile: StatusPile.Hand);
+                        break;
                     case var card when ActionEffect.IsCard(card):
                         var placements = profile.CardPlacements?.Where(place => place.Card == kind).ToArray();
                         if (placements is not { Length: > 0 })
@@ -237,11 +242,11 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         bool IsAvailable(EffectKind kind) => context.ActiveEffects?.Contains(kind) != true &&
             (context.SpecialStatusesRemaining > 0 || !ActionEffect.IsSpecialStatusKind(kind));
 
-        void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)
+        void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0, StatusPile? pile = null)
         {
             double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount);
             if (value > 0)
-                extras.Add((new ActionEffect(kind, amount), style, value, 1));
+                extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, 1));
         }
 
         void AddCards(EffectKind kind, int amount, StatusPlacement[] placements)
