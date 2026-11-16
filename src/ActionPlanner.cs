@@ -98,7 +98,10 @@ public sealed record MonsterProfile(
     }
 }
 
-public readonly record struct Pools(double ActionValue, double AttackDesire);
+public readonly record struct Pools(double ActionValue, double AttackDesire)
+{
+    internal int CompletedClawTurns { get; init; }
+}
 
 public sealed record ActionPlan(ActionCandidate? Action, Pools Granted, Pools After);
 
@@ -108,7 +111,8 @@ public sealed class ActionPlanner(PoolSettings settings)
         new(profile.ActionValue * settings.InitialActionValueShare - openingValue, settings.InitialAttackDesire);
 
     public ActionPlan Plan(Pools previous, MonsterProfile profile, IEnumerable<ActionCandidate> candidates,
-        Random random, bool canRandomize = true, Func<int, double, ActionCandidate?>? buildAttack = null)
+        Random random, bool canRandomize = true, Func<int, double, ActionCandidate?>? buildAttack = null,
+        int extraClawDesire = 0)
     {
         if (!canRandomize)
             return new ActionPlan(null, previous, previous);
@@ -117,7 +121,7 @@ public sealed class ActionPlanner(PoolSettings settings)
         double retainedDesire = previous.AttackDesire * settings.AttackDesireRetention;
         double turnShare = Math.Clamp(profile.AttackFrequency, 0, 1);
         double income = profile.ActionValue * (turnShare + (1 - turnShare) * profile.NonAttackMultiplier);
-        var granted = new Pools(retainedAction + income, retainedDesire + profile.AttackFrequency);
+        var granted = new Pools(retainedAction + income, retainedDesire + profile.AttackFrequency + extraClawDesire);
         double target = Math.Max(0, profile.ActionValue + retainedAction * settings.BalanceTargetWeight) * settings.DrawBudgetMultiplier;
         double attackFraction = profile.BudgetedAttackShare;
         double attackTarget = Jitter(target * attackFraction, profile.Volatility, random);

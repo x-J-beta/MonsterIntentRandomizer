@@ -107,11 +107,21 @@ internal sealed class RuleConfiguration
         monster.OpeningStates.Concat(OpeningValues.Where(state => state.Value.Common).Select(state => state.Key))
             .Distinct().Where(state => !EffectPolicy.TryGetKind(state, out var kind) || EffectPolicy.CanTargetMonster(kind, id));
 
-    internal ActionPlan PlanMove(string id, Pools previous, MonsterProfile profile, ActionContext context,
-        Random random, bool canRandomize = true) => canRandomize
-        ? Planner.Plan(previous, profile, Catalog.Generate(profile, context, id), random,
-            buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target))
-        : new ActionPlan(null, previous, previous);
+    internal ActionPlan PlanMove(string id, string? moveId, Pools previous, MonsterProfile profile, ActionContext context,
+        Random random, bool canRandomize = true)
+    {
+        if (!canRandomize)
+            return new ActionPlan(null, previous, previous);
+
+        bool clawPhase = UsesClawGrowth(id, moveId);
+        var plan = Planner.Plan(previous, profile, Catalog.Generate(profile, context, id), random,
+            buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target),
+            extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0);
+        return clawPhase ? plan with { After = plan.After with { CompletedClawTurns = previous.CompletedClawTurns + 1 } } : plan;
+    }
+
+    internal static bool UsesClawGrowth(string id, string? moveId) =>
+        id == "TEST_SUBJECT" && moveId == "MULTI_CLAW_MOVE";
 
     internal ActionContext TurnContext(int rooms, int enemyCount, int round) => TurnPrior with
     {
@@ -133,6 +143,7 @@ internal sealed class RuleConfiguration
                 if (phase.Moves is not { Length: > 0 } || phase.Moves.Any(move => !movesInPhases.Add(move)) ||
                     phase.ActionValue is <= 0 || phase.AttackFrequency is < 0 || phase.Volatility is < 0 ||
                     phase.NonAttackMultiplier is < 0 || phase.SingleHitPreference is < 0 || phase.DesireHitPreference is < 0 ||
+                    phase.Hp is <= 0 ||
                     phase.AllowedBuffs?.Any(kind => !ActionEffect.IsMonsterBuff(kind)) == true)
                     throw new ArgumentException("阶段招式须存在且不可跨阶段重复，行动参数须在有效范围内。");
         }
@@ -180,7 +191,8 @@ internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
 internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionValue = null, double? AttackFrequency = null,
     double? Volatility = null, double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
     IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null,
-    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null)
+    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null,
+    double? Hp = null)
 {
     internal MonsterProfile Apply(MonsterProfile profile) => profile with
     {

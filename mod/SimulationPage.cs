@@ -39,6 +39,18 @@ internal static class SimulationPage
 
         string[] ids = [];
         string[] phases = [];
+        phase.ItemSelected += _ =>
+        {
+            try
+            {
+                using var json = JsonDocument.Parse(profiles.Text);
+                SetPhaseHp(json.RootElement.GetProperty("monsters").GetProperty(ids[monster.Selected]));
+            }
+            catch (Exception error)
+            {
+                output.Text = $"无法读取阶段画像。{error.Message}";
+            }
+        };
         monster.ItemSelected += _ =>
         {
             try
@@ -106,9 +118,17 @@ internal static class SimulationPage
         void ReadSelectedMonster(JsonElement profilesDocument)
         {
             var entry = profilesDocument.GetProperty("monsters").GetProperty(ids[monster.Selected]);
-            hp.SetValueNoSignal(entry.GetProperty("hp").GetDouble());
             UpdatePhaseLabels(profilesDocument);
+            SetPhaseHp(entry);
             output.Text = "点击模拟生成该怪物的出招轨迹。";
+        }
+
+        void SetPhaseHp(JsonElement entry)
+        {
+            var phaseHp = phase.Visible && phase.Selected >= 0 &&
+                entry.GetProperty("phases").GetProperty(phases[phase.Selected]).TryGetProperty("hp", out var amount)
+                ? amount : entry.GetProperty("hp");
+            hp.SetValueNoSignal(phaseHp.GetDouble());
         }
 
         void UpdatePhaseLabels(JsonElement profilesDocument)
@@ -161,6 +181,8 @@ internal static class SimulationPage
         if (phase != null)
             result.AppendLine(phase.Name);
         result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
+        if (phase?.Moves.Any(move => RuleConfiguration.UsesClawGrowth(id, move)) == true)
+            result.AppendLine("阶段攻击欲望入账每个随机回合 +1");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
             $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
         if (sequence != null)

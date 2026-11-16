@@ -56,7 +56,7 @@ internal static class ActionSimulation
                     turn < firstEnemyAction + pick.State.Amount);
             var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
             bool canRandomize = hasMove && monster.AllowsMove(originalMove);
-            var plan = rules.PlanMove(monsterId, balances, profile, context,
+            var plan = rules.PlanMove(monsterId, originalMove, balances, profile, context,
                 MoveRandom.For(unchecked((uint)seed), rooms + 1, 1, turn), canRandomize);
             balances = plan.After;
             turns.Add(new SimulatedTurn(turn, plan, skipFromImbalance, originalMove));

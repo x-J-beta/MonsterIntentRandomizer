@@ -48,7 +48,7 @@ if (!configured.Enabled || phase?.Enabled == false ||
 
 int rooms = args.Length > 5 ? int.Parse(args[5], CultureInfo.InvariantCulture) :
     sample.TryGetProperty("rooms", out var roomCount) ? roomCount.GetInt32() : 0;
-double hp = entry.GetProperty("hp").GetDouble();
+double hp = phase?.Hp ?? entry.GetProperty("hp").GetDouble();
 var allyInputs = sample.GetProperty("allies").EnumerateArray().ToArray();
 var enemies = new[] { new SimulationEnemy(monsterId, hp,
     FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32()) }
@@ -66,6 +66,8 @@ string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var
 Console.WriteLine($"seed {seed}, {monsterId}, {ascension}, {stage}; target {profile.AttackFrequency:F2} attack hits/turn");
 if (phase != null)
     Console.WriteLine($"phase: {phase.Name}; action value: {profile.ActionValue:F2}");
+if (phase?.Moves.Any(move => RuleConfiguration.UsesClawGrowth(monsterId, move)) == true)
+    Console.WriteLine("attack desire income growth: +1 per randomized move");
 Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
 OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, MonsterProfile owner)
 {

@@ -155,7 +155,7 @@ internal static class CombatIntegration
                     ? Adjust(encounter.Rules, phase?.Apply(enemy.Rules.Profile) ?? enemy.Rules.Profile)
                     : enemy.Profile;
                 var profile = WithSurvival(configured, creature, combat, encounter);
-                enemy.Plan = encounter.Rules.PlanMove(__instance.Id.Entry, enemy.Balance, profile,
+                enemy.Plan = encounter.Rules.PlanMove(__instance.Id.Entry, original.Id, enemy.Balance, profile,
                     context, RandomFor(combat, creature.CombatId ?? 0, round));
                 enemy.RandomMove = enemy.Plan.Action is { } action ? NativeActions.Build(__instance, action, enemy.Rules) : null;
                 enemy.PlannedRound = round;

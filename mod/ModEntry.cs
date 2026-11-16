@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 28;
+    private const int SettingsRevision = 29;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -202,8 +202,12 @@ internal static class ModSettings
 
         StoredSettings Updated()
         {
-            UpgradeMoveRules(profiles, defaultProfiles, stored.Revision);
-            settings["buffs"]!["SteamEruption"] ??= defaultSettings["buffs"]!["SteamEruption"]!.DeepClone();
+            if (stored.Revision < 28)
+            {
+                UpgradeMoveRules(profiles, defaultProfiles, stored.Revision);
+                settings["buffs"]!["SteamEruption"] ??= defaultSettings["buffs"]!["SteamEruption"]!.DeepClone();
+            }
+            UpgradeRoster(profiles["monsters"]!.AsObject(), defaultProfiles);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -228,6 +232,31 @@ internal static class ModSettings
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
         }
+    }
+
+    private static void UpgradeRoster(JsonObject monsters, JsonObject defaults)
+    {
+        foreach (string id in new[] { "ARCHITECT", "BATTLE_FRIEND_V1", "BATTLE_FRIEND_V2", "BATTLE_FRIEND_V3",
+            "BYRDINE_MONSTER", "BYRDPIP", "OSTY", "PAELS_LEGION", "THE_ADVERSARY_MK_ONE", "THE_ADVERSARY_MK_TWO",
+            "THE_ADVERSARY_MK_THREE", "WUPPY" })
+            monsters.Remove(id);
+
+        var definition = defaults["TEST_SUBJECT"]!;
+        var subject = (monsters["TEST_SUBJECT"] ??= definition.DeepClone()).AsObject();
+        var kept = (subject["keepMoves"] ??= new JsonArray()).AsArray();
+        var existing = kept.Select(move => move!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+        var native = MovePresets.MoveIds("TEST_SUBJECT").ToHashSet(StringComparer.Ordinal);
+        const string respawn = "RESPAWN_MOVE";
+        if (native.IsSubsetOf(existing))
+            foreach (var move in kept.Where(move => move!.GetValue<string>() != respawn && native.Contains(move.GetValue<string>())).ToArray())
+                kept.Remove(move);
+        if (!existing.Contains(respawn))
+            kept.Add(respawn);
+
+        subject["phases"] ??= definition["phases"]!.DeepClone();
+        subject["animations"] ??= definition["animations"]!.DeepClone();
+        if (subject["hp"]?.GetValue<double>() == 1)
+            subject["hp"] = definition["hp"]!.DeepClone();
     }
 
     private static void UpgradePhaseProfiles(JsonNode profiles, JsonObject defaults)

@@ -8,6 +8,7 @@
     "KNOWLEDGE_DEMON": {"previous":{"actionValue":20.6,"deadlyEnemies":22.6,"attackFrequency":1.25,"preferences":{"attack":50,"buff":12.5,"defend":12.5,"playerDebuff":25},"fixedOpening":null,"openingStates":null},"preserved":["CURSE_OF_KNOWLEDGE_MOVE"],"note":"诅咒知识包含原版选项与计数"},
     "BYGONE_EFFIGY": {"previous":{"actionValue":13,"deadlyEnemies":15,"attackFrequency":0.5,"preferences":{"attack":50,"buff":50,"defend":0,"playerDebuff":0},"fixedOpening":null,"openingStates":null},"preserved":["SLEEP_MOVE","SLEEP_MOVE_2","WAKE_MOVE"],"note":"睡眠和苏醒保留"},
     "CEREMONIAL_BEAST": {"previous":{"actionValue":20.83,"deadlyEnemies":22.83,"attackFrequency":0.6,"preferences":{"attack":20,"buff":60,"defend":0,"playerDebuff":20},"fixedOpening":null,"openingStates":null},"preserved":["STAMP_MOVE","STUN_MOVE","BEAST_CRY_MOVE"],"note":"冲撞阶段按 PLOW_MOVE 取画像，随机自身强化只能获得力量。破防后踩踏和碾碎使用破防画像。原版破防阈值和状态转换生效。"},
+    "TEST_SUBJECT": {"preserved":["RESPAWN_MOVE"],"note":"两次复活、尸体留场和阶段能力沿用原版。原版招式 ID 选择三阶段画像。第二阶段每完成一个随机回合，后续攻击欲望入账增加 1。"},
     "MAGI_KNIGHT": {"preserved":["DAMPEN_MOVE"],"note":"保留魔法骑士开场第二招施加的原版专属减益。"},
     "PHANTASMAL_GARDENER": {"preserved":["ENLARGE_MOVE"],"note":"保留原版变大及力量成长。三种攻击可随机。"},
     "SNEAKY_GREMLIN": {"preserved":["SPAWNED_MOVE"],"note":"保留出场动作。冲撞可随机。"},
