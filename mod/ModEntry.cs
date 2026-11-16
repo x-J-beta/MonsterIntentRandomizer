@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 32;
+    private const int SettingsRevision = 33;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -213,7 +213,9 @@ internal static class ModSettings
                 MergeAliasedProfiles(profiles["monsters"]!.AsObject(), defaultProfiles);
             settings["playerAction"] ??= defaultSettings["playerAction"]!.DeepClone();
             settings["playerAction"]!["useCombatDamage"] ??= false;
-            UpgradeDisabledWeights(settings);
+            if (stored.Revision < 32)
+                UpgradeDisabledWeights(settings);
+            UpgradeStatReductionWeights(settings, defaultSettings);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -238,6 +240,19 @@ internal static class ModSettings
                     .Where(key => key.Equals("GainSteam", StringComparison.OrdinalIgnoreCase)).ToArray())
                     map.Remove(key);
         }
+    }
+
+    private static void UpgradeStatReductionWeights(JsonNode settings, JsonNode defaults)
+    {
+        if (settings["actions"]?["weights"] is not JsonObject weights)
+            return;
+
+        var defaultWeights = defaults["actions"]!["weights"]!;
+        foreach (var (id, baseWeight, perRoom) in new (string, double, double)[]
+            { ("StrengthDown", -0.15, 0.008), ("DexterityDown", RoomWeight.DisabledBase, 0) })
+            if (weights[id] is JsonObject weight && weight["base"]?.GetValue<double>() == baseWeight &&
+                (weight["perRoom"]?.GetValue<double>() ?? 0) == perRoom)
+                weights[id] = defaultWeights[id]!.DeepClone();
     }
 
     private static void UpgradeDisabledWeights(JsonNode settings)

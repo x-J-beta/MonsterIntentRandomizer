@@ -101,8 +101,8 @@
       "Smoggy": { "base": -0.23, "perRoom": 0.009 },
       "Tender": { "base": -0.18, "perRoom": 0.009 },
       "Shrink": { "base": -0.22, "perRoom": 0.01 },
-      "StrengthDown": { "base": -0.15, "perRoom": 0.008 },
-      "DexterityDown": { "base": -100 },
+      "StrengthDown": { "base": -0.12, "perRoom": 0.02 },
+      "DexterityDown": { "base": -0.10, "perRoom": 0.015 },
       "Soulbind": { "base": -0.19, "perRoom": 0.008 },
       "DrawDown": { "base": -0.21, "perRoom": 0.008 },
       "EnergyDown": { "base": -0.24, "perRoom": 0.008 }
