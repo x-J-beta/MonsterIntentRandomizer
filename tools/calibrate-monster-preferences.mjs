@@ -24,16 +24,20 @@ const normalize = value => value.replaceAll('_', '').toLowerCase();
 const valuation = new Map(Object.entries(settings.actions.valuation).map(([id, formula]) => [normalize(id), formula]));
 const buffValuation = new Map(Object.entries(settings.buffs).map(([id, buff]) => [normalize(id), buff.formula]));
 const round = value => Math.round(value * 100) / 100;
+const matches = (left, right) => left && right && styles.every(style =>
+    Math.abs((left[style] ?? 0) - (right[style] ?? 0)) < 1e-9);
 const midpoint = range => Array.isArray(range) && range.every(Number.isFinite)
     ? (range[0] + range[1]) / 2 : null;
 
-function moveSubset(monster, profile) {
+function moveSubset(monster, profile, phaseMoves) {
     const states = monster.stateMachine?.states ?? [];
     const kept = new Set(profile.keepMoves ?? []);
     const eligible = monster.moves.filter(move => {
         const statesForMove = states.filter(state => state.move_id === move.id);
         const moveIds = statesForMove.length ? statesForMove.map(state => state.id) : [move.id, `${move.id}_MOVE`];
-        return (statesForMove.length ? moveIds.some(id => !kept.has(id)) : moveIds.every(id => !kept.has(id))) &&
+        const allowed = phaseMoves ? moveIds.some(id => phaseMoves.includes(id) && !kept.has(id)) :
+            statesForMove.length ? moveIds.some(id => !kept.has(id)) : moveIds.every(id => !kept.has(id));
+        return allowed &&
             ['direct_attack', 'non_attack'].includes(move.kind) &&
             !move.nonAttackEffects.some(effect => ['summon', 'escape', 'special'].includes(effect.kind));
     });
@@ -102,13 +106,8 @@ function moveValues(move, profile, factors) {
     return { result, estimated: [...missing] };
 }
 
-const audit = {};
-for (const monster of archive.monsters) {
-    const profile = profiles.monsters[monster.id];
-    const known = nativeMoves[monster.id] ?? [];
-    if (!profile || profile.enabled === false || known.length > 0 && known.every(id => profile.keepMoves?.includes(id)))
-        continue;
-    const moves = moveSubset(monster, profile);
+function estimate(monster, profile, previousAudit, phaseMoves) {
+    const moves = moveSubset(monster, profile, phaseMoves);
     const stage = profile.stage ?? ({ 'Act 2 - Hive': 'act2', 'Act 3 - Glory': 'act3' }[monster.encounters?.[0]?.act]) ?? 'act1';
     const rooms = references[stage] ?? references.act1;
     const player = Math.pow(settings.playerAction.base + rooms / settings.playerAction.roomsPerStep, settings.playerAction.exponent);
@@ -128,13 +127,14 @@ for (const monster of archive.monsters) {
     }
     const total = Object.values(costs).reduce((a, b) => a + b, 0);
     if (total <= 0)
-        continue;
+        return null;
 
     const percentages = Object.fromEntries(styles.map(style => [style, round(100 * costs[style] / total)]));
     const largest = styles.reduce((best, style) => costs[style] > costs[best] ? style : best, styles[0]);
     percentages[largest] = round(percentages[largest] + 100 - Object.values(percentages).reduce((a, b) => a + b, 0));
-    audit[monster.id] = {
-        previous: existingAudit[monster.id]?.previous ?? profile.preferences,
+    return {
+        previous: previousAudit?.previous ?? profile.preferences,
+        before: matches(profile.preferences, percentages) ? previousAudit?.before ?? profile.preferences : profile.preferences,
         proposed: percentages,
         values: Object.fromEntries(styles.map(style => [style, round(costs[style])])),
         moves: moves.map(move => move.id),
@@ -142,18 +142,48 @@ for (const monster of archive.monsters) {
     };
 }
 
+const audit = {};
+for (const monster of archive.monsters) {
+    const profile = profiles.monsters[monster.id];
+    const known = nativeMoves[monster.id] ?? [];
+    if (!profile || profile.enabled === false || known.length > 0 && known.every(id => profile.keepMoves?.includes(id)))
+        continue;
+
+    const previous = existingAudit[monster.id];
+    const row = estimate(monster, profile, previous);
+    if (!row)
+        continue;
+    const phases = Object.entries(profile.phases ?? {}).flatMap(([id, phase]) => {
+        if (phase.enabled === false)
+            return [];
+        const result = estimate(monster, { ...profile, ...phase }, previous?.phases?.[id], phase.moves);
+        return result ? [[id, result]] : [];
+    });
+    if (phases.length > 0)
+        row.phases = Object.fromEntries(phases);
+    audit[monster.id] = row;
+}
+
 const header = {
     targetVersion: archive.targetVersion,
     method: '每个可随机的不同原版招式计一次值，内容相同的编号重复招式合并。攻击按总基础伤害，附带效果优先使用当前配置估值，再用归档估值中点。未知类别按画像的非攻击回合基准估算，未明塞牌按一张伤口的价格估算。四类价值归一到 100，攻击频次单独保留。',
     referenceRooms: references,
-    recalculated: Object.keys(audit).length
+    recalculated: Object.keys(audit).length,
+    phasesRecalculated: Object.values(audit).reduce((count, row) => count + Object.keys(row.phases ?? {}).length, 0)
 };
 const lines = Object.entries(audit).map(([id, row]) => `    ${JSON.stringify(id)}: ${JSON.stringify(row)}`);
 writeFileSync(auditPath, JSON.stringify(header, null, 2).replace(/\n}$/, ',\n') +
     `  "monsters": {\n${lines.join(',\n')}\n  }\n}\n`);
 if (process.argv.includes('--apply')) {
-    const updated = text.replace(/^(\s*"([A-Z0-9_]+)": \{[^\n]+?"preferences": )\{[^}]+\}/gm,
-        (line, prefix, id) => audit[id] ? prefix + JSON.stringify(audit[id].proposed) : line);
+    let monsterId;
+    const updated = text.replace(/^([ ]*)("([^"\n]+)": \{[^\n]*?"preferences": )(\{[^}]+\})/gm,
+        (line, indent, prefix, id, preferences) => {
+            if (indent.length === 4)
+                monsterId = id;
+            const result = indent.length === 4 ? audit[id] : audit[monsterId]?.phases?.[id];
+            return result && !matches(JSON.parse(preferences), result.proposed)
+                ? indent + prefix + JSON.stringify(result.proposed) : line;
+        });
     writeFileSync(profilesPath, updated);
 }
 
@@ -167,17 +197,22 @@ if (syncArgument >= 0) {
     const saved = config.Profiles?.monsters;
     if (!saved)
         throw new Error('The game config has no monster profiles.');
-    const matches = (left, right) => left && right && styles.every(style =>
-        Math.abs((left[style] ?? 0) - (right[style] ?? 0)) < 1e-9);
     let updated = 0;
+    let skipped = 0;
     for (const [id, row] of Object.entries(audit)) {
         const profile = saved[id];
-        if (!profile || matches(profile.preferences, row.proposed))
-            continue;
-        if (matches(profile.preferences, row.previous) || matches(profile.preferences, oldMixed[id]?.previous?.preferences)) {
+        sync(profile, row, oldMixed[id]?.previous?.preferences);
+        for (const [phase, result] of Object.entries(row.phases ?? {}))
+            sync(profile?.phases?.[phase], result);
+    }
+    function sync(profile, row, olderDefault) {
+        if (!profile?.preferences || matches(profile.preferences, row.proposed))
+            return;
+        if ([row.before, row.previous, olderDefault].some(value => matches(profile.preferences, value))) {
             profile.preferences = row.proposed;
             updated++;
-        }
+        } else
+            skipped++;
     }
     if (updated > 0) {
         copyFileSync(path, `${path}.preferences.bak`);
@@ -185,5 +220,5 @@ if (syncArgument >= 0) {
         writeFileSync(temporary, JSON.stringify(config, null, 2) + '\n');
         renameSync(temporary, path);
     }
-    console.log(`Updated ${updated} matching default preferences. Custom preferences were retained.`);
+    console.log(`Updated ${updated} matching defaults. Retained ${skipped} custom preference sets.`);
 }

@@ -74,7 +74,7 @@
 
 攻击频次以可随机回合为分母。固定开场、强制招和被玩家眩晕造成的回合另行处理。
 
-画像偏好由原版招式的四类估值合计归一化为 100。复合招的攻击和附带效果分别计价。内容相同的编号重复招式只计一次。`keepMoves` 中的专属招式从取样中排除。运行 `node tools/calibrate-monster-preferences.mjs --apply` 可重算画像。 [取样记录](data/monster-preference-values.json)
+画像偏好由原版招式的四类估值合计归一化为 100。复合招的攻击和附带效果分别计价。内容相同的编号重复招式只计一次。`keepMoves` 中的专属招式从取样中排除。分阶段画像按各阶段的原版招式分别计价。运行 `node tools/calibrate-monster-preferences.mjs --apply` 可重算画像。 [取样记录](data/monster-preference-values.json)
 
 仪式兽的 `phases` 依据原版招式 ID 选择冲撞或破防画像。原版能力决定何时切换，随机回合沿用同一个行动力池和攻击欲望池。模拟可选阶段。命令行可在房间数后指定 `rush` 或 `broken`。
 
