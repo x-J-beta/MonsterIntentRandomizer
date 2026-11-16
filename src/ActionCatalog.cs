@@ -232,7 +232,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
         (double Base, double Bonus) Weights(EffectKind kind, RoomWeight? roomWeight)
         {
             double roomFactor = roomWeight?.At(context.Rooms, settings.ChaosProgress) ?? 1;
-            return (roomFactor, (profile.Favorites?.GetValueOrDefault(kind) ?? 0) * roomFactor);
+            double favorite = profile.Favorites?.GetValueOrDefault(kind) ?? 0;
+            return (roomFactor, favorite * (roomWeight?.Base == -1 ? 1 : roomFactor));
         }
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0)

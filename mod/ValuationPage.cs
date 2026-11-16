@@ -120,7 +120,7 @@ internal static class ValuationPage
             AddCheck(content, "战斗中独特", policy?["unique"]?.GetValue<bool>() ?? defaultPolicy.Unique,
                 (root, value) => SetPolicy(root, id, "unique", value));
             var weight = config["weights"]?[id];
-            AddNumber(content, "基础权重（-1 停用）", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
+            AddNumber(content, "基础权重（-1 仅按偏好抽取）", weight?["base"]?.GetValue<double>() ?? 1, 0.001,
                 (root, number) => SetActionWeight(root, id, "base", number));
             AddNumber(content, "每房间权重变化", weight?["perRoom"]?.GetValue<double>() ?? 0, 0.001,
                 (root, number) => SetActionWeight(root, id, "perRoom", number));
@@ -142,7 +142,8 @@ internal static class ValuationPage
                 (root, value) => At(root)["stackable"] = value);
             AddCheck(content, "战斗中独特", state["unique"]?.GetValue<bool>() ?? false,
                 (root, value) => At(root)["unique"] = value);
-            AddNumber(content, "基础权重（-1 停用）", state["weight"]?.GetValue<double>() ?? 1, 0.001,
+            AddNumber(content, shared ? "基础权重（-1 仅按出招偏好抽取）" : "基础权重（-1 停用）",
+                state["weight"]?.GetValue<double>() ?? 1, 0.001,
                 (root, number) => At(root)["weight"] = number);
             AddNumber(content, "每房间权重变化", state["weightPerRoom"]?.GetValue<double>() ?? 0, 0.001,
                 (root, number) => At(root)["weightPerRoom"] = number);

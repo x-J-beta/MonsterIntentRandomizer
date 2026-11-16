@@ -221,16 +221,16 @@ internal static class PrototypeChecks
         } });
         var steamProfile = estimate with { Favorites = new Dictionary<EffectKind, double> { [EffectKind.SteamEruption] = 4 } };
         var steamActions = steamCatalog.Generate(steamProfile, new ActionContext(6), "WATERFALL_GIANT").ToArray();
-        if (steamActions.Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]) ||
-            steamActions.Single(action => action.Effects is [{ Kind: EffectKind.Regen, Amount: 5 }]).Style != IntentStyle.Defend)
-            throw new InvalidOperationException("Disabled Steam must stay disabled and Regen must use the defense pool.");
-        steamCatalog = new ActionCatalog(catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
-            { [EffectKind.SteamEruption] = steam } });
-        if (!steamCatalog.Generate(steamProfile, new ActionContext(6), "WATERFALL_GIANT")
+        var steamChoices = steamActions.Where(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]).ToArray();
+        Equal(0, steamChoices.Sum(action => action.Weight), "disabled Steam has zero base weight");
+        Equal(4, steamChoices.Sum(action => action.SharedWeightBonus), "explicit Steam preference overrides the disabled base weight");
+        if (steamActions.Single(action => action.Effects is [{ Kind: EffectKind.Regen, Amount: 5 }]).Style != IntentStyle.Defend)
+            throw new InvalidOperationException("Regen must use the defense pool.");
+        if (steamCatalog.Generate(estimate, new ActionContext(6), "WATERFALL_GIANT")
                 .Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]) ||
             steamCatalog.Generate(steamProfile, new ActionContext(6), "FLYCONID")
                 .Any(action => action.Effects is [{ Kind: EffectKind.SteamEruption }]))
-            throw new InvalidOperationException("The native Steam power only works on Waterfall Giant.");
+            throw new InvalidOperationException("Disabled Steam needs an explicit preference on its native monster.");
         var shellCatalog = new ActionCatalog(catalogSettings with
         {
             Buffs = new Dictionary<EffectKind, StatusValue> { [EffectKind.HardenedShell] = shell }
