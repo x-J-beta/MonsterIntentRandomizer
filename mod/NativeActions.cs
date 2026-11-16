@@ -1,3 +1,4 @@
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Commands.Builders;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -322,10 +323,8 @@ internal static class NativeActions
 
         if (state.Id == "VITAL_SPARK")
             return await VitalSparkIntegration.Apply(target, state.Amount);
-        if (state.Id is "ENVENOM" or "PAPER_CUTS")
-            return await ApplyRareBuff(target, state);
         var choice = new ThrowingPlayerChoiceContext();
-        var applied = state.Id switch
+        return state.Id switch
         {
             "STRENGTH" or "STRENGTH_DOWN" => await Apply<StrengthPower>(),
             "RITUAL" => await Apply<RitualPower>(),
@@ -337,6 +336,8 @@ internal static class NativeActions
                 await Apply<PersonalHivePower>(),
             "PERSONAL_HIVE" => await ApplyGenerator<RandomizedPersonalHivePower>(),
             "WITHERING_PRESENCE" => await ApplyGenerator<RandomizedWitheringPresencePower>(),
+            "ENVENOM" => await Apply<EnvenomPower>(),
+            "PAPER_CUTS" => await Apply<PaperCutsPower>(),
             "SLIPPERY" => await Apply<SlipperyPower>(),
             "REGEN" => await Apply<RegenPower>(),
             "PLATING" => await Apply<PlatingPower>(),
@@ -346,7 +347,7 @@ internal static class NativeActions
             "TEMPORARY_THORNS" => await ApplyTemporaryThorns(target, state.Amount),
             "ARTIFACT" => await Apply<ArtifactPower>(),
             "BARRICADE" => await Apply<BarricadePower>(),
-            "INTANGIBLE" => await Apply<IntangiblePower>(),
+            "INTANGIBLE" => await ApplyIntangible(),
             "WEAK" => await Apply<WeakPower>(),
             "POISON" => await Apply<PoisonPower>(),
             "SLOW" => await Apply<SlowPower>(),
@@ -357,13 +358,22 @@ internal static class NativeActions
             "IMBALANCED" => await Apply<ImbalancedPower>(),
             _ => 0
         };
-        return applied;
 
         async Task<int> Apply<T>() where T : PowerModel
         {
             int before = target.GetPower<T>()?.Amount ?? 0;
             await PowerCmd.Apply<T>(choice, target, state.Amount, target, null);
             return (target.GetPower<T>()?.Amount ?? 0) - before;
+        }
+
+        async Task<int> ApplyIntangible()
+        {
+            bool skipFirstTick = target.CombatState?.CurrentSide == CombatSide.Enemy &&
+                !target.HasPower<IntangiblePower>();
+            int applied = await Apply<IntangiblePower>();
+            if (skipFirstTick && applied > 0 && target.GetPower<IntangiblePower>() is { } power)
+                power.SkipNextDurationTick = true;
+            return applied;
         }
 
         async Task<int> ApplyThreshold<T>() where T : PowerModel
@@ -416,21 +426,5 @@ internal static class NativeActions
         if (power != null && granted > 0)
             CombatIntegration.TrackTemporaryThorns(combat, power, granted);
         return granted;
-    }
-
-    private static async Task<int> ApplyRareBuff(Creature owner, OpeningState state)
-    {
-        if (owner.CombatState == null)
-            return 0;
-
-        int before = OpeningPower(state.Id)?.Invoke(owner)?.Amount ?? 0;
-        var choice = new ThrowingPlayerChoiceContext();
-        var power = state.Id switch
-        {
-            "ENVENOM" => (PowerModel?)await PowerCmd.Apply<EnvenomPower>(choice, owner, state.Amount, owner, null),
-            "PAPER_CUTS" => await PowerCmd.Apply<PaperCutsPower>(choice, owner, state.Amount, owner, null),
-            _ => null
-        };
-        return power == null ? 0 : power.Amount - before;
     }
 }

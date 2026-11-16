@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 40;
+    private const int SettingsRevision = 41;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -237,20 +237,31 @@ internal static class ModSettings
                 AddLaterMonsterValuationDefaults(settings, defaultSettings);
                 AddDefaultFavorites(currentMonsters, defaultProfiles);
             }
-            if (currentMonsters["THIEVING_HOPPER"] is JsonObject hopper)
+            if (stored.Revision < 39)
             {
-                var favorites = (hopper["favorites"] ??= new JsonObject()).AsObject();
-                if (stored.Revision == 38 && favorites["Debt"]?.GetValue<double>() == 2)
-                    favorites.Remove("Debt");
-                favorites["DrawDown"] ??= defaultProfiles["THIEVING_HOPPER"]!["favorites"]!["DrawDown"]!.DeepClone();
+                if (currentMonsters["THIEVING_HOPPER"] is JsonObject hopper)
+                {
+                    var favorites = (hopper["favorites"] ??= new JsonObject()).AsObject();
+                    if (stored.Revision == 38 && favorites["Debt"]?.GetValue<double>() == 2)
+                        favorites.Remove("Debt");
+                    favorites["DrawDown"] ??= defaultProfiles["THIEVING_HOPPER"]!["favorites"]!["DrawDown"]!.DeepClone();
+                }
+                if (currentMonsters["GREMLIN_MERC"] is JsonObject merc)
+                {
+                    var favorites = merc["favorites"] ??= new JsonObject();
+                    favorites["Debt"] ??= defaultProfiles["GREMLIN_MERC"]!["favorites"]!["Debt"]!.DeepClone();
+                }
+                settings["pools"]!["externalMoveRandomSkip"] ??= defaultSettings["pools"]!["externalMoveRandomSkip"]!.DeepClone();
             }
-            if (currentMonsters["GREMLIN_MERC"] is JsonObject merc)
+            if (stored.Revision < 40)
+                UpgradeUniqueTerms(settings, defaultSettings);
+            if (currentMonsters["TEST_SUBJECT"]?["animations"] is JsonObject animations)
             {
-                var favorites = merc["favorites"] ??= new JsonObject();
-                favorites["Debt"] ??= defaultProfiles["GREMLIN_MERC"]!["favorites"]!["Debt"]!.DeepClone();
+                if (animations["buff"]?.GetValue<string>() == "BurnTrigger")
+                    animations["buff"] = defaultProfiles["TEST_SUBJECT"]!["animations"]!["buff"]!.DeepClone();
+                if (animations["playerDebuff"]?.GetValue<string>() == "BurnTrigger")
+                    animations.Remove("playerDebuff");
             }
-            settings["pools"]!["externalMoveRandomSkip"] ??= defaultSettings["pools"]!["externalMoveRandomSkip"]!.DeepClone();
-            UpgradeUniqueTerms(settings, defaultSettings);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),

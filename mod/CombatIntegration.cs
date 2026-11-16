@@ -214,6 +214,18 @@ internal static class CombatIntegration
             __result = CompletePlayerTurn(__result, __0, encounter);
     }
 
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(IntangiblePower), nameof(IntangiblePower.AfterSideTurnEnd))]
+    private static bool HonorIntangibleDurationFlag(IntangiblePower __instance, CombatSide side, ref Task __result)
+    {
+        if (side != CombatSide.Enemy || __instance.Owner.Side != CombatSide.Enemy || !__instance.SkipNextDurationTick)
+            return true;
+
+        // Native Intangible decrements directly, bypassing the duration flag.
+        __result = PowerCmd.TickDownDuration(__instance);
+        return false;
+    }
+
     internal static void TrackTemporaryThorns(ICombatState combat, ThornsPower power, int amount)
     {
         if (Encounters.TryGetValue(combat, out var encounter))
