@@ -100,7 +100,7 @@
 
 `unique` 将效果设为独特词条，施加时扣除全场共享额度。每战基础额度为 1，混沌达到 0.67 和 1 时各加 1。`stackable` 控制重复施加。不可叠加的普通状态检查目标当前状态，诅咒查看本场塞牌记录。基础权重为 `-100` 时停用开场抽取。效果目标按原版命令显示。
 
-`dotnet run -- --calibrate-effects data 360` 运行固定种子的离线比较。模型用合成卡组逐回合模拟抽牌、洗牌、能量、格挡、伤害和持续效果，对照同种子下没有该状态的战斗。状态贡献以玩家掉血与未结算怪物血量折算，并用额外 6 点预告攻击作参照。 [样本结果](data/effect-calibration.json) · [估值调整](data/effect-valuation-tuning.json)
+历史离线校准用合成卡组对比有无某状态的同种子战斗，再用额外 6 点预告攻击折算状态价值。 [历史样本结果](data/effect-calibration.json) · [估值调整](data/effect-valuation-tuning.json)
 
 ## 生成流程
 

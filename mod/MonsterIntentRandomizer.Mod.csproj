@@ -12,7 +12,7 @@
     <ModInstallDir>$(GamePath)\mods\MonsterIntentRandomizer</ModInstallDir>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs;../src/EffectCalibration.cs" />
+    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs" />
     <EmbeddedResource Include="../data/settings.json" LogicalName="settings.json" />
     <EmbeddedResource Include="../data/monster-profiles.json" LogicalName="monster-profiles.json" />
     <EmbeddedResource Include="../data/monster-moves.json" LogicalName="monster-moves.json" />

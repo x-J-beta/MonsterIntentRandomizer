@@ -8,18 +8,6 @@ if (args.Length > 0 && args[0] == "--check")
     return;
 }
 
-if (args.Length > 0 && args[0] == "--calibrate-effects")
-{
-    string configDir = args.Length > 1 ? args[1] : "data";
-    int seeds = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 320;
-    if (seeds < 1)
-        throw new ArgumentOutOfRangeException(nameof(seeds));
-    using var calibrationSettings = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "settings.json")));
-    using var calibrationProfiles = JsonDocument.Parse(File.ReadAllText(Path.Combine(configDir, "monster-profiles.json")));
-    EffectCalibration.Run(new RuleConfiguration(calibrationSettings.RootElement, calibrationProfiles.RootElement, ReadMoves(configDir)), seeds);
-    return;
-}
-
 string folder = args.Length > 3 ? args[3] : Path.Combine(Directory.GetCurrentDirectory(), "data");
 var inputs = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 inputs.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
