@@ -4,6 +4,9 @@ internal static class PrototypeChecks
 {
     public static void Run()
     {
+        Equal(3, CombatMath.AttackAnimationCount(4), "multi-hit animation rounds up");
+        Equal(4, CombatMath.AttackAnimationCount(8), "perfect cubes do not add an animation");
+        Equal(9, CombatMath.AttackAnimationCount(27), "animation count follows two-thirds power");
         var estimate = new MonsterProfile(10, 0.15, 1.5, 0.35, 4, new Dictionary<IntentStyle, double>());
         Equal(-3, OpeningValuation.Evaluate(Status("amount*actionValue", -0.3), estimate, 1), "opening vulnerable");
         Equal(9, OpeningValuation.Evaluate(Status("amount*actionValue", 0.9), estimate, 1), "opening intangible");
@@ -195,6 +198,9 @@ internal static class PrototypeChecks
         };
         var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs, CardStartingPlayerActionValue: 10);
         var catalog = new ActionCatalog(catalogSettings);
+        var clawBuffs = catalog.Generate(estimate, new ActionContext(6), extraBuffHits: estimate.BaseExpectedSurvivalTurns / 2).ToArray();
+        Equal(4.2, clawBuffs.Single(action => action.Id == "Strength 1").Value, "claw valuation uses the extra estimated hits");
+        Equal(9, clawBuffs.Single(action => action.Id == "Intangible 1").Value, "buffs without a hit factor retain their price");
         var rush = new MonsterPhase("Rush", ["PLOW_MOVE"], AllowedBuffs: [EffectKind.Strength]);
         var rushBuffs = catalog.Generate(rush.Apply(estimate), new ActionContext(6)).SelectMany(action => action.Effects!)
             .Where(effect => ActionEffect.IsMonsterBuff(effect.Kind)).Select(effect => effect.Kind).ToHashSet();

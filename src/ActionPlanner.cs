@@ -27,6 +27,13 @@ internal static class CombatMath
     public static double AttackDamagePerHit(double baseDamage, int strength = 0, bool weak = false,
         double weakDamageReduction = 0.25) =>
         Math.Floor(Math.Max(0, baseDamage + strength) * (weak ? 1 - weakDamageReduction : 1));
+
+    internal static int AttackAnimationCount(int hits)
+    {
+        long squared = (long)hits * hits;
+        long groups = (long)Math.Cbrt(squared);
+        return (int)(groups * groups * groups >= squared ? groups : groups + 1);
+    }
 }
 
 public sealed record PoolSettings(

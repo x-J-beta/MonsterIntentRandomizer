@@ -114,7 +114,9 @@ internal sealed class RuleConfiguration
             return new ActionPlan(null, previous, previous);
 
         bool clawPhase = UsesClawGrowth(id, moveId);
-        var plan = Planner.Plan(previous, profile, Catalog.Generate(profile, context, id), random,
+        var candidates = Catalog.Generate(profile, context, id,
+            extraBuffHits: clawPhase ? profile.BaseExpectedSurvivalTurns / 2 : 0);
+        var plan = Planner.Plan(previous, profile, candidates, random,
             buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target),
             extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0);
         return clawPhase ? plan with { After = plan.After with { CompletedClawTurns = previous.CompletedClawTurns + 1 } } : plan;

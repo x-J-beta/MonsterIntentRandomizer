@@ -1,4 +1,5 @@
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Commands.Builders;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
@@ -76,10 +77,7 @@ internal static class NativeActions
                 case EffectKind.Attack:
                     var attack = DamageCmd.Attack(amount).FromMonster(monster).WithHitCount(effect.Hits)
                         .WithHitFx("vfx/vfx_attack_blunt");
-                    if (string.IsNullOrWhiteSpace(attackAnimation))
-                        attack.WithNoAttackerAnim();
-                    else
-                        attack.WithAttackerAnim(attackAnimation, AnimationLeadTime);
+                    SetAttackAnimation(attack, self, attackAnimation, effect.Hits);
                     await attack.Execute(choice);
                     break;
                 case EffectKind.Block:
@@ -170,6 +168,39 @@ internal static class NativeActions
         EffectKind.Slimed => Insert<Slimed>(targets, effect),
         _ => throw new ArgumentOutOfRangeException(nameof(effect))
     };
+
+    private static void SetAttackAnimation(AttackCommand attack, Creature attacker, string? trigger, int hits)
+    {
+        if (string.IsNullOrWhiteSpace(trigger))
+        {
+            attack.WithNoAttackerAnim();
+            return;
+        }
+
+        int animationsRemaining = CombatMath.AttackAnimationCount(hits);
+        if (animationsRemaining == hits)
+        {
+            attack.WithAttackerAnim(trigger, AnimationLeadTime);
+            return;
+        }
+
+        int hitsRemaining = hits;
+        var animationRandom = new Random();
+        // The native callback runs once per hit before its visuals and damage.
+        attack.WithNoAttackerAnim().AfterAttackerAnim(() =>
+        {
+            if (animationsRemaining == 0)
+                return Task.CompletedTask;
+
+            int sample = animationRandom.Next(hitsRemaining);
+            hitsRemaining--;
+            if (sample >= animationsRemaining)
+                return Task.CompletedTask;
+
+            animationsRemaining--;
+            return CreatureCmd.TriggerAnim(attacker, trigger, AnimationLeadTime);
+        });
+    }
 
     private static async Task Insert<T>(IReadOnlyList<Creature> targets, ActionEffect effect) where T : CardModel
     {

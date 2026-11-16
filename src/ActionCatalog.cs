@@ -128,9 +128,11 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     internal static bool CanFavor(EffectKind kind) => Enum.IsDefined(kind) &&
         kind is not (EffectKind.Attack or EffectKind.Wait);
 
-    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null)
+    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null,
+        double extraBuffHits = 0)
     {
         bool canDebuff = !context.PlayerHasArtifact;
+        var buffProfile = extraBuffHits == 0 ? profile : profile with { AttackFrequency = profile.AttackFrequency + extraBuffHits };
         var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
@@ -151,15 +153,15 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                          let scale = TriggeredCardBuffs.Scale(kind, variant.Card, settings, profile)
                          from amount in buff.Doses(profile)
                          where current == 0 || amount < current
-                         let price = threshold ? OpeningValuation.ThresholdCost(buff, profile, current, amount)
-                             : OpeningValuation.Evaluate(buff, profile, amount)
+                         let price = threshold ? OpeningValuation.ThresholdCost(buff, buffProfile, current, amount)
+                             : OpeningValuation.Evaluate(buff, buffProfile, amount)
                          where price * scale > 0
                          select (Amount: amount, Value: price * scale, variant.Card, variant.Weight, Scale: scale)).ToArray();
             double doseWeight = doses.Sum(dose => dose.Weight);
             foreach (var dose in doses)
             {
                 var effect = new ActionEffect(kind, dose.Amount,
-                    Threshold: threshold ? new ThresholdPrice(buff, profile, dose.Value, dose.Scale) : null,
+                    Threshold: threshold ? new ThresholdPrice(buff, buffProfile, dose.Value, dose.Scale) : null,
                     GeneratedCard: dose.Card);
                 yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight * dose.Weight / doseWeight,
                     Effects: [effect], SharedWeightBonus: bonus * dose.Weight / doseWeight);
