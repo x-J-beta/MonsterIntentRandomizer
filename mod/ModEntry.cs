@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 36;
+    private const int SettingsRevision = 37;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -225,7 +225,12 @@ internal static class ModSettings
                 UpgradeChaos(settings, defaultSettings);
                 AddActionDefaults(settings, defaultSettings, "Dampen", "Hex");
             }
-            AddActionDefaults(settings, defaultSettings, "Enthralled", "Normality", "BadLuck", "Debt");
+            var curseIds = Enum.GetValues<EffectKind>().Where(ActionEffect.IsCurseCard)
+                .Select(kind => kind.ToString()).ToArray();
+            if (stored.Revision < 36)
+                AddActionDefaults(settings, defaultSettings, curseIds);
+            else
+                UpgradeCurseStacking(settings, curseIds);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -277,6 +282,15 @@ internal static class ModSettings
                 if (defaultActions[section]?[effect] is { } value)
                     entries[effect] ??= value.DeepClone();
         }
+    }
+
+    private static void UpgradeCurseStacking(JsonNode settings, IEnumerable<string> effects)
+    {
+        var policies = settings["actions"]?["policies"];
+        var oldDefault = new JsonObject { ["target"] = "player", ["stackable"] = false };
+        foreach (string effect in effects)
+            if (policies?[effect] is JsonObject policy && JsonNode.DeepEquals(policy, oldDefault))
+                policy.Remove("stackable");
     }
 
     private static void UpgradeStatReductionWeights(JsonNode settings, JsonNode defaults)

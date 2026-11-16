@@ -12,7 +12,11 @@ internal static class ActionSimulation
         IReadOnlyList<OpeningPick> opening, int seed, int rounds,
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
-        var specialStatuses = opening.Select(pick => pick.State.SpecialStatus).OfType<EffectKind>().ToHashSet();
+        int specialStatusesSpent = opening.Count(pick => pick.State.IsSpecialStatus);
+        var usedEffects = new HashSet<EffectKind>();
+        foreach (var pick in opening)
+            if (EffectPolicy.TryGetKind(pick.State.Id, out var kind) && ActionEffect.TargetFor(kind) == EffectTarget.Self)
+                usedEffects.Add(kind);
         opening = opening.Where(pick => pick.MonsterId == monsterId).ToArray();
         var monster = rules.Monsters[monsterId];
         var fixedStatuses = rules.FixedKnightStatuses(enemyCount > 1 &&
@@ -24,11 +28,10 @@ internal static class ActionSimulation
         var activeEffects = new Dictionary<EffectKind, int>();
         var thresholds = new Dictionary<EffectKind, int>();
         var generatedCards = new Dictionary<EffectKind, EffectKind>();
-        var usedEffects = new HashSet<EffectKind>();
         int vigor = 0;
         int drawDown = 0, energyDown = 0;
         foreach (var pick in opening)
-            if (Enum.TryParse<EffectKind>(pick.State.Id.Replace("_", ""), ignoreCase: true, out var kind) &&
+            if (EffectPolicy.TryGetKind(pick.State.Id, out var kind) &&
                 ActionEffect.TargetFor(kind) == EffectTarget.Self)
                 RecordEffect(kind, pick.State.Amount, 0, pick.State.GeneratedCard);
         var history = new ActionHistory();
@@ -50,9 +53,10 @@ internal static class ActionSimulation
                 });
             bool skipFromImbalance = imbalanced && previousAttack && imbalanceRandom.NextDouble() < monster.FullBlockChance;
             var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
-                .Concat(usedEffects.Where(kind => rules.UniqueAction(kind) && !thresholds.ContainsKey(kind))).ToHashSet();
+                .Concat(usedEffects.Where(kind =>
+                    rules.UniqueAction(kind) && !thresholds.ContainsKey(kind) ||
+                    ActionEffect.IsCurseCard(kind) && !rules.Actions.PolicyFor(kind).Stackable)).ToHashSet();
             active.UnionWith(fixedStatuses);
-            active.UnionWith(specialStatuses);
             if (drawDown > 0 && !rules.Actions.PolicyFor(EffectKind.DrawDown).Stackable)
                 active.Add(EffectKind.DrawDown);
             if (energyDown > 0 && !rules.Actions.PolicyFor(EffectKind.EnergyDown).Stackable)
@@ -61,7 +65,7 @@ internal static class ActionSimulation
             {
                 Strength = strength + vigor,
                 Weakened = prior.Weakened || opening.Any(pick => pick.State.Id == "WEAK" && turn <= pick.State.Amount),
-                SpecialStatusesRemaining = Math.Max(0, rules.PoolSettings.SpecialStatusLimit - specialStatuses.Count),
+                SpecialStatusesRemaining = Math.Max(0, rules.PoolSettings.SpecialStatusLimit - specialStatusesSpent),
                 Thresholds = thresholds,
                 GeneratedCards = generatedCards,
                 ActiveEffects = active
@@ -88,7 +92,7 @@ internal static class ActionSimulation
                 {
                     RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
                     if (effect.IsSpecialStatus)
-                        specialStatuses.Add(effect.Kind);
+                        specialStatusesSpent++;
                 }
             }
             else
@@ -99,6 +103,8 @@ internal static class ActionSimulation
         void RecordEffect(EffectKind kind, int amount, int round, EffectKind? card)
         {
             usedEffects.Add(kind);
+            if (ActionEffect.IsCurseCard(kind))
+                return;
             if (kind == EffectKind.DrawDown)
             {
                 drawDown += amount;

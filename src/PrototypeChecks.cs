@@ -311,6 +311,14 @@ internal static class PrototypeChecks
             "specials share the opening allowance");
         Equal(2, OpeningValuation.Draw(sharedOptions, sharedValues, sharedDraws with { SpecialStatusLimit = 2 }, new Random(11)).Count,
             "higher chaos admits a second special in the same encounter");
+        var singleTarget = sharedDraws with { MaxPerMonster = 3, SpecialStatusLimit = 2 };
+        var sameSpecial = new OpeningOption(new OpeningState("ENVENOM", 1), 2, Stackable: true);
+        var repeatedSpecial = new Dictionary<string, IReadOnlyList<OpeningOption>> { ["first"] = [sameSpecial] };
+        Equal(2, OpeningValuation.Draw(repeatedSpecial, sharedValues, singleTarget, new Random(11)).Count,
+            "stackable copies of the same special can use two slots");
+        repeatedSpecial["first"] = [sameSpecial with { Stackable = false }];
+        Equal(1, OpeningValuation.Draw(repeatedSpecial, sharedValues, singleTarget, new Random(11)).Count,
+            "a nonstackable special still requires a separate target");
         var generated = catalog.Generate(varied, context).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));

@@ -2,8 +2,7 @@ namespace MonsterIntentRandomizer;
 
 public sealed record OpeningState(string Id, int Amount, EffectKind? GeneratedCard = null)
 {
-    internal EffectKind? SpecialStatus => EffectPolicy.TryGetKind(Id, out var kind) && ActionEffect.IsSpecialStatusKind(kind)
-        ? kind : null;
+    internal bool IsSpecialStatus => EffectPolicy.TryGetKind(Id, out var kind) && ActionEffect.IsSpecialStatusKind(kind);
 }
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
     IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
@@ -79,7 +78,7 @@ public static class OpeningValuation
                 continue;
 
             bool positive = roll < settings.None + settings.Positive;
-            var specialStatuses = selected.Select(pick => pick.State.SpecialStatus).OfType<EffectKind>().ToHashSet();
+            int specialStatuses = selected.Count(pick => pick.State.IsSpecialStatus);
             var available = candidates.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair =>
                 {
@@ -87,8 +86,7 @@ public static class OpeningValuation
                     var options = pair.Value.Select(option => PriceDoses(option, previous))
                         .Where(option => (previous.Length < settings.MaxPerMonster || option.PreviousThreshold.HasValue &&
                             previous.Any(pick => pick.State.Id == option.State.Id)) && option.Weight > 0 &&
-                        (option.State.SpecialStatus is not { } special || (specialStatuses.Count < settings.SpecialStatusLimit &&
-                            !specialStatuses.Contains(special))) &&
+                        (!option.State.IsSpecialStatus || specialStatuses < settings.SpecialStatusLimit) &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
                             (positive ? option.Value > 0 : option.Value < 0)) &&
                         previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable)) &&

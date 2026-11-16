@@ -61,14 +61,15 @@ internal static class NativeActions
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
             }
-            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat, effect.Kind))
+            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat, self, effect.Kind))
                 continue;
             if (!string.IsNullOrWhiteSpace(supportAnimation))
             {
                 await CreatureCmd.TriggerAnim(self, supportAnimation, AnimationLeadTime);
                 supportAnimation = null;
             }
-            if (effect.Threshold == null)
+            bool curse = ActionEffect.IsCurseCard(effect.Kind);
+            if (effect.Threshold == null && !curse)
                 CombatIntegration.RecordEffect(combat, effect.Kind);
 
             int amount = effect.Amount;
@@ -134,6 +135,11 @@ internal static class NativeActions
                 case EffectKind.Dampen:
                     foreach (var target in living)
                     {
+                        if (target.GetPower<DampenPower>() is { } activeDampen)
+                        {
+                            activeDampen.AddCaster(self);
+                            continue;
+                        }
                         var power = (DampenPower)ModelDb.Power<DampenPower>().ToMutable();
                         power.AddCaster(self);
                         await PowerCmd.Apply(choice, power, target, 1, self, null);
@@ -153,6 +159,8 @@ internal static class NativeActions
                     break;
                 case var _ when effect.IsInsertedCard:
                     await InsertStatus(living, effect);
+                    if (curse)
+                        CombatIntegration.RecordEffect(combat, effect.Kind);
                     break;
             }
         }
@@ -274,7 +282,7 @@ internal static class NativeActions
 
     internal static bool HasActionEffect(EffectKind kind, Creature target)
     {
-        if (ActionEffect.IsCard(kind) || ActionEffect.IsCurseCard(kind))
+        if (ActionEffect.IsCard(kind))
         {
             string id = EffectPolicy.Id(kind);
             return target.Player?.PlayerCombatState is { } combat && combat.Hand.Cards.Concat(combat.DrawPile.Cards)
