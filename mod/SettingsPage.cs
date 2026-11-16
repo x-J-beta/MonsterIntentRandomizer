@@ -120,6 +120,27 @@ internal static class SettingsPage
         AddNumber("玩家行动力基础值", 0.001, 100, 0.001, "playerAction", "base");
         AddNumber("玩家行动力房间除数", 0.001, 100, 0.001, "playerAction", "roomsPerStep");
         AddNumber("玩家行动力指数", 0.0001, 5, 0.0001, "playerAction", "exponent");
+        var useCombatDamage = new CheckButton
+        {
+            Text = "按本场玩家平均输出调整玩家行动力（10%）",
+            TooltipText = "每个玩家回合结束时更新，本场平均伤害占 10%，房间曲线占 90%。"
+        };
+        fields.AddChild(useCombatDamage);
+        useCombatDamage.Toggled += selected =>
+        {
+            try
+            {
+                var json = JsonNode.Parse(settings.Text)!.AsObject();
+                var playerAction = json["playerAction"] ??= new JsonObject();
+                playerAction["useCombatDamage"] = selected;
+                settings.Text = json.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                message.Text = "";
+            }
+            catch (Exception error)
+            {
+                message.Text = $"无法同步玩家输出设置。{error.Message}";
+            }
+        };
         AddNumber("开场抽取次数", 0, 20, 1, "opening", "attempts");
         AddNumber("单怪开场状态数量", 0, 10, 1, "opening", "maxPerMonster");
         AddNumber("开场净值上限倍率", 0, 3, 0.01, "opening", "maxEncounterValueMultiplier");
@@ -209,6 +230,11 @@ internal static class SettingsPage
             try
             {
                 using var json = JsonDocument.Parse(settings.Text);
+                bool isObject = json.RootElement.ValueKind == JsonValueKind.Object;
+                useCombatDamage.Disabled = !isObject;
+                useCombatDamage.SetPressedNoSignal(isObject && json.RootElement.TryGetProperty("playerAction", out var action) &&
+                    action.ValueKind == JsonValueKind.Object && action.TryGetProperty("useCombatDamage", out var option) &&
+                    option.ValueKind == JsonValueKind.True);
                 foreach (var (path, input) in quickInputs)
                 {
                     var current = json.RootElement;
@@ -224,6 +250,7 @@ internal static class SettingsPage
             }
             catch (JsonException)
             {
+                useCombatDamage.Disabled = true;
                 foreach (var (_, input) in quickInputs)
                     input.Editable = false;
                 message.Text = "请先修复配置 JSON。";

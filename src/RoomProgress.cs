@@ -1,10 +1,16 @@
 namespace MonsterIntentRandomizer;
 
-public sealed record PlayerActionCurve(double Base = 8, double RoomsPerStep = 3, double Exponent = 4.0 / 3)
+public sealed record PlayerActionCurve(double Base = 8, double RoomsPerStep = 3, double Exponent = 4.0 / 3,
+    bool UseCombatDamage = false)
 {
-    public double At(int rooms) => Math.Pow(Base + Math.Max(0, rooms) / RoomsPerStep, Exponent);
+    public double At(int rooms, double? averageDamage = null)
+    {
+        double baseline = Math.Pow(Base + Math.Max(0, rooms) / RoomsPerStep, Exponent);
+        return UseCombatDamage && averageDamage is double observed ? 0.9 * baseline + 0.1 * observed : baseline;
+    }
 
-    public double Survival(double hp, double allyHp, int rooms) => (hp + 0.5 * allyHp) / At(rooms);
+    public double Survival(double hp, double allyHp, int rooms, double? averageDamage = null) =>
+        (hp + 0.5 * allyHp) / At(rooms, averageDamage);
 }
 
 public sealed record RoomWeight(double Base = 1, double PerRoom = 0)

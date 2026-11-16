@@ -195,7 +195,7 @@
     "turnContext": { "missingHp": 6 },
     "rooms": 0
   },
-  "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333 },
+  "playerAction": { "base": 8, "roomsPerStep": 3, "exponent": 1.3333333333333333, "useCombatDamage": false },
   "buffs": {
     "SteamEruption": { "common": false, "maxAmount": 6, "formula": { "amount": 0.6 }, "weight": -1, "stackable": true },
     "Strength": { "common": true, "maxAmount": 6, "formula": { "amount*attackFrequency": 2.6 }, "weight": 2.5, "stackable": true, "weightPerRoom": 0 },

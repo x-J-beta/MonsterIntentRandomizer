@@ -125,10 +125,10 @@ internal sealed class RuleConfiguration
     internal static bool UsesClawGrowth(string id, string? moveId) =>
         id == "TEST_SUBJECT" && moveId == "MULTI_CLAW_MOVE";
 
-    internal ActionContext TurnContext(int rooms, int enemyCount, int round) => TurnPrior with
+    internal ActionContext TurnContext(int rooms, int enemyCount, int round, double? averageDamage = null) => TurnPrior with
     {
         Rooms = rooms,
-        ExpectedDamageAgainstMonster = PlayerAction.At(rooms) / Math.Max(1, enemyCount),
+        ExpectedDamageAgainstMonster = PlayerAction.At(rooms, averageDamage) / Math.Max(1, enemyCount),
         AllowHardCardLimit = round >= HardCardLimitFirstTurn
     };
 

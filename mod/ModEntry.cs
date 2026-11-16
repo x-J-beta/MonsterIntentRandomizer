@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 29;
+    private const int SettingsRevision = 30;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -207,7 +207,10 @@ internal static class ModSettings
                 UpgradeMoveRules(profiles, defaultProfiles, stored.Revision);
                 settings["buffs"]!["SteamEruption"] ??= defaultSettings["buffs"]!["SteamEruption"]!.DeepClone();
             }
-            UpgradeRoster(profiles["monsters"]!.AsObject(), defaultProfiles);
+            if (stored.Revision < 29)
+                UpgradeRoster(profiles["monsters"]!.AsObject(), defaultProfiles);
+            settings["playerAction"] ??= defaultSettings["playerAction"]!.DeepClone();
+            settings["playerAction"]!["useCombatDamage"] ??= false;
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),

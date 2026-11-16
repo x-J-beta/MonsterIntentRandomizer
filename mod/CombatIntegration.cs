@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History;
+using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -35,6 +36,8 @@ internal static class CombatIntegration
         public bool SpecialDebuffSpent { get; set; }
         public bool Ready { get; set; }
         public int Rooms { get; init; }
+        public int CompletedPlayerTurns { get; set; }
+        public double? AveragePlayerDamage { get; set; }
     }
 
     private sealed class EnemyRules(MonsterRules rules, MonsterProfile profile)
@@ -202,7 +205,7 @@ internal static class CombatIntegration
     private static void RecordPlayerTurn(ICombatState __0, CombatSide __1, ref Task __result)
     {
         if (__1 == CombatSide.Player && Encounters.TryGetValue(__0, out var encounter))
-            __result = ExpireTemporaryThorns(__result, encounter);
+            __result = CompletePlayerTurn(__result, __0, encounter);
     }
 
     internal static void TrackTemporaryThorns(ICombatState combat, ThornsPower power, int amount)
@@ -252,9 +255,19 @@ internal static class CombatIntegration
             state.ActualThresholdCost += cost;
     }
 
-    private static async Task ExpireTemporaryThorns(Task original, EncounterRules encounter)
+    private static async Task CompletePlayerTurn(Task original, ICombatState combat, EncounterRules encounter)
     {
         await original;
+        if (encounter.Rules.PlayerAction.UseCombatDamage && IsCurrentCombat(combat))
+        {
+            double damage = CombatManager.Instance.History.Entries.OfType<DamageReceivedEntry>()
+                .Where(entry => entry.Receiver.Side == CombatSide.Enemy &&
+                    (entry.Dealer?.Side ?? entry.CardSource?.Owner?.Creature.Side) == CombatSide.Player)
+                .Sum(entry => (double)entry.Result.TotalDamage);
+            encounter.CompletedPlayerTurns++;
+            encounter.AveragePlayerDamage = damage / encounter.CompletedPlayerTurns;
+        }
+
         foreach (var (power, amount) in encounter.TemporaryThorns)
         {
             if (power.Owner.IsAlive && power.Owner.Powers.Contains(power))
@@ -297,7 +310,8 @@ internal static class CombatIntegration
     private static ActionContext Snapshot(Creature self, ICombatState combat, EncounterRules encounter)
     {
         var player = combat.PlayerCreatures[0];
-        return encounter.Rules.TurnContext(encounter.Rooms, combat.Enemies.Count(enemy => enemy.IsAlive), combat.RoundNumber) with
+        return encounter.Rules.TurnContext(encounter.Rooms, combat.Enemies.Count(enemy => enemy.IsAlive),
+            combat.RoundNumber, encounter.AveragePlayerDamage) with
         {
             ExistingBlock = 0, // This action's Block and the next player attack follow the enemy block reset.
             MissingHp = self.MaxHp - self.CurrentHp,
@@ -323,8 +337,9 @@ internal static class CombatIntegration
         profile with
         {
             BaseExpectedSurvivalTurns = encounter.Rules.PlayerAction.Survival(self.CurrentHp,
-                combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp), encounter.Rooms),
-            PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms),
+                combat.Enemies.Where(enemy => enemy != self && enemy.IsAlive).Sum(enemy => (double)enemy.CurrentHp),
+                encounter.Rooms, encounter.AveragePlayerDamage),
+            PlayerActionValue = encounter.Rules.PlayerAction.At(encounter.Rooms, encounter.AveragePlayerDamage),
             CurrentHp = self.CurrentHp,
             RoomsEntered = encounter.Rooms + 1
         };

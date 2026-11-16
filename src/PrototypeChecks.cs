@@ -7,6 +7,13 @@ internal static class PrototypeChecks
         Equal(3, CombatMath.AttackAnimationCount(4), "multi-hit animation rounds up");
         Equal(4, CombatMath.AttackAnimationCount(8), "perfect cubes do not add an animation");
         Equal(9, CombatMath.AttackAnimationCount(27), "animation count follows two-thirds power");
+        var roomCurve = new PlayerActionCurve(Base: 20, Exponent: 1);
+        var combatCurve = roomCurve with { UseCombatDamage = true };
+        Equal(20, roomCurve.At(0, 50), "combat damage is opt-in");
+        Equal(20, combatCurve.At(0), "the room curve is used before a turn completes");
+        Equal(23, combatCurve.At(0, 50), "observed damage contributes ten percent");
+        Equal(18, combatCurve.At(0, 0), "a completed turn with zero damage contributes zero");
+        Equal(2, combatCurve.Survival(36, 20, 0, 50), "survival uses the same adjusted value");
         var estimate = new MonsterProfile(10, 0.15, 1.5, 0.35, 4, new Dictionary<IntentStyle, double>());
         Equal(-3, OpeningValuation.Evaluate(Status("amount*actionValue", -0.3), estimate, 1), "opening vulnerable");
         Equal(9, OpeningValuation.Evaluate(Status("amount*actionValue", 0.9), estimate, 1), "opening intangible");
