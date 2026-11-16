@@ -61,17 +61,13 @@ internal static class NativeActions
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
             }
-            if (effect.IsSpecialStatus && !CombatIntegration.SpendSpecialStatus(combat, self, effect.Kind))
+            if (effect.Unique && !CombatIntegration.SpendSpecialStatus(combat, self, effect.Kind))
                 continue;
             if (!string.IsNullOrWhiteSpace(supportAnimation))
             {
                 await CreatureCmd.TriggerAnim(self, supportAnimation, AnimationLeadTime);
                 supportAnimation = null;
             }
-            bool curse = ActionEffect.IsCurseCard(effect.Kind);
-            if (effect.Threshold == null && !curse)
-                CombatIntegration.RecordEffect(combat, effect.Kind);
-
             int amount = effect.Amount;
             switch (effect.Kind)
             {
@@ -95,8 +91,6 @@ internal static class NativeActions
                     {
                         CombatIntegration.RecordThresholdCost(combat, self,
                             OpeningValuation.ThresholdCost(pricing.State, pricing.Profile, before, applied) * pricing.Scale);
-                        if (applied > 0 && (before == 0 || applied < before))
-                            CombatIntegration.RecordEffect(combat, buff);
                     }
                     break;
                 case EffectKind.Weak:
@@ -159,8 +153,8 @@ internal static class NativeActions
                     break;
                 case var _ when effect.IsInsertedCard:
                     await InsertStatus(living, effect);
-                    if (curse)
-                        CombatIntegration.RecordEffect(combat, effect.Kind);
+                    if (ActionEffect.IsCurseCard(effect.Kind))
+                        CombatIntegration.RecordCurseInsertion(combat, effect.Kind);
                     break;
             }
         }
@@ -312,14 +306,9 @@ internal static class NativeActions
         _ => 0
     };
 
-    internal static bool CanApplyOpening(Creature target, OpeningOption option, IEnumerable<Creature> enemies)
-    {
-        string id = option.State.Id;
-        bool upgrade = option.PreviousThreshold is > 0 && option.Stackable;
-        return target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
-            (option.Stackable || !HasOpening(target, id)) &&
-            (!option.Unique || !enemies.Any(enemy => enemy.IsAlive && (!upgrade || enemy != target) && HasOpening(enemy, id)));
-    }
+    internal static bool CanApplyOpening(Creature target, OpeningOption option) =>
+        target.CanReceivePowers && (option.Value > 0 || !target.HasPower<ArtifactPower>()) &&
+        (option.Stackable || !HasOpening(target, option.State.Id));
 
     internal static async Task<int> ApplyOpening(Creature target, OpeningState state)
     {

@@ -1,11 +1,8 @@
 namespace MonsterIntentRandomizer;
 
-public sealed record OpeningState(string Id, int Amount, EffectKind? GeneratedCard = null)
-{
-    internal bool IsSpecialStatus => EffectPolicy.TryGetKind(Id, out var kind) && ActionEffect.IsSpecialStatusKind(kind);
-}
+public sealed record OpeningState(string Id, int Amount, EffectKind? GeneratedCard = null, bool Unique = false);
 public sealed record OpeningOption(OpeningState State, double Value, double Weight = 1,
-    IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false, bool Unique = false,
+    IReadOnlyList<OpeningOption>? Doses = null, bool Stackable = false,
     int? PreviousThreshold = null, double PreviousValue = 0);
 public sealed record ThresholdPrice(StatusValue State, MonsterProfile Profile, double Planned, double Scale = 1);
 public sealed record OpeningPick(string MonsterId, OpeningState State, double Value);
@@ -50,14 +47,14 @@ public static class OpeningValuation
         var doses = (from variant in variants
                      let scale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, variant.Card, actions, profile)
                      from amount in state.Doses(profile, kind == EffectKind.WitheringPresence ? 1 : strength)
-                     select new OpeningOption(new OpeningState(id, amount, variant.Card),
+                     select new OpeningOption(new OpeningState(id, amount, variant.Card, Unique: state.Unique),
                          Evaluate(state, profile, amount) * scale, variant.Weight)).ToArray();
         var representative = doses.FirstOrDefault(dose => dose.Value != 0) ??
-            new OpeningOption(new OpeningState(id, 0), 0);
+            new OpeningOption(new OpeningState(id, 0, Unique: state.Unique), 0);
         double previousScale = actions == null ? 1 : TriggeredCardBuffs.Scale(kind, existingCard, actions, profile);
         return representative with { Weight = state.RoomWeight.At(rooms, chaosProgress), Doses = doses,
             Stackable = state.Stackable || TriggeredCardBuffs.UsesNative(kind, monsterId),
-            Unique = state.Unique, PreviousThreshold = previousThreshold,
+            PreviousThreshold = previousThreshold,
             PreviousValue = Evaluate(state, profile, previousThreshold ?? 0) * previousScale };
     }
 
@@ -79,7 +76,7 @@ public static class OpeningValuation
                 continue;
 
             bool positive = roll < settings.None + settings.Positive;
-            int specialStatuses = selected.Count(pick => pick.State.IsSpecialStatus);
+            int uniqueSpent = selected.Count(pick => pick.State.Unique);
             var available = candidates.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair =>
                 {
@@ -87,12 +84,10 @@ public static class OpeningValuation
                     var options = pair.Value.Select(option => PriceDoses(option, previous))
                         .Where(option => (previous.Length < settings.MaxPerMonster || option.PreviousThreshold.HasValue &&
                             previous.Any(pick => pick.State.Id == option.State.Id)) && option.Weight > 0 &&
-                        (!option.State.IsSpecialStatus || specialStatuses < settings.SpecialStatusLimit) &&
+                        (!option.State.Unique || uniqueSpent < settings.SpecialStatusLimit) &&
                         (option.Doses?.Any(dose => positive ? dose.Value > 0 : dose.Value < 0) ??
                             (positive ? option.Value > 0 : option.Value < 0)) &&
-                        previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable)) &&
-                        (!option.Unique || selected.All(pick => pick.State.Id != option.State.Id ||
-                            option.PreviousThreshold.HasValue && option.Stackable && pick.MonsterId == pair.Key))).ToArray();
+                        previous.All(pick => !Conflicts(pick.State.Id, option.State.Id, option.Stackable))).ToArray();
                     return (pair.Key, Options: options);
                 }).Where(pair => pair.Options.Length > 0).ToArray();
             if (available.Length == 0)

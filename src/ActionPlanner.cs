@@ -169,7 +169,7 @@ public sealed class ActionPlanner(PoolSettings settings)
             parts.Add(attack);
 
         var extras = Shortlist(eligible.Where(candidate => !candidate.IsAttack && candidate.Effects is [{ } effect] &&
-                (specialStatusesRemaining > 0 || !effect.IsSpecialStatus)),
+                (specialStatusesRemaining > 0 || !effect.Unique)),
             profile, otherTarget, overdraft, attack == null, random);
         while (parts.Count < 2 && otherTarget > 0 && extras.Count > 0)
         {
@@ -180,10 +180,10 @@ public sealed class ActionPlanner(PoolSettings settings)
             parts.Add(extra);
             otherTarget -= extra.Value;
             var chosen = extra.Effects![0];
-            if (chosen.IsSpecialStatus)
+            if (chosen.Unique)
                 specialStatusesRemaining--;
             extras.RemoveAll(candidate => candidate.Effects![0].Kind == chosen.Kind ||
-                (specialStatusesRemaining == 0 && candidate.Effects[0].IsSpecialStatus));
+                (specialStatusesRemaining == 0 && candidate.Effects[0].Unique));
         }
 
         var action = Compose(parts);

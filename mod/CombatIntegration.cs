@@ -31,8 +31,8 @@ internal static class CombatIntegration
         public Random Random { get; } = random;
         public Dictionary<Creature, EnemyRules> Enemies { get; } = new();
         public Dictionary<ThornsPower, int> TemporaryThorns { get; } = new();
-        public HashSet<(EffectTarget Target, string Id)> UsedEffects { get; } = new();
-        public HashSet<EffectKind> FixedSpecialStatuses { get; init; } = [];
+        public HashSet<EffectKind> InsertedCurses { get; } = [];
+        public HashSet<EffectKind> FixedStatuses { get; init; } = [];
         public int SpecialStatusesSpent { get; set; }
         public int? LastMoveRandomSkipRollRound { get; set; }
         public bool Ready { get; set; }
@@ -78,7 +78,7 @@ internal static class CombatIntegration
             var encounter = new EncounterRules(rules, CombatRandom.For(combat.RunState.Rng.Seed, combat.RunState.TotalFloor))
             {
                 Rooms = rooms,
-                FixedSpecialStatuses = rules.FixedKnightStatuses(combat.Enemies.Select(enemy => enemy.ModelId.Entry))
+                FixedStatuses = rules.FixedKnightStatuses(combat.Enemies.Select(enemy => enemy.ModelId.Entry))
             };
             Encounters.Add(combat, encounter);
             var candidates = new Dictionary<string, IReadOnlyList<OpeningOption>>();
@@ -102,7 +102,7 @@ internal static class CombatIntegration
                     .Select(key => rules.OpeningOption(key, profile, rooms, NativeActions.ThresholdFor(creature, key),
                         EffectPolicy.TryGetKind(key, out var kind) ? RandomizedCardPower.Find(creature, kind)?.Card : null,
                         creature.ModelId.Entry))
-                    .Where(option => NativeActions.CanApplyOpening(creature, option, combat.Enemies))
+                    .Where(option => NativeActions.CanApplyOpening(creature, option))
                     .ToArray();
             }
 
@@ -124,12 +124,9 @@ internal static class CombatIntegration
                     : OpeningValuation.Evaluate(pricing, profile, applied);
                 if (pick.State.GeneratedCard.HasValue && EffectPolicy.TryGetKind(pick.State.Id, out var kind))
                     price *= TriggeredCardBuffs.Scale(kind, pick.State.GeneratedCard, rules.Actions, profile);
-                if (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0)
-                {
-                    encounter.UsedEffects.Add((EffectTarget.Self, pick.State.Id));
-                    if (pick.State.IsSpecialStatus)
-                        encounter.SpecialStatusesSpent++;
-                }
+                if (pick.State.Unique &&
+                    (threshold ? applied > 0 && (previousThreshold == 0 || applied < previousThreshold) : applied != 0))
+                    encounter.SpecialStatusesSpent++;
                 state.Balance = state.Balance with
                 {
                     ActionValue = state.Balance.ActionValue - price
@@ -178,7 +175,7 @@ internal static class CombatIntegration
                 enemy.ActualThresholdCost = 0;
                 enemy.PendingEffects.Clear();
                 foreach (var effect in enemy.Plan.Action?.Effects ?? [])
-                    if (effect.IsSpecialStatus || encounter.Rules.UniqueAction(effect.Kind))
+                    if (effect.Unique)
                         enemy.PendingEffects.Add(effect.Kind);
             }
 
@@ -242,27 +239,18 @@ internal static class CombatIntegration
             return false;
         if (!Encounters.TryGetValue(combat, out var encounter))
             return true;
-        var targetKind = ActionEffect.TargetFor(kind);
-        string id = EffectPolicy.Id(kind);
-        if (encounter.FixedSpecialStatuses.Contains(kind))
+        if (encounter.FixedStatuses.Contains(kind))
             return false;
-        var target = targetKind == EffectTarget.Self ? self : player;
         var policy = encounter.Rules.Actions.PolicyFor(kind, self.Monster?.Id.Entry);
-        bool used = encounter.UsedEffects.Contains((targetKind, id));
-        if (!policy.Stackable && (ActionEffect.IsCurseCard(kind) ? used : NativeActions.HasActionEffect(kind, target)))
-            return false;
-        if (ActionEffect.UsesThreshold(kind) && NativeActions.ThresholdFor(self, id) > 0)
-            return policy.Stackable;
-        return !policy.Unique ||
-            (!used &&
-                !(targetKind == EffectTarget.Self ? combat.Enemies : combat.PlayerCreatures)
-                    .Any(creature => creature.IsAlive && NativeActions.HasActionEffect(kind, creature)));
+        var target = ActionEffect.TargetFor(kind) == EffectTarget.Self ? self : player;
+        return policy.Stackable || !(ActionEffect.IsCurseCard(kind)
+            ? encounter.InsertedCurses.Contains(kind) : NativeActions.HasActionEffect(kind, target));
     }
 
-    internal static void RecordEffect(ICombatState combat, EffectKind kind)
+    internal static void RecordCurseInsertion(ICombatState combat, EffectKind kind)
     {
         if (Encounters.TryGetValue(combat, out var encounter))
-            encounter.UsedEffects.Add((ActionEffect.TargetFor(kind), EffectPolicy.Id(kind)));
+            encounter.InsertedCurses.Add(kind);
     }
 
     internal static void RecordThresholdCost(ICombatState combat, Creature owner, double cost)
@@ -330,7 +318,6 @@ internal static class CombatIntegration
         var pending = encounter.Enemies.Where(entry => entry.Key != self && entry.Key.IsAlive &&
             entry.Value.PlannedRound == round && entry.Value.SettledRound < round)
             .SelectMany(entry => entry.Value.PendingEffects).ToArray();
-        int reservedSpecials = pending.Count(ActionEffect.IsSpecialStatusKind);
         return encounter.Rules.TurnContext(encounter.Rooms, combat.Enemies.Count(enemy => enemy.IsAlive),
             combat.RoundNumber, encounter.AveragePlayerDamage) with
         {
@@ -347,10 +334,10 @@ internal static class CombatIntegration
                 .Where(entry => entry.Power != null).ToDictionary(entry => entry.Kind, entry => entry.Power!.Card),
             ActiveEffects = Enum.GetValues<EffectKind>().Where(kind =>
                 !CanUseEffect(combat, self, player, kind) ||
-                (pending.Contains(kind) && (encounter.Rules.UniqueAction(kind) ||
-                    ActionEffect.TargetFor(kind) == EffectTarget.Player && !encounter.Rules.Actions.PolicyFor(kind).Stackable))).ToHashSet(),
+                (pending.Contains(kind) && ActionEffect.TargetFor(kind) == EffectTarget.Player &&
+                    !encounter.Rules.Actions.PolicyFor(kind).Stackable)).ToHashSet(),
             SpecialStatusesRemaining = Math.Max(0,
-                encounter.Rules.PoolSettings.SpecialStatusLimit - encounter.SpecialStatusesSpent - reservedSpecials)
+                encounter.Rules.PoolSettings.SpecialStatusLimit - encounter.SpecialStatusesSpent - pending.Length)
         };
     }
 

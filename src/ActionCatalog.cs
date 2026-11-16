@@ -18,7 +18,7 @@ public sealed record StatusCardDestination(StatusPile Pile, int Amount);
 
 public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, StatusPile? Pile = null,
     IReadOnlyList<StatusCardDestination>? SplitDestinations = null, ThresholdPrice? Threshold = null,
-    EffectKind? GeneratedCard = null)
+    EffectKind? GeneratedCard = null, bool Unique = false)
 {
     public IReadOnlyList<StatusCardDestination> CardDestinations => SplitDestinations ?? [new(Pile ?? StatusPile.Discard, Amount)];
     public EffectTarget Target => TargetFor(Kind);
@@ -52,11 +52,6 @@ public sealed record ActionEffect(EffectKind Kind, int Amount, int Hits = 1, Sta
         EffectKind.Ringing or EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Smoggy or EffectKind.Tender or
         EffectKind.Frail or EffectKind.Poison or EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
         EffectKind.Dampen or EffectKind.Hex || IsCurseCard(Kind);
-    public bool IsSpecialStatus => IsSpecialStatusKind(Kind);
-    public static bool IsSpecialStatusKind(EffectKind kind) => kind is EffectKind.Smoggy or EffectKind.Tender or
-        EffectKind.Shrink or EffectKind.Soulbind or EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PainfulStabs or
-        EffectKind.Dampen or EffectKind.Hex || IsCurseCard(kind);
-
     public static bool IsRareBuff(EffectKind kind) => kind is EffectKind.PersonalHive or EffectKind.VitalSpark or
         EffectKind.WitheringPresence or EffectKind.Envenom or EffectKind.PaperCuts or EffectKind.PainfulStabs;
 }
@@ -147,7 +142,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
                 profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
                 continue;
             var (weight, bonus) = Weights(kind, buff.RoomWeight);
-            if (weight + bonus <= 0 || !IsAvailable(kind))
+            if (weight + bonus <= 0 || !IsAvailable(kind, buff.Unique))
                 continue;
             var style = ActionEffect.StyleFor(kind);
             bool threshold = ActionEffect.UsesThreshold(kind);
@@ -169,7 +164,7 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             {
                 var effect = new ActionEffect(kind, dose.Amount,
                     Threshold: threshold ? new ThresholdPrice(buff, buffProfile, dose.Value, dose.Scale) : null,
-                    GeneratedCard: dose.Card);
+                    GeneratedCard: dose.Card, Unique: buff.Unique);
                 yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight * dose.Weight / doseWeight,
                     Effects: [effect], SharedWeightBonus: bonus * dose.Weight / doseWeight);
             }
@@ -179,7 +174,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             if (ActionEffect.IsMonsterBuff(kind))
                 continue;
             var (weight, bonus) = Weights(kind, settings.Weights?.GetValueOrDefault(kind));
-            if (weight + bonus <= 0 || !IsAvailable(kind))
+            bool unique = settings.PolicyFor(kind).Unique;
+            if (weight + bonus <= 0 || !IsAvailable(kind, unique))
                 continue;
 
             int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;
@@ -234,7 +230,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             double total = extras.Sum(extra => extra.Weight);
             foreach (var extra in extras)
                 yield return new ActionCandidate(EffectName(extra.Effect), extra.Style, false, extra.Value, 0,
-                    extra.Weight / total * weight, Effects: [extra.Effect], SharedWeightBonus: extra.Weight / total * bonus);
+                    extra.Weight / total * weight, Effects: [extra.Effect with { Unique = unique }],
+                    SharedWeightBonus: extra.Weight / total * bonus);
         }
 
         (double Base, double Bonus) Weights(EffectKind kind, RoomWeight? roomWeight)
@@ -244,8 +241,8 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
             return (roomFactor, favorite * (roomWeight?.IsDisabled == true ? 1 : roomFactor));
         }
 
-        bool IsAvailable(EffectKind kind) => context.ActiveEffects?.Contains(kind) != true &&
-            (context.SpecialStatusesRemaining > 0 || !ActionEffect.IsSpecialStatusKind(kind));
+        bool IsAvailable(EffectKind kind, bool unique) => context.ActiveEffects?.Contains(kind) != true &&
+            (context.SpecialStatusesRemaining > 0 || !unique);
 
         void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0, StatusPile? pile = null)
         {

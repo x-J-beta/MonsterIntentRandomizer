@@ -21,6 +21,5 @@ public sealed record EffectPolicy(bool Stackable = true, bool Unique = false, Ef
             kind is EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Tender or EffectKind.Slippery or
                 EffectKind.Shrink or EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or
                 EffectKind.Barricade),
-        Unique: kind is EffectKind.VitalSpark or EffectKind.WitheringPresence,
         Target: ActionEffect.TargetFor(kind));
 }

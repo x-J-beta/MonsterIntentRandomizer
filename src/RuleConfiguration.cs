@@ -142,8 +142,6 @@ internal sealed class RuleConfiguration
         AllowHardCardLimit = round >= HardCardLimitFirstTurn
     };
 
-    internal bool UniqueAction(EffectKind kind) => Actions.PolicyFor(kind).Unique;
-
     internal HashSet<EffectKind> FixedKnightStatuses(IEnumerable<string> enemies)
     {
         var fixedStatuses = new HashSet<EffectKind>();

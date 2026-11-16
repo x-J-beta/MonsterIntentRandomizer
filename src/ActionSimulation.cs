@@ -12,11 +12,8 @@ internal static class ActionSimulation
         IReadOnlyList<OpeningPick> opening, Random random, int rounds,
         int firstEnemyAction = 1, int rooms = 0, int enemyCount = 1, string? phaseId = null)
     {
-        int specialStatusesSpent = opening.Count(pick => pick.State.IsSpecialStatus);
-        var usedEffects = new HashSet<EffectKind>();
-        foreach (var pick in opening)
-            if (EffectPolicy.TryGetKind(pick.State.Id, out var kind) && ActionEffect.TargetFor(kind) == EffectTarget.Self)
-                usedEffects.Add(kind);
+        int specialStatusesSpent = opening.Count(pick => pick.State.Unique);
+        var insertedCurses = new HashSet<EffectKind>();
         opening = opening.Where(pick => pick.MonsterId == monsterId).ToArray();
         var monster = rules.Monsters[monsterId];
         var fixedStatuses = rules.FixedKnightStatuses(enemyCount > 1 &&
@@ -52,9 +49,7 @@ internal static class ActionSimulation
                 });
             bool skipFromImbalance = imbalanced && previousAttack && random.NextDouble() < monster.FullBlockChance;
             var active = activeEffects.Where(entry => entry.Value >= turn).Select(entry => entry.Key)
-                .Concat(usedEffects.Where(kind =>
-                    rules.UniqueAction(kind) && !thresholds.ContainsKey(kind) ||
-                    ActionEffect.IsCurseCard(kind) && !rules.Actions.PolicyFor(kind).Stackable)).ToHashSet();
+                .Concat(insertedCurses.Where(kind => !rules.Actions.PolicyFor(kind).Stackable)).ToHashSet();
             active.UnionWith(fixedStatuses);
             if (drawDown > 0 && !rules.Actions.PolicyFor(EffectKind.DrawDown).Stackable)
                 active.Add(EffectKind.DrawDown);
@@ -89,7 +84,7 @@ internal static class ActionSimulation
                 foreach (var effect in action.Effects!)
                 {
                     RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
-                    if (effect.IsSpecialStatus)
+                    if (effect.Unique)
                         specialStatusesSpent++;
                 }
             }
@@ -100,9 +95,11 @@ internal static class ActionSimulation
 
         void RecordEffect(EffectKind kind, int amount, int round, EffectKind? card)
         {
-            usedEffects.Add(kind);
             if (ActionEffect.IsCurseCard(kind))
+            {
+                insertedCurses.Add(kind);
                 return;
+            }
             if (kind == EffectKind.DrawDown)
             {
                 drawDown += amount;

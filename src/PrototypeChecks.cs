@@ -219,7 +219,9 @@ internal static class PrototypeChecks
             [EffectKind.Strength] = Status("amount*attackFrequency", 1.2),
             [EffectKind.Intangible] = Status("amount*actionValue", 0.9)
         };
-        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts, Buffs: buffs, CardStartingPlayerActionValue: 10);
+        var catalogSettings = new ActionValuationSettings(valuation, 0.25, 1, amounts,
+            Policies: new Dictionary<EffectKind, EffectPolicy> { [EffectKind.Soulbind] = new(Unique: true) },
+            Buffs: buffs, CardStartingPlayerActionValue: 10);
         var catalog = new ActionCatalog(catalogSettings);
         var clawBuffs = catalog.Generate(estimate, new ActionContext(6), extraBuffHits: estimate.BaseExpectedSurvivalTurns / 2).ToArray();
         Equal(4.2, clawBuffs.Single(action => action.Id == "Strength 1").Value, "claw valuation uses the extra estimated hits");
@@ -281,7 +283,7 @@ internal static class PrototypeChecks
         var context = new ActionContext(6, MissingHp: 3);
         var withering = Status("survivalTurns*inverseAmount", 18, 6) with
         {
-            MinAmount = 2, Stackable = true,
+            MinAmount = 2, Stackable = true, Unique = true,
             GeneratedCards = new Dictionary<EffectKind, double> { [EffectKind.Wither] = 1, [EffectKind.Wound] = 1 }
         };
         var generators = catalogSettings with { Buffs = new Dictionary<EffectKind, StatusValue>
@@ -312,7 +314,7 @@ internal static class PrototypeChecks
         var sharedOptions = new Dictionary<string, IReadOnlyList<OpeningOption>>
         {
             ["first"] = [witheringOpening],
-            ["second"] = [new(new OpeningState("ENVENOM", 1), 2)]
+            ["second"] = [new(new OpeningState("ENVENOM", 1, Unique: true), 2)]
         };
         var sharedValues = new Dictionary<string, double> { ["first"] = 40, ["second"] = 40 };
         var sharedDraws = new OpeningDraws(0, 1, 0, 12, 1, 3);
@@ -321,13 +323,16 @@ internal static class PrototypeChecks
         Equal(2, OpeningValuation.Draw(sharedOptions, sharedValues, sharedDraws with { SpecialStatusLimit = 2 }, new Random(11)).Count,
             "higher chaos admits a second special in the same encounter");
         var singleTarget = sharedDraws with { MaxPerMonster = 3, SpecialStatusLimit = 2 };
-        var sameSpecial = new OpeningOption(new OpeningState("ENVENOM", 1), 2, Stackable: true);
+        var sameSpecial = new OpeningOption(new OpeningState("ENVENOM", 1, Unique: true), 2, Stackable: true);
         var repeatedSpecial = new Dictionary<string, IReadOnlyList<OpeningOption>> { ["first"] = [sameSpecial] };
         Equal(2, OpeningValuation.Draw(repeatedSpecial, sharedValues, singleTarget, new Random(11)).Count,
             "stackable copies of the same special can use two slots");
         repeatedSpecial["first"] = [sameSpecial with { Stackable = false }];
         Equal(1, OpeningValuation.Draw(repeatedSpecial, sharedValues, singleTarget, new Random(11)).Count,
             "a nonstackable special still requires a separate target");
+        repeatedSpecial["second"] = repeatedSpecial["first"];
+        Equal(2, OpeningValuation.Draw(repeatedSpecial, sharedValues, singleTarget, new Random(11)).Count,
+            "two targets can receive the same nonstackable unique effect");
         var generated = catalog.Generate(varied, context).ToArray();
         ActionCandidate Pure(EffectKind kind) => generated.First(action => !action.IsAttack &&
             action.Effects![0].Kind == kind && (!ActionEffect.IsCard(kind) || action.Effects[0].Pile == StatusPile.Draw));
@@ -359,9 +364,9 @@ internal static class PrototypeChecks
         Equal(6.6, secondAct.Single(action => action.Id == "EnergyDown 1").Value, "energy reduction uses player turn value");
         var spent = context with { SpecialStatusesRemaining = 0 };
         var afterSpecialStatus = catalog.Generate(varied, spent).SelectMany(action => action.Effects!).ToArray();
-        if (!generated.Any(action => action.Effects!.Any(effect => effect.IsSpecialStatus)) ||
-            afterSpecialStatus.Any(effect => effect.IsSpecialStatus) ||
-            generatorCatalog.Generate(generatorProfile, spent).Any(action => action.Effects!.Any(effect => effect.IsSpecialStatus)) ||
+        if (!generated.Any(action => action.Effects!.Any(effect => effect.Unique)) ||
+            afterSpecialStatus.Any(effect => effect.Unique) ||
+            generatorCatalog.Generate(generatorProfile, spent).Any(action => action.Effects!.Any(effect => effect.Unique)) ||
             !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.StrengthDown) ||
             !afterSpecialStatus.Any(effect => effect.Kind == EffectKind.DrawDown))
             throw new InvalidOperationException("The shared encounter limit should block exactly the special statuses.");
@@ -372,12 +377,14 @@ internal static class PrototypeChecks
             [EffectKind.BadLuck] = new() { ["fixed"] = 20 },
             [EffectKind.Debt] = new() { ["fixed"] = 10 }
         };
-        var curseCatalog = new ActionCatalog(catalogSettings with
+        var curseSettings = catalogSettings with
         {
             Valuation = new ActionValuation(curseFormulas),
             Amounts = curseFormulas.Keys.ToDictionary(kind => kind, _ => new[] { 1 }),
+            Policies = curseFormulas.Keys.ToDictionary(kind => kind, _ => new EffectPolicy(Unique: true)),
             Buffs = null
-        });
+        };
+        var curseCatalog = new ActionCatalog(curseSettings);
         var curseProfile = varied with { PlayerActionValue = 50 };
         var curseCandidates = curseCatalog.Generate(curseProfile, context).ToArray();
         foreach (var (kind, expected) in new[] { (EffectKind.Enthralled, 25), (EffectKind.Normality, 25),
@@ -385,11 +392,13 @@ internal static class PrototypeChecks
         {
             var curse = curseCandidates.Single(action => action.Effects is [{ Kind: var card }] && card == kind);
             Equal(expected, curse.Value, $"direct valuation for {kind}");
-            if (curse.Effects is not [{ IsSpecialStatus: true, Pile: StatusPile.Hand }])
+            if (curse.Effects is not [{ Unique: true, Pile: StatusPile.Hand }])
                 throw new InvalidOperationException($"{kind} must be a special curse inserted into the hand.");
         }
         if (curseCatalog.Generate(curseProfile, spent).Any())
             throw new InvalidOperationException("Curse cards must respect the shared encounter limit.");
+        var ordinaryCurses = new ActionCatalog(curseSettings with { Policies = null });
+        Equal(4, ordinaryCurses.Generate(curseProfile, spent).Count(), "removing unique releases curses from the shared allowance");
         Equal(0.3 * profile.ActionValue, Pure(EffectKind.Vulnerable).Value, "vulnerable equivalent turns");
         Equal(Pure(EffectKind.Block).Value, Pure(EffectKind.Block).ActualScore, "block contributes to actual score");
         var mixedProfile = varied with

@@ -25,7 +25,7 @@ internal static class ModSettings
 {
     private static string SavePath => ProjectSettings.GlobalizePath("user://mod_data/MonsterIntentRandomizer/config.json");
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private const int SettingsRevision = 39;
+    private const int SettingsRevision = 40;
     internal static StoredSettings Defaults { get; } = new(true, ReadResource("settings.json"), ReadResource("monster-profiles.json"), SettingsRevision);
     internal static StoredSettings Current { get; private set; } = Defaults;
     private static MonsterMovePresets MovePresets { get; } = RuleConfiguration.Read<MonsterMovePresets>(ReadResource("monster-moves.json"));
@@ -250,6 +250,7 @@ internal static class ModSettings
                 favorites["Debt"] ??= defaultProfiles["GREMLIN_MERC"]!["favorites"]!["Debt"]!.DeepClone();
             }
             settings["pools"]!["externalMoveRandomSkip"] ??= defaultSettings["pools"]!["externalMoveRandomSkip"]!.DeepClone();
+            UpgradeUniqueTerms(settings, defaultSettings);
             return stored with
             {
                 Settings = JsonSerializer.SerializeToElement(settings),
@@ -332,6 +333,27 @@ internal static class ModSettings
             foreach (var (effect, weight) in defaultFavorites)
                 favorites[effect] ??= weight?.DeepClone();
         }
+    }
+
+    private static void UpgradeUniqueTerms(JsonNode settings, JsonNode defaults)
+    {
+        var actions = settings["actions"]!;
+        var policies = actions["policies"] ??= new JsonObject();
+        foreach (var (id, policy) in defaults["actions"]!["policies"]!.AsObject())
+            if (policy?["unique"]?.GetValue<bool>() == true)
+            {
+                var saved = policies[id] ??= policy.DeepClone();
+                saved["unique"] = true;
+            }
+
+        var buffs = settings["buffs"]!;
+        foreach (var (id, buff) in defaults["buffs"]!.AsObject())
+            if (buff?["unique"]?.GetValue<bool>() == true && buffs[id] is JsonObject saved)
+                saved["unique"] = true;
+
+        // The legacy default made Vital Spark single-type without charging the shared allowance.
+        if (buffs["VitalSpark"] is JsonObject spark && spark["unique"]?.GetValue<bool>() == true)
+            spark.Remove("unique");
     }
 
     private static void UpgradeStatReductionWeights(JsonNode settings, JsonNode defaults)
