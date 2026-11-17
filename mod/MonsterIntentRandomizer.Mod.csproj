@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>MonsterIntentRandomizer</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GamePath Condition="'$(GamePath)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\..\common\Slay the Spire 2</GamePath>
@@ -15,6 +15,7 @@
     <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/PrototypeChecks.cs" />
     <EmbeddedResource Include="../data/settings.json" LogicalName="settings.json" />
     <EmbeddedResource Include="../data/monster-profiles.json" LogicalName="monster-profiles.json" />
+    <EmbeddedResource Include="../data/monster-categories.json" LogicalName="monster-categories.json" />
     <EmbeddedResource Include="../data/monster-moves.json" LogicalName="monster-moves.json" />
     <Reference Include="sts2" HintPath="$(GameAssemblyDir)\sts2.dll" Private="false" />
     <Reference Include="GodotSharp" HintPath="$(GameAssemblyDir)\GodotSharp.dll" Private="false" />

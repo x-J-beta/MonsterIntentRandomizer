@@ -12,7 +12,7 @@ public enum EffectKind
 }
 
 public enum EffectTarget { Self, Player }
-public enum StatusPile { Draw, Discard, Hand, Top, Bottom }
+public enum StatusPile { Draw, Discard, Hand, Top }
 
 public sealed record StatusCardDestination(StatusPile Pile, int Amount);
 
@@ -59,14 +59,19 @@ public sealed record StatusPlacement(EffectKind Card, StatusPile Pile, double We
     public override string ToString() => $"{Card}:{Pile}";
 }
 
-public sealed record StatusPlacementValues(double Draw = 1, double Discard = 0.75,
-    double Hand = 0.35, double Top = 1.33, double Bottom = 0.45)
+public sealed record StatusPlacementValues(double Draw = 1, double Discard = 0.75, double Top = 1.33)
 {
-    public double For(StatusPile pile) => pile switch
+    public double For(StatusPile pile, double combatTurns)
     {
-        StatusPile.Draw => Draw, StatusPile.Discard => Discard, StatusPile.Hand => Hand,
-        StatusPile.Top => Top, StatusPile.Bottom => Bottom, _ => 0
-    };
+        double longFightShare = Math.Clamp((combatTurns - 1) / 4, 0, 1);
+        return pile switch
+        {
+            StatusPile.Draw => Draw * (0.60 + 0.40 * longFightShare),
+            StatusPile.Discard => Discard * (0.20 + 0.80 * longFightShare),
+            StatusPile.Top => Top,
+            _ => throw new ArgumentOutOfRangeException(nameof(pile))
+        };
+    }
 }
 
 public sealed record ActionContext(
@@ -77,11 +82,10 @@ public sealed record ActionContext(
     bool AllowHardCardLimit = true, double MissingHp = 0,
     IReadOnlySet<EffectKind>? ActiveEffects = null,
     int SpecialStatusesRemaining = 1, int Rooms = 0, IReadOnlyDictionary<EffectKind, int>? Thresholds = null,
-    IReadOnlyDictionary<EffectKind, EffectKind>? GeneratedCards = null);
+    IReadOnlyDictionary<EffectKind, EffectKind>? GeneratedCards = null, int EnemyCount = 1);
 
 public sealed record ActionValuationSettings(
     ActionValuation Valuation, double WeakDamageReduction, int MinimumBaseDamagePerHit,
-    IReadOnlyDictionary<EffectKind, int[]> Amounts,
     StatusPlacementValues? PlacementValues = null,
     int MaxHardCardLimits = 1,
     IReadOnlyDictionary<EffectKind, RoomWeight>? Weights = null,
@@ -89,8 +93,10 @@ public sealed record ActionValuationSettings(
     IReadOnlyDictionary<EffectKind, EffectPolicy>? Policies = null,
     IReadOnlyDictionary<EffectKind, StatusValue>? Buffs = null, double ChaosProgress = 0,
     IReadOnlyDictionary<EffectKind, double>? CardPlayerActionValueRatios = null, double CardStartingPlayerActionValue = 16,
-    IReadOnlyDictionary<EffectKind, double>? LaterMonsterPercent = null)
+    IReadOnlyDictionary<EffectKind, double>? LaterMonsterPercent = null,
+    IReadOnlyDictionary<EffectKind, double>? MaximumCostMultipliers = null)
 {
+    internal double MaxCostMultiplier(EffectKind kind) => MaximumCostMultipliers?.GetValueOrDefault(kind, 1) ?? 1;
     internal double CardUnitValue(EffectKind card, MonsterProfile profile, int amount = 1)
     {
         double baseline = CardPlayerActionValueRatios?.GetValueOrDefault(EffectKind.Dazed, 0.05) ?? 0.05;
@@ -108,12 +114,20 @@ public sealed record ActionValuationSettings(
         : Policies?.GetValueOrDefault(kind) ?? EffectPolicy.Default(kind);
 }
 
+internal sealed record ActionOffer(EffectKind Kind, EffectPolicy Policy, double Weight, double Favorite,
+    double MaximumCost, Func<double, double, ActionEffect?, Random, ActionCandidate?> Create)
+{
+    internal IntentStyle Style => ActionEffect.StyleFor(Kind);
+    internal ActionCandidate? Quote(double target, double limit, ActionEffect? previous, Random random) =>
+        Create(target, Math.Min(MaximumCost, limit), previous, random);
+}
+
 public sealed record ActionHistory(int AddedStrength = 0, int AddedRitual = 0, int RitualStrength = 0)
 {
     // Record only actions which the caller actually executed.
     public ActionHistory Record(ActionCandidate action)
     {
-        var effects = action.Effects ?? [];
+        var effects = action.Effects;
         int addedRitual = effects.Where(effect => effect.Kind == EffectKind.Ritual).Sum(effect => effect.Amount);
         return new ActionHistory(
             AddedStrength + effects.Where(effect => effect.Kind == EffectKind.Strength).Sum(effect => effect.Amount),
@@ -126,153 +140,139 @@ public sealed class ActionCatalog(ActionValuationSettings settings)
     internal static bool CanFavor(EffectKind kind) => Enum.IsDefined(kind) &&
         kind is not (EffectKind.Attack or EffectKind.Wait);
 
-    public IEnumerable<ActionCandidate> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null,
+    internal IEnumerable<ActionOffer> Generate(MonsterProfile profile, ActionContext context, string? monsterId = null,
         double extraBuffHits = 0)
     {
         var buffProfile = extraBuffHits == 0 ? profile : profile with { AttackFrequency = profile.AttackFrequency + extraBuffHits };
-        var extras = new List<(ActionEffect Effect, IntentStyle Style, double Value, double Weight)>();
         foreach (var (kind, buff) in settings.Buffs?.AsEnumerable() ?? [])
         {
             if (!EffectPolicy.CanTargetMonster(kind, monsterId) ||
                 profile.AllowedBuffs is { } allowed && !allowed.Contains(kind))
                 continue;
-            var (weight, bonus) = Weights(kind, buff.RoomWeight);
-            if (weight + bonus <= 0 || !IsAvailable(kind, buff.Unique))
+            var (weight, favorite) = Weights(kind, buff.RoomWeight);
+            var policy = settings.PolicyFor(kind, monsterId);
+            double maximumCost = buff.MaximumCost(profile);
+            if (!IsAvailable(kind, policy, weight, favorite) || maximumCost <= 0)
                 continue;
-            var style = ActionEffect.StyleFor(kind);
             bool threshold = ActionEffect.UsesThreshold(kind);
             int current = threshold ? context.Thresholds?.GetValueOrDefault(kind) ?? 0 : 0;
-            if (current > 0 && !buff.Stackable)
+            if (current > 0 && !policy.Stackable)
                 continue;
             EffectKind? existingCard = context.GeneratedCards != null && context.GeneratedCards.TryGetValue(kind, out var card)
                 ? card : null;
-            var doses = (from variant in TriggeredCardBuffs.Variants(kind, buff, settings, context.Rooms, existingCard, monsterId)
-                         let scale = TriggeredCardBuffs.Scale(kind, variant.Card, settings, profile)
-                         from amount in buff.Doses(profile)
-                         where current == 0 || amount < current
-                         let price = threshold ? OpeningValuation.ThresholdCost(buff, buffProfile, current, amount)
-                             : OpeningValuation.Evaluate(buff, buffProfile, amount)
-                         where price * scale > 0
-                         select (Amount: amount, Value: price * scale, variant.Card, variant.Weight, Scale: scale)).ToArray();
-            double doseWeight = doses.Sum(dose => dose.Weight);
-            foreach (var dose in doses)
+            yield return new ActionOffer(kind, policy, weight, favorite, maximumCost, (target, limit, previous, random) =>
             {
-                var effect = new ActionEffect(kind, dose.Amount,
-                    Threshold: threshold ? new ThresholdPrice(buff, buffProfile, dose.Value, dose.Scale) : null,
-                    GeneratedCard: dose.Card, Unique: buff.Unique);
-                yield return new ActionCandidate(EffectName(effect), style, false, dose.Value, 0, weight * dose.Weight / doseWeight,
-                    Effects: [effect], SharedWeightBonus: bonus * dose.Weight / doseWeight);
-            }
+                int before = threshold && previous?.Kind == kind ? previous.Amount : current;
+                int lastImprovement = before > 0 ? before - 1 : int.MaxValue;
+                var choices = new List<(ActionCandidate Choice, double Weight)>();
+                var appliedCard = previous?.Kind == kind ? previous.GeneratedCard : existingCard;
+                foreach (var variant in TriggeredCardBuffs.Variants(kind, buff, settings, context.Rooms, appliedCard, monsterId))
+                {
+                    double scale = TriggeredCardBuffs.Scale(kind, variant.Card, settings, profile);
+                    double Price(int dose) => scale * (threshold
+                        ? OpeningValuation.ThresholdCost(buff, buffProfile, before, dose)
+                        : OpeningValuation.Evaluate(buff, buffProfile, dose));
+                    int amount = SpendAmount.Closest(buff.MinAmount, lastImprovement, target, limit, Price, descending: threshold);
+                    if (amount == 0)
+                        continue;
+                    double value = Price(amount);
+                    var effect = new ActionEffect(kind, amount, Unique: policy.Unique, GeneratedCard: variant.Card,
+                        Threshold: threshold ? new ThresholdPrice(buff, buffProfile, value, scale) : null);
+                    choices.Add((Candidate(effect, value), variant.Weight));
+                }
+                return ActionPlanner.Draw(choices, 0, random);
+            });
         }
-        foreach (var (kind, levels) in settings.Amounts)
+        foreach (var kind in settings.Valuation.Effects)
         {
-            if (ActionEffect.IsMonsterBuff(kind))
+            if (ActionEffect.IsMonsterBuff(kind) || kind is EffectKind.Attack or EffectKind.Wait)
                 continue;
-            var (weight, bonus) = Weights(kind, settings.Weights?.GetValueOrDefault(kind));
-            bool unique = settings.PolicyFor(kind).Unique;
-            if (weight + bonus <= 0 || !IsAvailable(kind, unique))
+            var (weight, favorite) = Weights(kind, settings.Weights?.GetValueOrDefault(kind));
+            var policy = settings.PolicyFor(kind, monsterId);
+            double maximumCost = profile.ActionValue * settings.MaxCostMultiplier(kind);
+            if (!IsAvailable(kind, policy, weight, favorite) || maximumCost <= 0 ||
+                (kind is EffectKind.Ringing or EffectKind.Smoggy && (!context.AllowHardCardLimit || settings.MaxHardCardLimits <= 0)))
                 continue;
 
             int minimum = settings.MinimumAmounts?.GetValueOrDefault(kind, 1) ?? 1;
-            extras.Clear();
-            foreach (int amount in levels.Where(amount => amount >= minimum).Distinct())
+            bool curse = ActionEffect.IsCurseCard(kind);
+            yield return new ActionOffer(kind, policy, weight, favorite, maximumCost, Quote);
+
+            ActionCandidate? Quote(double target, double limit, ActionEffect? previous, Random random)
             {
-                switch (kind)
+                if (ActionEffect.IsCard(kind))
+                    return DrawCards(kind, minimum, target, limit, policy.Unique, random);
+
+                double effectiveLimit = kind switch
                 {
-                    case EffectKind.Block:
-                        Add(kind, amount, IntentStyle.Defend,
-                            effectiveAmount: Math.Min(amount, Math.Max(0, context.ExpectedDamageAgainstMonster - context.ExistingBlock)));
-                        break;
-                    case EffectKind.Heal:
-                        Add(kind, amount, IntentStyle.Defend, effectiveAmount: Math.Min(amount, Math.Max(0, context.MissingHp)));
-                        break;
-                    case EffectKind.Ringing or EffectKind.Smoggy when amount == 1 &&
-                        context.AllowHardCardLimit && settings.MaxHardCardLimits > 0:
-                    case EffectKind.Tender or EffectKind.Shrink when amount == 1:
-                    case var debuff when debuff is EffectKind.Weak or EffectKind.Vulnerable or EffectKind.Tangled or
-                        EffectKind.StrengthDown or EffectKind.DexterityDown or EffectKind.Frail or EffectKind.Poison or
-                        EffectKind.Soulbind or EffectKind.DrawDown or EffectKind.EnergyDown or EffectKind.Dampen or EffectKind.Hex:
-                        Add(kind, amount, IntentStyle.PlayerDebuff);
-                        break;
-                    case var curse when ActionEffect.IsCurseCard(curse):
-                        Add(kind, amount, IntentStyle.PlayerDebuff, pile: StatusPile.Hand);
-                        break;
-                    case var card when ActionEffect.IsCard(card):
-                        var placements = profile.CardPlacements?.Where(place => place.Card == kind).ToArray();
-                        if (placements is not { Length: > 0 })
-                            placements = [new(kind, StatusPile.Top), new(kind, StatusPile.Draw), new(kind, StatusPile.Discard)];
-                        AddCards(kind, amount, placements);
-                        break;
-                }
+                    EffectKind.Block => context.ExpectedDamageAgainstMonster - context.ExistingBlock,
+                    EffectKind.Heal => context.MissingHp,
+                    _ => 0
+                };
+                if (previous?.Kind == kind)
+                    effectiveLimit -= previous.Amount;
+                effectiveLimit = Math.Max(0, effectiveLimit);
+                double scale = settings.LaterMonsterMultiplier(kind, profile);
+                double Price(int amount) => scale * (curse
+                    ? amount * settings.Valuation.Evaluate(kind, profile, 1)
+                    : settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: Math.Min(amount, effectiveLimit)));
+                int amount = SpendAmount.Closest(minimum, int.MaxValue, target, limit, Price);
+                return amount == 0 ? null : Candidate(new ActionEffect(kind, amount, Unique: policy.Unique,
+                    Pile: curse ? StatusPile.Hand : null), Price(amount));
             }
-            // Doses and card placements share their effect's weight.
-            double total = extras.Sum(extra => extra.Weight);
-            foreach (var extra in extras)
-                yield return new ActionCandidate(EffectName(extra.Effect), extra.Style, false, extra.Value, 0,
-                    extra.Weight / total * weight, Effects: [extra.Effect with { Unique = unique }],
-                    SharedWeightBonus: extra.Weight / total * bonus);
         }
 
-        (double Base, double Bonus) Weights(EffectKind kind, RoomWeight? roomWeight)
-        {
-            double roomFactor = roomWeight?.At(context.Rooms, settings.ChaosProgress) ?? 1;
-            double favorite = profile.Favorites?.GetValueOrDefault(kind) ?? 0;
-            return (roomFactor, favorite * (roomWeight?.IsDisabled == true ? 1 : roomFactor));
-        }
+        (double Base, double Favorite) Weights(EffectKind kind, RoomWeight? weight) =>
+            (weight?.At(context.Rooms, settings.ChaosProgress) ?? 1, profile.Favorites?.GetValueOrDefault(kind) ?? 0);
 
-        bool IsAvailable(EffectKind kind, bool unique) => context.ActiveEffects?.Contains(kind) != true &&
-            (context.SpecialStatusesRemaining > 0 || !unique);
+        bool IsAvailable(EffectKind kind, EffectPolicy policy, double weight, double favorite) =>
+            (weight > 0 || favorite > 0) && (context.SpecialStatusesRemaining > 0 || !policy.Unique) &&
+            context.ActiveEffects?.Contains(kind) != true;
 
-        void Add(EffectKind kind, int amount, IntentStyle style, double effectiveAmount = 0, StatusPile? pile = null)
+        ActionCandidate? DrawCards(EffectKind kind, int minimum, double target, double limit, bool unique, Random random)
         {
-            double value = settings.Valuation.Evaluate(kind, profile, amount, effectiveAmount: effectiveAmount) *
-                settings.LaterMonsterMultiplier(kind, profile);
-            if (value > 0)
-                extras.Add((new ActionEffect(kind, amount, Pile: pile), style, value, 1));
-        }
-
-        void AddCards(EffectKind kind, int amount, StatusPlacement[] placements)
-        {
-            var available = placements.Where(place => place.Weight > 0 && CanPlace(kind, place.Pile))
+            var placements = profile.CardPlacements?.Where(place => place.Card == kind && place.Pile != StatusPile.Hand).ToArray();
+            if (placements is not { Length: > 0 })
+                placements = [new(kind, StatusPile.Top), new(kind, StatusPile.Draw), new(kind, StatusPile.Discard)];
+            var available = placements.Where(place => place.Weight > 0)
                 .GroupBy(place => place.Pile)
                 .Select(group => new StatusPlacement(kind, group.Key, group.Sum(place => place.Weight)))
                 .OrderByDescending(place => place.Weight).ToArray();
-            double perCard = settings.CardUnitValue(kind, profile, amount);
-            if (perCard <= 0)
-                return;
-
-            // Every dose has one set of placement weights, including the split variants.
-            var variants = new List<(ActionEffect Effect, double Value, double Weight)>();
+            var variants = new List<(ActionCandidate Choice, double Weight)>();
             var values = settings.PlacementValues ?? new StatusPlacementValues();
             for (int mask = 1; mask < (1 << available.Length); mask++)
             {
                 var selected = available.Where((_, index) => (mask & (1 << index)) != 0).ToArray();
-                if (selected.Length > amount)
+                int count = selected.Length;
+                double Price(int amount)
+                {
+                    double placementValue = 0;
+                    for (int i = 0; i < count; i++)
+                        placementValue += (amount / count + (i < amount % count ? 1 : 0)) *
+                            values.For(selected[i].Pile, profile.ExpectedCombatTurns);
+                    return settings.CardUnitValue(kind, profile, amount) * placementValue;
+                }
+                int amount = SpendAmount.Closest(Math.Max(minimum, count), int.MaxValue, target, limit, Price);
+                if (amount == 0)
                     continue;
                 var destinations = selected.Select((placement, index) => new StatusCardDestination(placement.Pile,
-                    amount / selected.Length + (index < amount % selected.Length ? 1 : 0))).ToArray();
-                var effect = destinations.Length == 1 ? new ActionEffect(kind, amount, Pile: destinations[0].Pile)
-                    : new ActionEffect(kind, amount, SplitDestinations: destinations);
-                double cost = perCard * destinations.Sum(destination => destination.Amount * values.For(destination.Pile));
-                if (cost > 0)
-                    variants.Add((effect, cost, selected.Average(place => place.Weight)));
+                    amount / count + (index < amount % count ? 1 : 0))).ToArray();
+                var effect = count == 1 ? new ActionEffect(kind, amount, Pile: destinations[0].Pile, Unique: unique)
+                    : new ActionEffect(kind, amount, SplitDestinations: destinations, Unique: unique);
+                variants.Add((Candidate(effect, Price(amount)), selected.Average(place => place.Weight)));
             }
-            double total = variants.Sum(variant => variant.Weight);
-            foreach (var variant in variants)
-                extras.Add((variant.Effect, IntentStyle.PlayerDebuff, variant.Value, variant.Weight / total));
+            return ActionPlanner.Draw(variants, 0, random);
         }
     }
 
-    internal static bool CanPlace(EffectKind kind, StatusPile pile) =>
-        !(kind == EffectKind.Dazed && pile is StatusPile.Hand or StatusPile.Bottom) &&
-        !(pile == StatusPile.Hand && kind is EffectKind.Void or EffectKind.Amnesia or EffectKind.MindRot or
-            EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration);
+    private static ActionCandidate Candidate(ActionEffect effect, double value) =>
+        new(EffectName(effect), value, 0, [effect]);
 
     public ActionCandidate? BuildAttack(MonsterProfile profile, ActionContext context, int hits, double target)
     {
         int min = Math.Max(1, settings.MinimumBaseDamagePerHit);
         int amount = (int)Math.Clamp(Math.Round(target / hits, MidpointRounding.AwayFromZero), min, int.MaxValue);
-        var attack = ActionCandidate.Attack($"{hits}x{amount}", hits, amount, context.Strength, context.Weakened, 1,
+        var attack = ActionCandidate.Attack($"{hits}x{amount}", hits, amount, context.Strength, context.Weakened,
             settings.WeakDamageReduction);
         double cost = settings.Valuation.Evaluate(EffectKind.Attack, profile, amount, hits: hits);
         return cost > 0 ? attack with { Value = cost } : null;

@@ -11,6 +11,20 @@ public sealed record PlayerActionCurve(double Base = 8, double RoomsPerStep = 3,
 
     public double Survival(double hp, double allyHp, int rooms, double? averageDamage = null) =>
         (hp + 0.5 * allyHp) / At(rooms, averageDamage);
+
+    internal MonsterProfile WithCombatEstimates(MonsterProfile profile, double hp, double allyHp, int rooms,
+        double? averageDamage = null)
+    {
+        double playerAction = At(rooms, averageDamage);
+        return profile with
+        {
+            BaseExpectedSurvivalTurns = (hp + 0.5 * allyHp) / playerAction,
+            ExpectedCombatTurns = (hp + allyHp) / playerAction,
+            PlayerActionValue = playerAction,
+            CurrentHp = hp,
+            RoomsEntered = rooms + 1
+        };
+    }
 }
 
 public sealed record RoomWeight(double Base = 1, double PerRoom = 0)

@@ -206,16 +206,11 @@ internal static class SettingsPage
         AddNumber("混沌值", 0, 1, 0.01, "pools", Chaos);
         AddToggle("实战出招随机跳样", "每轮用系统随机数判定一次。触发时，跳过一个出招随机数。",
             "pools", "externalMoveRandomSkip", defaultValue: true);
-        AddNumber("行动力每回合保留比例", 0, 1, 0.01, "pools", "actionValueRetention");
-        AddNumber("攻击欲望每回合保留比例", 0, 1, 0.01, "pools", "attackDesireRetention");
         AddNumber("起始行动力比例", 0, 1, 0.01, "pools", "initialActionValueShare");
         AddNumber("余额对出招花费的系数", 0, 5, 0.01, "pools", "balanceTargetWeight");
-        AddNumber("抽取预算倍率", 0.01, 5, 0.01, "pools", "drawBudgetMultiplier");
-        AddNumber("局部透支占基础行动力比例", 0, 1, 0.01, "pools", "localOverdraftShare");
         AddNumber("非攻击候选数", 1, 20, 1, "pools", "nonAttackCandidates");
-        AddNumber("偏好直占比例基础值（0.10 = 10%）", 0, 1, 0.01, "pools", "favoriteDirectBaseShare");
-        AddNumber("偏好强度对直占比例的系数", 0, 1, 0.01, "pools", "favoriteDirectStrengthMultiplier");
-        AddNumber("无攻击时转给其他行动的比例", 0, 1, 0.01, "pools", "unusedAttackBudgetShare");
+        AddNumber("偏好直占比例基础值（0.10 = 10%）", 0, 1, 0.001, "pools", "favoriteDirectBaseShare");
+        AddNumber("偏好强度对直占比例的系数", 0, 1, 0.001, "pools", "favoriteDirectStrengthMultiplier");
         AddNumber("预算达到目标的混沌值", 0.0025, 2.25, 0.0025, "pools", "fullChaosBudgetAt");
         foreach (var (id, label) in new[] { ("attack", "攻击"), ("buff", "强化"), ("defend", "防御"), ("playerDebuff", "减益") })
             AddNumber($"高混沌{label}分配权重", 0, 100, 0.01, "pools", "chaosBudgetWeights", id);
@@ -393,12 +388,16 @@ internal static class SettingsPage
 
     private static Action AddMonsterControls(VBoxContainer panel, TextEdit profiles, Label message)
     {
+        var filters = new MonsterPickerFilters(panel);
         var list = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         panel.AddChild(list);
         var favoriteHeader = new Label { Text = "行动偏好" };
         favoriteHeader.AddThemeFontSizeOverride("font_size", 22);
         panel.AddChild(favoriteHeader);
         var favoritePicker = new HBoxContainer();
+        var effectGroups = Enum.GetValues<EffectKind>().Where(ActionCatalog.CanFavor)
+            .Select(SettingsFilters.ActionCategory).Distinct().ToArray();
+        var effectFilter = SettingsFilters.Add(favoritePicker, "行动分类", effectGroups);
         var effects = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         var addFavorite = new Button { Text = "添加偏好" };
         favoritePicker.AddChild(effects);
@@ -417,9 +416,6 @@ internal static class SettingsPage
         {
             (Group: "", Key: "actionValue", Label: "基础行动力"),
             (Group: "", Key: "attackFrequency", Label: "每回合目标攻击段数"),
-            (Group: "", Key: "singleHitPreference", Label: "单段攻击偏好倍率"),
-            (Group: "", Key: "desireHitPreference", Label: "欲望段数偏好倍率"),
-            (Group: "", Key: "volatility", Label: "行动力波动"),
             (Group: "preferences", Key: "attack", Label: "纯攻击权重"),
             (Group: "preferences", Key: "buff", Label: "强化权重"),
             (Group: "preferences", Key: "defend", Label: "防御权重"),
@@ -464,7 +460,11 @@ internal static class SettingsPage
             RefreshValues(JsonNode.Parse(profiles.Text)!);
         };
 
-        return () =>
+        filters.Changed += RefreshList;
+        effectFilter.ItemSelected += _ => RefreshList();
+        return RefreshList;
+
+        void RefreshList()
         {
             try
             {
@@ -476,6 +476,8 @@ internal static class SettingsPage
                 keptMoves.Editable = false;
                 foreach (var (id, monster) in monsters.OrderBy(pair => pair.Value?["name"]?.GetValue<string>()))
                 {
+                    if (!filters.Matches(id))
+                        continue;
                     string name = monster?["name"]?.GetValue<string>() ?? id;
                     if (monster?["phases"] is JsonObject { Count: > 0 } phases)
                         foreach (var (phaseId, phase) in phases)
@@ -491,6 +493,7 @@ internal static class SettingsPage
                 }
                 int index = selected is { } current ? Math.Max(0, entries.IndexOf(current)) : 0;
                 selected = entries.Count > 0 ? entries[index] : null;
+                list.Disabled = selected == null;
                 if (selected != null)
                     list.Select(index);
                 RefreshValues(document);
@@ -498,12 +501,13 @@ internal static class SettingsPage
             catch (Exception)
             {
                 list.Clear();
+                list.Disabled = true;
                 RefreshFavorites(null, false, null);
                 foreach (var input in inputs)
                     input.Editable = false;
                 availability.Text = "请先修复画像 JSON。";
             }
-        };
+        }
 
         void RefreshValues(JsonNode document)
         {
@@ -519,15 +523,14 @@ internal static class SettingsPage
                 ? string.Join(", ", kept.Select(move => move!.GetValue<string>())) : "";
             var allowed = monster?["allowedBuffs"] is JsonArray buffs
                 ? RuleConfiguration.Read<EffectKind[]>(JsonSerializer.SerializeToElement(buffs)) : null;
-            availability.Text = parentDisabled ? "画像 JSON 中的总开关已关闭" :
+            availability.Text = monster == null ? "当前分类没有怪物。" :
+                parentDisabled ? "画像 JSON 中的总开关已关闭" :
                 allowed != null ? $"可随机强化　{string.Join("、", allowed.Select(kind => IntentDetails.Names(kind).Chinese))}" : "";
             for (int i = 0; i < values.Length; i++)
             {
                 var (group, key, _) = values[i];
                 var value = group.Length == 0 ? monster?[key] ?? parent?[key] ?? document["defaults"]?[key] :
                     (monster?[group] ?? parent?[group])?[key];
-                if (value == null && key is "singleHitPreference" or "desireHitPreference")
-                    value = JsonValue.Create(1.0);
                 bool present = value is JsonValue number && number.TryGetValue<double>(out _);
                 inputs[i].Editable = present && active;
                 inputs[i].SetValueNoSignal(present ? value!.GetValue<double>() : 0);
@@ -561,6 +564,7 @@ internal static class SettingsPage
 
             foreach (var kind in Enum.GetValues<EffectKind>().OrderBy(kind => IntentDetails.Names(kind).Chinese))
                 if (ActionCatalog.CanFavor(kind) &&
+                    (effectFilter.Selected <= 0 || SettingsFilters.ActionCategory(kind) == effectGroups[effectFilter.Selected - 1]) &&
                     EffectPolicy.CanTargetMonster(kind, selected?.MonsterId) &&
                     (allowed == null || !ActionEffect.IsMonsterBuff(kind) || allowed.Contains(kind)) &&
                     configured?.Any(pair => string.Equals(pair.Key, kind.ToString(), StringComparison.OrdinalIgnoreCase)) != true)
@@ -568,7 +572,7 @@ internal static class SettingsPage
             if (effects.ItemCount > 0)
                 effects.Select(0);
             effects.Disabled = !active || effects.ItemCount == 0;
-            effects.TooltipText = "选中招式后点击添加。数值增加该招式的共享权重和直占权重。";
+            effects.TooltipText = "选中招式后点击添加。数值决定偏好候选的目标花费与直占权重。";
             addFavorite.Disabled = effects.Disabled;
         }
 

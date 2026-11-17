@@ -22,7 +22,7 @@ internal sealed class RuleConfiguration
         foreach (var (kind, buff) in buffs)
             if (buff.GeneratedCards is { } generated &&
                 (!TriggeredCardBuffs.Types.TryGetValue(kind, out var source) || generated.Any(entry =>
-                    !ActionEffect.IsCard(entry.Key) || !ActionCatalog.CanPlace(entry.Key, source.Pile) || entry.Value < 0)))
+                    !TriggeredCardBuffs.CanGenerate(entry.Key, source.Pile) || entry.Value < 0)))
                 throw new ArgumentException($"{kind} 的生成牌须为可加入指定牌堆的状态牌，权重须为非负数。");
         PlayerAction = settings.TryGetProperty("playerAction", out var curve) ? Read<PlayerActionCurve>(curve) : new();
         if (PlayerAction.Base <= 0 || PlayerAction.RoomsPerStep <= 0 || PlayerAction.Exponent <= 0)
@@ -32,18 +32,17 @@ internal sealed class RuleConfiguration
             throw new ArgumentException("全局行动力倍率须为正数，混沌值须在 0 到 1 之间，高进阶行动力倍率须至少为 1。");
         if (PoolSettings.FavoriteDirectBaseShare is < 0 or > 1 || PoolSettings.FavoriteDirectStrengthMultiplier < 0)
             throw new ArgumentException("偏好直占基础值须在 0 到 1 之间，强度系数须为非负数。");
-        if (PoolSettings.DrawBudgetMultiplier <= 0 || PoolSettings.LocalOverdraftShare < 0 ||
-            PoolSettings.NonAttackCandidates < 1 || PoolSettings.UnusedAttackBudgetShare is < 0 or > 1 ||
+        if (PoolSettings.NonAttackCandidates < 1 ||
             PoolSettings.FullChaosBudgetAt <= 0 || PoolSettings.OpeningStrengthAtMax < 1 ||
             PoolSettings.ChaosBudgetWeights is { } chaosWeights &&
             (chaosWeights.Any(entry => !Enum.IsDefined(entry.Key) || entry.Value < 0) || chaosWeights.Values.Sum() <= 0))
             throw new ArgumentException("抽取预算、候选数量或混沌分配参数无效。");
-        var maximums = Read<Dictionary<EffectKind, int>>(actions.GetProperty("maxAmounts"));
+        var maximumCosts = actions.TryGetProperty("maxCostMultipliers", out var limits)
+            ? Read<Dictionary<EffectKind, double>>(limits) : [];
         var minimums = actions.TryGetProperty("minAmounts", out var minAmounts)
             ? Read<Dictionary<EffectKind, int>>(minAmounts) : null;
-        if (maximums.Values.Any(max => max < 0) || (minimums?.Values.Any(min => min < 1) ?? false) ||
-            (minimums?.Any(entry => maximums.TryGetValue(entry.Key, out int max) && max > 0 && max < entry.Value) ?? false))
-            throw new ArgumentException("出招状态的层数下限或上限无效。");
+        if (maximumCosts.Values.Any(cost => cost < 0) || minimums?.Values.Any(min => min < 1) == true)
+            throw new ArgumentException("层数下限须为正数，最大花费系数须为非负数。");
         var policies = actions.TryGetProperty("policies", out var policyConfig)
             ? Read<Dictionary<EffectKind, EffectPolicy>>(policyConfig) : null;
         if (policies?.Any(entry => entry.Value.Target is EffectTarget target && ActionEffect.TargetFor(entry.Key) != target) == true)
@@ -70,11 +69,10 @@ internal sealed class RuleConfiguration
             new ActionValuation(valuation),
             actions.GetProperty("weakDamageReduction").GetDouble(),
             actions.GetProperty("minimumBaseDamagePerHit").GetInt32(),
-            maximums.ToDictionary(entry => entry.Key, entry => Enumerable.Range(1, entry.Value).ToArray()),
             Read<StatusPlacementValues>(actions.GetProperty("cardPlacementValues")),
             actions.GetProperty("maxHardCardLimits").GetInt32(),
             actions.TryGetProperty("weights", out var effectWeights) ? Read<Dictionary<EffectKind, RoomWeight>>(effectWeights) : null,
-            minimums, policies, buffs, PoolSettings.Chaos, cardRatios, PlayerAction.At(0), laterMonsterPercent);
+            minimums, policies, buffs, PoolSettings.Chaos, cardRatios, PlayerAction.At(0), laterMonsterPercent, maximumCosts);
         Draws = new OpeningDraws(weights.GetProperty("none").GetDouble(), weights.GetProperty("positive").GetDouble(),
             weights.GetProperty("negative").GetDouble(), opening.GetProperty("attempts").GetInt32(),
             opening.GetProperty("maxPerMonster").GetInt32(), opening.GetProperty("maxEncounterValueMultiplier").GetDouble(),
@@ -82,8 +80,8 @@ internal sealed class RuleConfiguration
         OpeningValues = Read<Dictionary<string, StatusValue>>(opening.GetProperty("states"));
         foreach (var (kind, buff) in buffs)
             OpeningValues[EffectPolicy.Id(kind)] = buff;
-        if (OpeningValues.Values.Any(state => state.LaterMonsterPercent < -100))
-            throw new ArgumentException("每个后续怪物的估值变化须至少为 -100%。");
+        if (OpeningValues.Values.Any(state => state.LaterMonsterPercent < -100 || state.MaxCostMultiplier < 0))
+            throw new ArgumentException("状态最大花费系数须为非负数，后续怪物的估值变化须至少为 -100%。");
         HardCardLimitFirstTurn = actions.GetProperty("hardCardLimitFirstTurn").GetInt32();
         TurnPrior = Read<ActionContext>(settings.GetProperty("simulation").GetProperty("turnContext"));
         var defaults = profiles.GetProperty("defaults");
@@ -114,7 +112,7 @@ internal sealed class RuleConfiguration
             .Distinct().Where(state => !EffectPolicy.TryGetKind(state, out var kind) || EffectPolicy.CanTargetMonster(kind, id));
 
     internal ActionPlan PlanMove(string id, string? moveId, Pools previous, MonsterProfile profile, ActionContext context,
-        Random random, bool canRandomize = true)
+        Random random, bool canRandomize = true, double sharedAttackBudget = 0)
     {
         if (!canRandomize)
             return new ActionPlan(null, previous, previous);
@@ -125,9 +123,10 @@ internal sealed class RuleConfiguration
         var plan = Planner.Plan(previous, profile, candidates, random,
             buildAttack: (hits, target) => Catalog.BuildAttack(profile, context, hits, target),
             extraClawDesire: clawPhase ? previous.CompletedClawTurns : 0,
-            specialStatusesRemaining: context.SpecialStatusesRemaining);
+            specialStatusesRemaining: context.SpecialStatusesRemaining, sharedAttackBudget: sharedAttackBudget,
+            enemyCount: context.EnemyCount);
         if (plan.Action is { AttackHits: > 1 } attack &&
-            !string.IsNullOrWhiteSpace(Monsters.GetValueOrDefault(MovePresets.ProfileId(id))?.AnimationFor(IntentStyle.Attack)))
+            !string.IsNullOrWhiteSpace(Monsters.GetValueOrDefault(MovePresets.ProfileId(id))?.AnimationFor(IntentStyle.Attack, attack.AttackHits)))
             plan = plan with { AnimatedAttackHits = CombatMath.DrawAttackAnimationHits(attack.AttackHits, random) };
         return clawPhase ? plan with { After = plan.After with { CompletedClawTurns = previous.CompletedClawTurns + 1 } } : plan;
     }
@@ -138,6 +137,7 @@ internal sealed class RuleConfiguration
     internal ActionContext TurnContext(int rooms, int enemyCount, int round, double? averageDamage = null) => TurnPrior with
     {
         Rooms = rooms,
+        EnemyCount = Math.Max(1, enemyCount),
         ExpectedDamageAgainstMonster = PlayerAction.At(rooms, averageDamage) / Math.Max(1, enemyCount),
         AllowHardCardLimit = round >= HardCardLimitFirstTurn
     };
@@ -165,27 +165,24 @@ internal sealed class RuleConfiguration
             var movesInPhases = new HashSet<string>(StringComparer.Ordinal);
             foreach (var phase in phases.Values)
                 if (phase.Moves is not { Length: > 0 } || phase.Moves.Any(move => !movesInPhases.Add(move)) ||
-                    phase.ActionValue is <= 0 || phase.AttackFrequency is < 0 || phase.Volatility is < 0 ||
-                    phase.NonAttackMultiplier is < 0 || phase.SingleHitPreference is < 0 || phase.DesireHitPreference is < 0 ||
+                    phase.ActionValue is <= 0 || phase.AttackFrequency is < 0 || phase.NonAttackMultiplier is < 0 ||
                     phase.Hp is <= 0 ||
                     phase.AllowedBuffs?.Any(kind => !ActionEffect.IsMonsterBuff(kind)) == true)
                     throw new ArgumentException("阶段招式须存在且不可跨阶段重复，行动参数须在有效范围内。");
         }
         var profile = new MonsterProfile(
-            entry.GetProperty("actionValue").GetDouble(), Setting("volatility").GetDouble(),
+            entry.GetProperty("actionValue").GetDouble(),
             entry.GetProperty("attackFrequency").GetDouble(), Setting("nonAttackMultiplier").GetDouble(),
             0,
             Read<Dictionary<IntentStyle, double>>(entry.GetProperty("preferences")),
             entry.TryGetProperty("cards", out var cards) ? Read<StatusPlacement[]>(cards) : null,
-            SingleHitPreference: entry.TryGetProperty("singleHitPreference", out var single) ? single.GetDouble() : 1,
-            DesireHitPreference: entry.TryGetProperty("desireHitPreference", out var multi) ? multi.GetDouble() : 1,
             Favorites: entry.TryGetProperty("favorites", out var favorites) ? Read<Dictionary<EffectKind, double>>(favorites) : null);
         return new MonsterRules(profile,
             !entry.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
             Read<string[]>(Setting("openingStates")),
             entry.TryGetProperty("keepMoves", out var moves) ? Read<string[]>(moves).ToHashSet() : [],
             entry.TryGetProperty("fullBlockChance", out var chance) ? chance.GetDouble() : 0,
-            phases, entry.TryGetProperty("animations", out var animations) ? Read<Dictionary<IntentStyle, string>>(animations) : null);
+            phases, entry.TryGetProperty("animations", out var animations) ? Read<MonsterAnimations>(animations) : null);
     }
 
     public static T Read<T>(JsonElement json) => json.Deserialize<T>(JsonOptions)!;
@@ -193,7 +190,7 @@ internal sealed class RuleConfiguration
 
 internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
     string[] OpeningStates, HashSet<string> KeepMoves, double FullBlockChance,
-    IReadOnlyDictionary<string, MonsterPhase>? Phases = null, IReadOnlyDictionary<IntentStyle, string>? Animations = null)
+    IReadOnlyDictionary<string, MonsterPhase>? Phases = null, MonsterAnimations? Animations = null)
 {
     internal bool HasEnabledStage => Phases is not { Count: > 0 } || Phases.Values.Any(phase => phase.Enabled);
 
@@ -204,30 +201,33 @@ internal sealed record MonsterRules(MonsterProfile Profile, bool Enabled,
 
     internal string? DefaultPhase => Phases?.Keys.FirstOrDefault();
 
-    internal string? AnimationFor(IntentStyle style) => Animations?.GetValueOrDefault(style) ?? (style switch
+    internal string? AnimationFor(IntentStyle style, int hits = 1) => Animations?.For(style, hits);
+}
+
+internal sealed record MonsterAnimations(string? Attack = null, string? SingleAttack = null, string? MultiAttack = null,
+    string? Buff = null, string? Defend = null, string? PlayerDebuff = null)
+{
+    internal string? For(IntentStyle style, int hits) => style switch
     {
-        IntentStyle.Buff => Animations?.GetValueOrDefault(IntentStyle.Defend),
-        IntentStyle.Defend => Animations?.GetValueOrDefault(IntentStyle.Buff),
-        _ => null
-    });
+        IntentStyle.Attack => (hits > 1 ? MultiAttack : SingleAttack) ?? Attack,
+        IntentStyle.Buff => Buff ?? Defend,
+        IntentStyle.Defend => Defend ?? Buff,
+        _ => PlayerDebuff
+    };
 }
 
 internal sealed record MonsterPhase(string Name, string[] Moves, double? ActionValue = null, double? AttackFrequency = null,
-    double? Volatility = null, double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
+    double? NonAttackMultiplier = null, IReadOnlyDictionary<IntentStyle, double>? Preferences = null,
     IReadOnlyDictionary<EffectKind, double>? Favorites = null, IReadOnlyList<EffectKind>? AllowedBuffs = null,
-    bool Enabled = true, double? SingleHitPreference = null, double? DesireHitPreference = null,
-    double? Hp = null)
+    bool Enabled = true, double? Hp = null)
 {
     internal MonsterProfile Apply(MonsterProfile profile) => profile with
     {
         ActionValue = ActionValue ?? profile.ActionValue,
         AttackFrequency = AttackFrequency ?? profile.AttackFrequency,
-        Volatility = Volatility ?? profile.Volatility,
         NonAttackMultiplier = NonAttackMultiplier ?? profile.NonAttackMultiplier,
         IntentWeights = Preferences ?? profile.IntentWeights,
         Favorites = Favorites ?? profile.Favorites,
-        AllowedBuffs = AllowedBuffs ?? profile.AllowedBuffs,
-        SingleHitPreference = SingleHitPreference ?? profile.SingleHitPreference,
-        DesireHitPreference = DesireHitPreference ?? profile.DesireHitPreference
+        AllowedBuffs = AllowedBuffs ?? profile.AllowedBuffs
     };
 }

@@ -171,7 +171,6 @@ internal static class IntentDetails
                 StatusPile.Hand => ("手牌", "the hand"),
                 StatusPile.Top => ("抽牌堆顶", "the top of the draw pile"),
                 StatusPile.Draw => ("洗入抽牌堆", "random positions in the draw pile"),
-                StatusPile.Bottom => ("抽牌堆底", "the bottom of the draw pile"),
                 _ => ("弃牌堆", "the discard pile")
             };
             return chinese ? $"{zh} {destination.Amount} 张" : $"{destination.Amount} to {en}";

@@ -5,7 +5,7 @@ public sealed class ActionValuation
     private enum Factor
     {
         Amount, ActionValue, AttackFrequency, SurvivalTurns, EffectiveAmount, Hits,
-        PlayerActionValue, HpPerSurvivalTurn, InverseAmount, RoomsEntered
+        PlayerActionValue, HpPerSurvivalTurn, InverseAmount, RoomsEntered, CombatTurns
     }
 
     internal static IReadOnlyList<string> FactorNames { get; } = Enum.GetNames<Factor>();
@@ -13,6 +13,8 @@ public sealed class ActionValuation
     private sealed record Term(double Coefficient, Factor[] Factors);
 
     private readonly Dictionary<EffectKind, Term[]> formulas;
+    internal IEnumerable<EffectKind> Effects => formulas.Keys;
+
     public ActionValuation(IReadOnlyDictionary<EffectKind, Dictionary<string, double>> coefficients)
     {
         formulas = coefficients.ToDictionary(pair => pair.Key, pair => pair.Value.Select(term =>
@@ -41,6 +43,7 @@ public sealed class ActionValuation
                     Factor.ActionValue => profile.ActionValue,
                     Factor.AttackFrequency => profile.AttackFrequency,
                     Factor.SurvivalTurns => profile.BaseExpectedSurvivalTurns,
+                    Factor.CombatTurns => profile.ExpectedCombatTurns,
                     Factor.EffectiveAmount => effectiveAmount,
                     Factor.Hits => hits,
                     Factor.PlayerActionValue => profile.PlayerActionValue,

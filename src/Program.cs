@@ -43,12 +43,8 @@ var enemies = new[] { new SimulationEnemy(monsterId, hp,
     FirstEnemyAction: sample.GetProperty("targetFirstEnemyAction").GetInt32()) }
     .Concat(allyInputs.Select(ally => ally.Deserialize<SimulationEnemy>(inputs)!)).ToArray();
 double allyHp = enemies.Skip(1).Sum(enemy => enemy.Hp);
-profile = profile with
+profile = rules.PlayerAction.WithCombatEstimates(profile, hp, allyHp, rooms) with
 {
-    BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
-    PlayerActionValue = rules.PlayerAction.At(rooms),
-    CurrentHp = hp,
-    RoomsEntered = rooms + 1,
     MonstersBehind = enemies.Skip(1).Count(enemy => enemy.Hp > 0)
 };
 string stage = args.Length > 4 ? args[4] : entry.TryGetProperty("stage", out var profileStage)
@@ -58,7 +54,8 @@ if (phase != null)
     Console.WriteLine($"phase: {phase.Name}; action value: {profile.ActionValue:F2}");
 if (phase?.Moves.Any(move => RuleConfiguration.UsesClawGrowth(monsterId, move)) == true)
     Console.WriteLine("attack desire income growth: +1 per randomized move");
-Console.WriteLine($"player action value: {rules.PlayerAction.At(rooms):F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}");
+Console.WriteLine($"player action value: {profile.PlayerActionValue:F2}, expected actions: {profile.BaseExpectedSurvivalTurns:F2}, " +
+    $"estimated remaining combat: {profile.ExpectedCombatTurns:F2} rounds");
 OpeningOption[] Options(SimulationEnemy enemy, IEnumerable<string> states, MonsterProfile owner)
 {
     return states
@@ -80,16 +77,16 @@ foreach (var ally in allyInputs.Where(input => input.TryGetProperty("actionValue
     string id = ally.GetProperty("id").GetString()!;
     actionValues[id] = ally.GetProperty("actionValue").GetDouble() * rules.PoolSettings.ActionValueMultiplier;
     if (ally.TryGetProperty("openingStates", out var allyStates))
-        choicesByMonster[id] = Options(enemies.Single(enemy => enemy.Id == id), RuleConfiguration.Read<string[]>(allyStates),
-            profile with
+    {
+        var enemy = enemies.Single(enemy => enemy.Id == id);
+        var allyProfile = rules.PlayerAction.WithCombatEstimates(profile, enemy.Hp, hp + allyHp - enemy.Hp, rooms);
+        choicesByMonster[id] = Options(enemy, RuleConfiguration.Read<string[]>(allyStates), allyProfile with
             {
                 ActionValue = actionValues[id],
                 AttackFrequency = ally.TryGetProperty("attackFrequency", out var frequency) ? frequency.GetDouble() : 1,
-                BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(enemies.Single(enemy => enemy.Id == id).Hp,
-                    enemies.Where(enemy => enemy.Id != id).Sum(enemy => enemy.Hp), rooms),
-                CurrentHp = enemies.Single(enemy => enemy.Id == id).Hp,
                 MonstersBehind = enemies.SkipWhile(enemy => enemy.Id != id).Skip(1).Count(enemy => enemy.Hp > 0)
             });
+    }
 }
 var selected = OpeningValuation.Draw(choicesByMonster, actionValues, rules.Draws, combatRandom);
 var ownOpening = selected.Where(pick => pick.MonsterId == monsterId).ToArray();

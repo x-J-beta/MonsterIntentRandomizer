@@ -3,7 +3,7 @@
   "name": "怪物意图随机 / Monster Intent Randomizer",
   "author": "Monster Intent Randomizer",
   "description": "按怪物画像生成随机行动及开场状态，支持使用相同参数的多人战斗。",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "min_game_version": "0.113.0",
   "has_pck": false,
   "has_dll": true,

@@ -12,6 +12,11 @@ internal static class TriggeredCardBuffs
     internal static bool UsesNative(EffectKind kind, string? monsterId) =>
         kind == EffectKind.PersonalHive && monsterId == "ENTOMANCER";
 
+    internal static bool CanGenerate(EffectKind card, StatusPile pile) =>
+        ActionEffect.IsCard(card) && (pile != StatusPile.Hand || card is not
+            (EffectKind.Dazed or EffectKind.Void or EffectKind.Amnesia or EffectKind.MindRot or
+             EffectKind.WasteAway or EffectKind.Sloth or EffectKind.Disintegration));
+
     internal static IEnumerable<(EffectKind? Card, double Weight)> Variants(EffectKind kind, StatusValue state,
         ActionValuationSettings settings, int rooms, EffectKind? existing = null, string? monsterId = null)
     {

@@ -113,7 +113,7 @@ function estimate(monster, profile, previousAudit, phaseMoves) {
     const player = Math.pow(settings.playerAction.base + rooms / settings.playerAction.roomsPerStep, settings.playerAction.exponent);
     const survivalTurns = profile.hp / player;
     const factors = {
-        actionvalue: profile.actionValue, attackfrequency: profile.attackFrequency, survivalturns: survivalTurns,
+        actionvalue: profile.actionValue, attackfrequency: profile.attackFrequency, survivalturns: survivalTurns, combatturns: survivalTurns,
         playeractionvalue: player, hppersurvivalturn: profile.hp / (survivalTurns + 1), roomsentered: rooms + 1, hits: 1
     };
     const costs = Object.fromEntries(styles.map(style => [style, 0]));

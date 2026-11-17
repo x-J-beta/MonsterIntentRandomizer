@@ -23,9 +23,9 @@ internal static class NativeActions
 
     internal static MoveState Build(MonsterModel monster, ActionCandidate candidate, MonsterRules rules, int[]? animatedAttackHits)
     {
-        var effects = candidate.Effects!;
+        var effects = candidate.Effects;
         string? animation = effects.Count == 0 ? null : rules.AnimationFor(candidate.IsAttack
-            ? IntentStyle.Attack : ActionEffect.StyleFor(effects[0].Kind));
+            ? IntentStyle.Attack : ActionEffect.StyleFor(effects[0].Kind), candidate.AttackHits);
         return new MoveState(MoveId, targets => Execute(monster, effects, targets,
                 candidate.IsAttack ? animation : null, candidate.IsAttack ? null : animation, animatedAttackHits),
             effects.Count == 0 ? [CreateIntent(new ActionEffect(EffectKind.Wait, 0))] :
@@ -82,7 +82,7 @@ internal static class NativeActions
                     Log.Warn($"[MonsterIntentRandomizer] {monster.Id.Entry} could not execute its Vital Spark intent under the active effect policy.");
                 continue;
             }
-            if (effect.Unique && !CombatIntegration.SpendSpecialStatus(combat, self, effect.Kind))
+            if (effect.Unique && !CombatIntegration.SpendSpecialStatus(combat, self))
                 continue;
             if (ActionEffect.IsPlayerEffect(effect.Kind))
                 CombatIntegration.RecordPlayerEffect(combat, self, effect.Kind);
@@ -135,7 +135,7 @@ internal static class NativeActions
                     await PowerCmd.Apply<DexterityPower>(choice, targets, -amount, self, null);
                     break;
                 case EffectKind.Smoggy:
-                    await PowerCmd.Apply<SmoggyPower>(choice, targets, 1, self, null);
+                    await PowerCmd.Apply<SmoggyPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Tender:
                     await PowerCmd.Apply<TenderPower>(choice, targets, amount, self, null);
@@ -147,7 +147,7 @@ internal static class NativeActions
                     await PowerCmd.Apply<PoisonPower>(choice, targets, amount, self, null);
                     break;
                 case EffectKind.Shrink:
-                    await PowerCmd.Apply<ShrinkPower>(choice, targets, -1, self, null);
+                    await PowerCmd.Apply<ShrinkPower>(choice, targets, -amount, self, null);
                     break;
                 case EffectKind.Dampen:
                     foreach (var target in targets)
@@ -159,7 +159,7 @@ internal static class NativeActions
                         }
                         var power = (DampenPower)ModelDb.Power<DampenPower>().ToMutable();
                         power.AddCaster(self);
-                        await PowerCmd.Apply(choice, power, target, 1, self, null);
+                        await PowerCmd.Apply(choice, power, target, amount, self, null);
                     }
                     break;
                 case EffectKind.Hex:
@@ -235,14 +235,13 @@ internal static class NativeActions
 
     private static async Task Insert<T>(IReadOnlyList<Creature> targets, ActionEffect effect) where T : CardModel
     {
-        foreach (var destination in effect.CardDestinations.OrderBy(destination => destination.Pile is StatusPile.Top or StatusPile.Bottom))
+        foreach (var destination in effect.CardDestinations.OrderBy(destination => destination.Pile == StatusPile.Top))
         {
             var (pile, position) = destination.Pile switch
             {
                 StatusPile.Hand => (PileType.Hand, CardPilePosition.Bottom),
                 StatusPile.Top => (PileType.Draw, CardPilePosition.Top),
                 StatusPile.Draw => (PileType.Draw, CardPilePosition.Random),
-                StatusPile.Bottom => (PileType.Draw, CardPilePosition.Bottom),
                 _ => (PileType.Discard, CardPilePosition.Bottom)
             };
             await CardPileCmd.AddToCombatAndPreview<T>(targets, pile, destination.Amount, null, position);

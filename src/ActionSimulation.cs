@@ -21,6 +21,7 @@ internal static class ActionSimulation
                 ? ["MAGI_KNIGHT", "SPECTRAL_KNIGHT"] : [monsterId]);
         var sequence = rules.MovePresets.SequenceFor(monsterId, phaseId);
         var balances = rules.Planner.Start(profile, opening.Sum(pick => pick.Value));
+        double sharedAttackBudget = 0;
         var activeEffects = new Dictionary<EffectKind, int>();
         var thresholds = new Dictionary<EffectKind, int>();
         var generatedCards = new Dictionary<EffectKind, EffectKind>();
@@ -61,7 +62,8 @@ internal static class ActionSimulation
                     turn < firstEnemyAction + pick.State.Amount);
             var originalMove = hasMove ? sequence?.At(completedMoves++) : null;
             bool canRandomize = hasMove && monster.AllowsMove(originalMove);
-            var plan = rules.PlanMove(monsterId, originalMove, balances, profile, context, random, canRandomize);
+            var plan = rules.PlanMove(monsterId, originalMove, balances, profile, context, random, canRandomize, sharedAttackBudget);
+            sharedAttackBudget += plan.AttackBudgetChange;
             balances = plan.After;
             turns.Add(new SimulatedTurn(turn, plan, skipFromImbalance, originalMove));
 
@@ -74,7 +76,7 @@ internal static class ActionSimulation
             if (plan.Action is { } action)
             {
                 history = history.Record(action);
-                foreach (var effect in action.Effects!)
+                foreach (var effect in action.Effects)
                 {
                     RecordEffect(effect.Kind, effect.Amount, turn, effect.GeneratedCard);
                     if (effect.Unique)
@@ -105,9 +107,8 @@ internal static class ActionSimulation
                 return;
             activeEffects[kind] = kind switch
             {
-                EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible or EffectKind.Weak or
-                    EffectKind.Vulnerable or EffectKind.Frail => round + amount,
-                EffectKind.Tangled or EffectKind.Ringing or EffectKind.TemporaryThorns => round + 1,
+                EffectKind.Regen or EffectKind.Plating or EffectKind.Intangible => round + amount,
+                EffectKind.TemporaryThorns => round + 1,
                 _ => int.MaxValue
             };
         }

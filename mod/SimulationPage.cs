@@ -9,6 +9,7 @@ internal static class SimulationPage
 {
     internal static Action Create(VBoxContainer panel, TextEdit settings, TextEdit profiles)
     {
+        var filters = new MonsterPickerFilters(panel);
         var monster = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         var highAscension = new CheckButton { Text = "高进阶" };
         var choices = new HBoxContainer();
@@ -25,6 +26,8 @@ internal static class SimulationPage
         rounds.AllowGreater = false;
         rounds.Value = 10;
         var rooms = SettingsPage.NumberRow(panel, "已经历房间", 0, 100, 1);
+        bool editedRooms = false;
+        rooms.ValueChanged += _ => editedRooms = true;
         var hp = SettingsPage.NumberRow(panel, "怪物当前血量", 1, 9999, 1);
         var allyHp = SettingsPage.NumberRow(panel, "其他怪物当前血量之和", 0, 9999, 1);
         var monstersBehind = SettingsPage.NumberRow(panel, "后续出手的怪物数", 0, 20, 1);
@@ -85,13 +88,17 @@ internal static class SimulationPage
             }
         };
 
-        return () =>
+        filters.Changed += RefreshRoster;
+        return RefreshRoster;
+
+        void RefreshRoster()
         {
             string? previous = monster.Selected >= 0 ? ids[monster.Selected] : null;
             try
             {
                 using var json = JsonDocument.Parse(profiles.Text);
                 var roster = json.RootElement.GetProperty("monsters").EnumerateObject()
+                    .Where(field => filters.Matches(field.Name))
                     .Select(field => (Id: field.Name, Name: field.Value.TryGetProperty("name", out var title)
                         ? title.GetString() ?? field.Name : field.Name))
                     .OrderBy(entry => entry.Name).ToArray();
@@ -99,30 +106,47 @@ internal static class SimulationPage
                 monster.Clear();
                 foreach (var entry in roster)
                     monster.AddItem($"{entry.Name}  ·  {entry.Id}");
-                run.Disabled = ids.Length == 0;
+                run.Disabled = monster.Disabled = ids.Length == 0;
                 if (run.Disabled)
+                {
+                    phase.Clear();
+                    phase.Visible = false;
+                    output.Text = "当前分类没有怪物。";
                     return;
+                }
                 int selected = Array.IndexOf(ids, previous ?? "FLYCONID");
                 monster.Select(selected < 0 ? 0 : selected);
                 if (previous != ids[monster.Selected])
                     ReadSelectedMonster(json.RootElement);
                 else
+                {
                     UpdatePhaseLabels(json.RootElement);
+                    UpdateReferenceRooms(json.RootElement.GetProperty("monsters").GetProperty(ids[monster.Selected]));
+                }
             }
             catch (Exception error)
             {
-                run.Disabled = true;
+                run.Disabled = monster.Disabled = true;
                 monster.Clear();
+                phase.Visible = false;
                 output.Text = $"无法读取画像。{error.Message}";
             }
-        };
+        }
 
         void ReadSelectedMonster(JsonElement profilesDocument)
         {
             var entry = profilesDocument.GetProperty("monsters").GetProperty(ids[monster.Selected]);
             UpdatePhaseLabels(profilesDocument);
             SetPhaseHp(entry);
+            UpdateReferenceRooms(entry);
             output.Text = "点击模拟生成该怪物的出招轨迹。";
+        }
+
+        void UpdateReferenceRooms(JsonElement entry)
+        {
+            if (!editedRooms)
+                rooms.SetValueNoSignal(filters.ReferenceRooms(ids[monster.Selected],
+                    entry.TryGetProperty("stage", out var stage) ? stage.GetString() : null));
         }
 
         void SetPhaseHp(JsonElement entry)
@@ -160,12 +184,9 @@ internal static class SimulationPage
         var phase = phaseId == null ? null : monster.Phases?.GetValueOrDefault(phaseId);
         if (phase?.Enabled == false)
             return $"{phase.Name}保留原版行动。";
-        var profile = rules.PoolSettings.Adjust(phase?.Apply(monster.Profile) ?? monster.Profile, highAscension) with
+        var adjusted = rules.PoolSettings.Adjust(phase?.Apply(monster.Profile) ?? monster.Profile, highAscension);
+        var profile = rules.PlayerAction.WithCombatEstimates(adjusted, hp, allyHp, rooms) with
         {
-            BaseExpectedSurvivalTurns = rules.PlayerAction.Survival(hp, allyHp, rooms),
-            PlayerActionValue = rules.PlayerAction.At(rooms),
-            CurrentHp = hp,
-            RoomsEntered = rooms + 1,
             MonstersBehind = monstersBehind
         };
         var sequence = rules.MovePresets.SequenceFor(id, phaseId);
@@ -184,11 +205,11 @@ internal static class SimulationPage
         result.AppendLine($"后续出手的怪物 {monstersBehind} 只");
         if (phase != null)
             result.AppendLine(phase.Name);
-        result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　波动 {profile.Volatility:P0}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
+        result.AppendLine($"基础行动力 {profile.ActionValue:0.##}　目标攻击 {profile.AttackFrequency:0.##} 段／回合");
         if (phase?.Moves.Any(move => RuleConfiguration.UsesClawGrowth(id, move)) == true)
             result.AppendLine("阶段攻击欲望入账每个随机回合 +1");
         result.AppendLine($"攻击花费比例 {profile.BudgetedAttackShare:P0}　玩家行动力 {rules.PlayerAction.At(rooms):0.##}　" +
-            $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合");
+            $"预期生存 {profile.BaseExpectedSurvivalTurns:0.##} 回合　预计剩余战斗 {profile.ExpectedCombatTurns:0.##} 回合");
         if (sequence != null)
             result.AppendLine("按预定义招式顺序模拟，每回合标明原招和替换结果。");
         string states = opening.Count == 0 ? "无" : string.Join("、", opening.Select(pick =>
@@ -217,7 +238,7 @@ internal static class SimulationPage
         return result.ToString();
     }
 
-    private static string FormatAction(ActionCandidate action) => action.Effects!.Count == 0 ? "准备" :
+    private static string FormatAction(ActionCandidate action) => action.Effects.Count == 0 ? "准备" :
         string.Join(" ＋ ", action.Effects.Select(effect =>
         effect.Kind == EffectKind.Attack
             ? $"攻击 {action.Damage / effect.Hits:0} × {effect.Hits}"

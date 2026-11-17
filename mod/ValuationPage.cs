@@ -38,7 +38,7 @@ internal static class ValuationPage
                     {
                         selectedAction = id;
                         RenderAction(detail, JsonNode.Parse(settings.Text)!["actions"]!, id);
-                    });
+                    }, ActionCategory);
                 AddSelector(openingList, document["opening"]!["states"]!.AsObject().Select(entry => entry.Key),
                     OpeningName, selectedOpening, (detail, id) =>
                     {
@@ -51,7 +51,7 @@ internal static class ValuationPage
                         selectedBuff = id;
                         RenderState(detail, root => root["buffs"]![id]!, shared: true,
                             kind: Enum.Parse<EffectKind>(id, ignoreCase: true));
-                    });
+                    }, ActionCategory);
             }
             catch (Exception error)
             {
@@ -62,28 +62,53 @@ internal static class ValuationPage
         static string ActionName(string id) => Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
             ? IntentDetails.Names(kind).Chinese : id;
 
+        static string ActionCategory(string id) => Enum.TryParse<EffectKind>(id, ignoreCase: true, out var kind)
+            ? SettingsFilters.ActionCategory(kind) : "其他";
+
         void AddSelector(VBoxContainer content, IEnumerable<string> ids, Func<string, string> title,
-            string? previous, Action<VBoxContainer, string> render)
+            string? previous, Action<VBoxContainer, string> render, Func<string, string>? classify = null)
         {
-            var entries = ids.ToArray();
+            var options = ids.ToArray();
+            var groups = classify == null ? [] : options.Select(classify).Distinct().ToArray();
+            string[] entries = [];
+            string? selectedId = previous;
+            OptionButton? filter = null;
+            if (groups.Length > 1)
+            {
+                var row = new HBoxContainer();
+                content.AddChild(row);
+                filter = SettingsFilters.Add(row, "行动分类", groups);
+            }
             var selector = new OptionButton { Name = "状态选择", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            foreach (string id in entries)
-                selector.AddItem($"{title(id)}  ·  {id}");
             content.AddChild(selector);
             var detail = new VBoxContainer();
             detail.AddThemeConstantOverride("separation", 6);
             content.AddChild(detail);
-            if (entries.Length == 0)
-                return;
-            int index = Math.Max(0, Array.IndexOf(entries, previous));
-            selector.Select(index);
             selector.ItemSelected += selected => Show((int)selected);
-            Show(index);
+            if (filter != null)
+                filter.ItemSelected += _ => RefreshEntries();
+            RefreshEntries();
+
+            void RefreshEntries()
+            {
+                int group = filter?.Selected ?? 0;
+                entries = group <= 0 ? options : options.Where(id => classify!(id) == groups[group - 1]).ToArray();
+                selector.Clear();
+                foreach (string id in entries)
+                    selector.AddItem($"{title(id)}  ·  {id}");
+                selector.Disabled = entries.Length == 0;
+                if (selector.Disabled)
+                    return;
+                int index = Math.Max(0, Array.IndexOf(entries, selectedId));
+                selector.Select(index);
+                Show(index);
+            }
 
             void Show(int selected)
             {
+                selectedId = entries[selected];
                 Clear(detail);
-                try { render(detail, entries[selected]); }
+                try { render(detail, selectedId); }
                 catch (Exception error) { message.Text = $"无法读取估值。{error.Message}"; }
             }
         }
@@ -133,8 +158,8 @@ internal static class ValuationPage
                 (root, number) => SetActionWeight(root, id, "perRoom", number));
             AddNumber(content, "每次层数下限", config["minAmounts"]?[id]?.GetValue<int>() ?? 1, 1,
                 (root, number) => root["actions"]!["minAmounts"]![id] = (int)number, minimum: 1);
-            AddNumber(content, "每次层数上限", config["maxAmounts"]?[id]?.GetValue<int>() ?? 0, 1,
-                (root, number) => root["actions"]!["maxAmounts"]![id] = (int)number);
+            AddNumber(content, "最大花费系数（乘基础行动力）", config["maxCostMultipliers"]?[id]?.GetValue<double>() ?? 1, 0.01,
+                (root, number) => root["actions"]!["maxCostMultipliers"]![id] = number, minimum: 0);
         }
 
         void RenderState(VBoxContainer content, Func<JsonNode, JsonNode> At, bool shared, EffectKind? kind = null)
@@ -159,12 +184,8 @@ internal static class ValuationPage
             bool interval = kind == EffectKind.WitheringPresence;
             AddNumber(content, interval ? "最短触发间隔（张）" : "每次层数下限", state["minAmount"]?.GetValue<int>() ?? 1, 1,
                 (root, number) => At(root)["minAmount"] = (int)number, minimum: 1);
-            if (state["hpPerSurvivalTurnCap"]?.GetValue<double>() is double cap)
-                AddNumber(content, "动态层数上限系数", cap, 0.01,
-                    (root, number) => At(root)["hpPerSurvivalTurnCap"] = number, minimum: 0);
-            else
-                AddNumber(content, interval ? "最长触发间隔（张）" : "每次层数上限", state["maxAmount"]?.GetValue<int>() ?? 1, 1,
-                    (root, number) => At(root)["maxAmount"] = (int)number);
+            AddNumber(content, "最大花费系数（乘基础行动力）", state["maxCostMultiplier"]?.GetValue<double>() ?? 1, 0.01,
+                (root, number) => At(root)["maxCostMultiplier"] = number, minimum: 0);
             if (kind is { } effect && TriggeredCardBuffs.Types.TryGetValue(effect, out var source))
                 AddGeneratedCards(content, At, source);
         }
@@ -174,8 +195,8 @@ internal static class ValuationPage
             content.AddChild(new Label { Text = "生成的状态牌" });
             var picker = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             content.AddChild(picker);
-            var choices = Enum.GetValues<EffectKind>().Where(kind => ActionEffect.IsCard(kind) &&
-                ActionCatalog.CanPlace(kind, source.Pile)).ToArray();
+            var choices = Enum.GetValues<EffectKind>().Where(kind =>
+                TriggeredCardBuffs.CanGenerate(kind, source.Pile)).ToArray();
             foreach (var kind in choices)
                 picker.AddItem(IntentDetails.Names(kind).Chinese);
             var weight = SettingsPage.NumberRow(content, "牌种权重（0 停用）", 0, 100, 0.01);
@@ -411,7 +432,8 @@ internal static class ValuationPage
         .Select(factor => factor.ToLowerInvariant() switch
         {
             "fixed" => "固定值", "amount" => "层数／数量", "actionvalue" => "基础行动力",
-            "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "effectiveamount" => "有效数量",
+            "attackfrequency" => "攻击频率", "survivalturns" => "预期寿命", "combatturns" => "预计剩余战斗回合",
+            "effectiveamount" => "有效数量",
             "hits" => "攻击段数",
             "playeractionvalue" => "玩家行动力", "roomsentered" => "进入房间数",
             "hppersurvivalturn" => "当前血量／（预期生存回合＋1）", "inverseamount" => "1／层数", _ => factor
